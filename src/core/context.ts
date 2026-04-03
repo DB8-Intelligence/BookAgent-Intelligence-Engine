@@ -14,6 +14,7 @@ import type { CorrelationBlock } from '../domain/entities/correlation.js';
 import type { NarrativePlan } from '../domain/entities/narrative.js';
 import type { GeneratedOutput } from '../domain/entities/output.js';
 import type { OutputDecision } from '../domain/entities/output-decision.js';
+import type { MediaPlan } from '../domain/entities/media-plan.js';
 import type { Source } from '../domain/entities/source.js';
 import type { JobInput } from '../domain/entities/job.js';
 import type { ModuleExecutionLog } from '../domain/entities/module-log.js';
@@ -50,6 +51,7 @@ export interface ProcessingContext {
   selectedOutputs?: OutputDecision[];
 
   // --- Populado pelo Media Generation ---
+  mediaPlans?: MediaPlan[];
   outputs?: GeneratedOutput[];
 
   // --- Gerenciado pelo Pipeline ---
