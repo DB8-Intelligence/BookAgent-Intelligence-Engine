@@ -13,6 +13,7 @@ import type { BrandingProfile } from '../domain/entities/branding.js';
 import type { CorrelationBlock } from '../domain/entities/correlation.js';
 import type { NarrativePlan } from '../domain/entities/narrative.js';
 import type { GeneratedOutput } from '../domain/entities/output.js';
+import type { OutputDecision } from '../domain/entities/output-decision.js';
 import type { Source } from '../domain/entities/source.js';
 import type { JobInput } from '../domain/entities/job.js';
 import type { ModuleExecutionLog } from '../domain/entities/module-log.js';
@@ -46,7 +47,7 @@ export interface ProcessingContext {
   narratives?: NarrativePlan[];
 
   // --- Populado pelo Output Selection ---
-  selectedOutputs?: OutputFormat[];
+  selectedOutputs?: OutputDecision[];
 
   // --- Populado pelo Media Generation ---
   outputs?: GeneratedOutput[];

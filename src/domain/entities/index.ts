@@ -17,3 +17,5 @@ export type { CorrelationBlock, TextBlock } from './correlation.js';
 export { CorrelationConfidence, CorrelationMethod, TextBlockType } from './correlation.js';
 export type { NarrativePlan, NarrativeBeat } from './narrative.js';
 export { NarrativeType, ToneOfVoice, BeatRole } from './narrative.js';
+export type { OutputDecision, FeasibilityGap } from './output-decision.js';
+export { ApprovalStatus, OutputComplexity } from './output-decision.js';
