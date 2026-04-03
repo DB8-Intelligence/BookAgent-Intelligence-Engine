@@ -23,7 +23,6 @@ export class AssetExtractionModule implements IModule {
       minHeight: 100,
     });
 
-    // TODO: Determinar tipo de arquivo e chamar extractor adequado
     const result = await extractor.extractFromPDF(context.input.fileUrl);
 
     return {
@@ -38,6 +37,8 @@ export class AssetExtractionModule implements IModule {
         format: asset.format,
         sizeBytes: asset.sizeBytes,
         classification: asset.classification,
+        origin: asset.origin,
+        hash: asset.hash,
       })),
     };
   }

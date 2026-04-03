@@ -13,6 +13,7 @@ import type { BrandingProfile } from '../domain/entities/branding.js';
 import type { GeneratedOutput } from '../domain/entities/output.js';
 import type { Source } from '../domain/entities/source.js';
 import type { JobInput } from '../domain/entities/job.js';
+import type { ModuleExecutionLog } from '../domain/entities/module-log.js';
 import type { OutputFormat } from '../domain/value-objects/index.js';
 
 export interface ProcessingContext {
@@ -47,6 +48,10 @@ export interface ProcessingContext {
 
   // --- Populado pelo Media Generation ---
   outputs?: GeneratedOutput[];
+
+  // --- Gerenciado pelo Pipeline ---
+  /** Log de execução de cada módulo (preenchido automaticamente pelo Pipeline) */
+  executionLogs?: ModuleExecutionLog[];
 }
 
 /**
@@ -56,5 +61,6 @@ export function createContext(jobId: string, input: JobInput): ProcessingContext
   return {
     jobId,
     input,
+    executionLogs: [],
   };
 }

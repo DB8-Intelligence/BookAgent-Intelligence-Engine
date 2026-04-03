@@ -2,7 +2,7 @@
  * BookAgent Intelligence Engine — Pipeline
  *
  * Executa módulos na ordem definida, passando o ProcessingContext
- * de estágio em estágio.
+ * de estágio em estágio. Registra logs de execução automaticamente.
  *
  * Ordem de execução:
  *   1. Ingestion       → recebe arquivo, extrai texto bruto
@@ -14,15 +14,15 @@
  *   7. Output Selection → decide quais formatos gerar
  *   8. Media Generation → gera os outputs finais
  *   9. Personalization  → aplica logo, CTA e dados do usuário
- *
- * Os módulos implementam IModule e são registrados durante a inicialização.
  */
 
 import type { ProcessingContext } from './context.js';
 import type { IModule } from '../domain/interfaces/module.js';
 import type { JobResult } from '../domain/entities/job.js';
+import type { ModuleExecutionLog } from '../domain/entities/module-log.js';
+import { createEmptyMetrics } from '../domain/entities/module-log.js';
 import { EMPTY_BRANDING } from '../domain/entities/branding.js';
-import { PipelineStage } from '../domain/value-objects/index.js';
+import { PipelineStage, ModuleStatus } from '../domain/value-objects/index.js';
 import { logger } from '../utils/logger.js';
 
 /** Ordem fixa de execução dos estágios */
@@ -43,7 +43,6 @@ export class Pipeline {
 
   /**
    * Registra um módulo para um estágio do pipeline.
-   * Cada módulo implementa IModule com stage, name e run().
    */
   registerModule(mod: IModule): void {
     this.modules.set(mod.stage, mod);
@@ -52,19 +51,56 @@ export class Pipeline {
 
   /**
    * Executa todos os estágios na ordem definida.
-   * Estágios sem módulo registrado são ignorados silenciosamente,
-   * permitindo desenvolvimento incremental.
+   * Cada execução é cronometrada e registrada em executionLogs.
    */
   async execute(initialContext: ProcessingContext): Promise<JobResult> {
     let context = initialContext;
+    const logs: ModuleExecutionLog[] = [];
 
     for (const stage of STAGE_ORDER) {
       const mod = this.modules.get(stage);
-      if (mod) {
+      if (!mod) continue;
+
+      const startedAt = new Date();
+      const startMs = Date.now();
+
+      try {
         logger.info(`Pipeline: executando [${stage}] → ${mod.name}`);
         context = await mod.run(context);
+
+        logs.push({
+          stage,
+          moduleName: mod.name,
+          status: ModuleStatus.SUCCESS,
+          durationMs: Date.now() - startMs,
+          startedAt,
+          completedAt: new Date(),
+          warnings: [],
+          metrics: createEmptyMetrics(),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        logger.error(`Pipeline: falha em [${stage}] → ${mod.name}: ${message}`);
+
+        logs.push({
+          stage,
+          moduleName: mod.name,
+          status: ModuleStatus.ERROR,
+          durationMs: Date.now() - startMs,
+          startedAt,
+          completedAt: new Date(),
+          error: message,
+          warnings: [],
+          metrics: createEmptyMetrics(),
+        });
+
+        // Propagar o erro para o orchestrator decidir
+        throw error;
       }
     }
+
+    // Anexar logs ao context final
+    context = { ...context, executionLogs: logs };
 
     return {
       jobId: context.jobId,

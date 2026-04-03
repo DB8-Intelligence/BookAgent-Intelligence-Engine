@@ -2,7 +2,7 @@
  * Tipos do módulo Asset Extraction
  */
 
-import type { SourceType, Dimensions, BoundingBox } from '../../domain/value-objects/index.js';
+import type { SourceType, Dimensions, BoundingBox, AssetOrigin } from '../../domain/value-objects/index.js';
 
 export interface ExtractedAsset {
   id: string;
@@ -14,6 +14,8 @@ export interface ExtractedAsset {
   format: string;
   sizeBytes: number;
   classification?: SourceType;
+  origin: AssetOrigin;
+  hash?: string;
 }
 
 export interface ExtractionResult {
