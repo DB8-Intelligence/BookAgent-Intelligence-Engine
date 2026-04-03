@@ -2,41 +2,59 @@
  * Adapter: Local Storage
  *
  * Implementação de IStorageAdapter usando sistema de arquivos local.
+ * Gerencia diretórios por job e operações CRUD de arquivos.
+ *
  * Evolução futura: S3, GCS, Azure Blob.
  */
 
+import { mkdir, readFile, writeFile, access, unlink, rm } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import type { IStorageAdapter } from '../../domain/interfaces/storage-adapter.js';
 
 export class LocalStorageAdapter implements IStorageAdapter {
   constructor(private baseDir: string = 'storage') {}
 
   async save(jobId: string, fileName: string, data: Buffer): Promise<string> {
-    // TODO: Implementar fs.writeFile
-    throw new Error('Storage save not implemented');
+    const filePath = join(this.baseDir, 'assets', jobId, fileName);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, data);
+    return filePath;
   }
 
   async read(filePath: string): Promise<Buffer> {
-    // TODO: Implementar fs.readFile
-    throw new Error('Storage read not implemented');
+    return readFile(filePath);
   }
 
   async exists(filePath: string): Promise<boolean> {
-    // TODO: Implementar fs.access
-    throw new Error('Storage exists not implemented');
+    try {
+      await access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async delete(filePath: string): Promise<void> {
-    // TODO: Implementar fs.unlink
-    throw new Error('Storage delete not implemented');
+    await unlink(filePath);
   }
 
   async createJobDir(jobId: string): Promise<string> {
-    // TODO: Implementar fs.mkdir
-    throw new Error('Storage createJobDir not implemented');
+    const dirs = ['raw', 'pages', 'thumbnails', 'branding'];
+    const base = join(this.baseDir, 'assets', jobId);
+
+    for (const dir of dirs) {
+      await mkdir(join(base, dir), { recursive: true });
+    }
+
+    return base;
   }
 
   async cleanupTemp(jobId: string): Promise<void> {
-    // TODO: Implementar remoção de temp
-    throw new Error('Storage cleanup not implemented');
+    const tempDir = join(this.baseDir, 'temp', jobId);
+    try {
+      await rm(tempDir, { recursive: true, force: true });
+    } catch {
+      // Ignore if temp dir doesn't exist
+    }
   }
 }
