@@ -100,6 +100,31 @@ export enum ModuleStatus {
   SKIPPED = 'skipped',
 }
 
+/** Estilo visual identificado no material */
+export enum VisualStyle {
+  LUXURY_MODERN = 'luxury-modern',
+  LUXURY_CLASSIC = 'luxury-classic',
+  URBAN_MODERN = 'urban-modern',
+  RESORT = 'resort',
+  POPULAR = 'popular',
+  CORPORATE = 'corporate',
+  MINIMAL = 'minimal',
+}
+
+/** Intensidade visual do material */
+export enum VisualIntensity {
+  HIGH = 'high',
+  MEDIUM = 'medium',
+  LOW = 'low',
+}
+
+/** Nível de sofisticação visual do material */
+export enum SophisticationLevel {
+  PREMIUM = 'premium',
+  STANDARD = 'standard',
+  BASIC = 'basic',
+}
+
 // ---------------------------------------------------------------------------
 // Value Objects
 // ---------------------------------------------------------------------------
@@ -110,6 +135,16 @@ export interface ColorPalette {
   accent: string;
   background: string;
   text: string;
+}
+
+/** Cor com frequência relativa (0-1) extraída de análise de imagem */
+export interface DominantColor {
+  hex: string;
+  r: number;
+  g: number;
+  b: number;
+  frequency: number;
+  luminance: number;
 }
 
 export interface Position {
