@@ -15,3 +15,5 @@ export type { ModuleExecutionLog, ModuleMetrics } from './module-log.js';
 export { createEmptyMetrics } from './module-log.js';
 export type { CorrelationBlock, TextBlock } from './correlation.js';
 export { CorrelationConfidence, CorrelationMethod, TextBlockType } from './correlation.js';
+export type { NarrativePlan, NarrativeBeat } from './narrative.js';
+export { NarrativeType, ToneOfVoice, BeatRole } from './narrative.js';

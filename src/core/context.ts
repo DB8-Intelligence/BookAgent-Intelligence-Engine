@@ -11,6 +11,7 @@
 import type { Asset } from '../domain/entities/asset.js';
 import type { BrandingProfile } from '../domain/entities/branding.js';
 import type { CorrelationBlock } from '../domain/entities/correlation.js';
+import type { NarrativePlan } from '../domain/entities/narrative.js';
 import type { GeneratedOutput } from '../domain/entities/output.js';
 import type { Source } from '../domain/entities/source.js';
 import type { JobInput } from '../domain/entities/job.js';
@@ -42,7 +43,7 @@ export interface ProcessingContext {
   sources?: Source[];
 
   // --- Populado pelo Narrative ---
-  narratives?: Record<string, string>;
+  narratives?: NarrativePlan[];
 
   // --- Populado pelo Output Selection ---
   selectedOutputs?: OutputFormat[];
