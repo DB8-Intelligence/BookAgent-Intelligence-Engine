@@ -1,0 +1,15 @@
+node_modules/
+dist/
+storage/assets/*
+storage/outputs/*
+storage/temp/*
+!storage/assets/.gitkeep
+!storage/outputs/.gitkeep
+!storage/temp/.gitkeep
+.env
+.env.local
+*.log
+.DS_Store
+coverage/
+.vscode/
+.idea/
