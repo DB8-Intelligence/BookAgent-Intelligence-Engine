@@ -25,3 +25,12 @@ export type { BlogPlan, BlogSection } from './blog-plan.js';
 export { EditorialRole } from './blog-plan.js';
 export type { LandingPagePlan, LandingPageSection } from './landing-page-plan.js';
 export { LPSectionType, ConversionRole, LeadCaptureIntent } from './landing-page-plan.js';
+export type {
+  PersonalizationResult,
+  PersonalizationProfile,
+  CTAProfile,
+  ContactBlock,
+  ContactChannel,
+  UserBrandingOverlay,
+} from './personalization.js';
+export { LogoPlacement } from './personalization.js';

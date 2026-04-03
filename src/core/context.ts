@@ -17,6 +17,7 @@ import type { OutputDecision } from '../domain/entities/output-decision.js';
 import type { MediaPlan } from '../domain/entities/media-plan.js';
 import type { BlogPlan } from '../domain/entities/blog-plan.js';
 import type { LandingPagePlan } from '../domain/entities/landing-page-plan.js';
+import type { PersonalizationResult } from '../domain/entities/personalization.js';
 import type { Source } from '../domain/entities/source.js';
 import type { JobInput } from '../domain/entities/job.js';
 import type { ModuleExecutionLog } from '../domain/entities/module-log.js';
@@ -61,6 +62,9 @@ export interface ProcessingContext {
 
   // --- Populado pelo Landing Page ---
   landingPagePlans?: LandingPagePlan[];
+
+  // --- Populado pelo Personalization ---
+  personalization?: PersonalizationResult;
 
   // --- Gerenciado pelo Pipeline ---
   /** Log de execução de cada módulo (preenchido automaticamente pelo Pipeline) */
