@@ -10,6 +10,7 @@
 
 import type { Asset } from '../domain/entities/asset.js';
 import type { BrandingProfile } from '../domain/entities/branding.js';
+import type { CorrelationBlock } from '../domain/entities/correlation.js';
 import type { GeneratedOutput } from '../domain/entities/output.js';
 import type { Source } from '../domain/entities/source.js';
 import type { JobInput } from '../domain/entities/job.js';
@@ -32,7 +33,7 @@ export interface ProcessingContext {
   assets?: Asset[];
 
   // --- Populado pelo Correlation ---
-  correlations?: Map<string, string>;
+  correlations?: CorrelationBlock[];
 
   // --- Populado pelo Branding ---
   branding?: BrandingProfile;

@@ -13,3 +13,5 @@ export type { UserContext } from './user-context.js';
 export type { Job, JobInput, JobResult } from './job.js';
 export type { ModuleExecutionLog, ModuleMetrics } from './module-log.js';
 export { createEmptyMetrics } from './module-log.js';
+export type { CorrelationBlock, TextBlock } from './correlation.js';
+export { CorrelationConfidence, CorrelationMethod, TextBlockType } from './correlation.js';
