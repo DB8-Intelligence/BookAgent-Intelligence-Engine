@@ -23,3 +23,5 @@ export type { MediaPlan, MediaScene, TextOverlay, BrandingInstruction } from './
 export { RenderStatus, LayoutHint, TransitionType } from './media-plan.js';
 export type { BlogPlan, BlogSection } from './blog-plan.js';
 export { EditorialRole } from './blog-plan.js';
+export type { LandingPagePlan, LandingPageSection } from './landing-page-plan.js';
+export { LPSectionType, ConversionRole, LeadCaptureIntent } from './landing-page-plan.js';
