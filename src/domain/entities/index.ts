@@ -21,3 +21,5 @@ export type { OutputDecision, FeasibilityGap } from './output-decision.js';
 export { ApprovalStatus, OutputComplexity } from './output-decision.js';
 export type { MediaPlan, MediaScene, TextOverlay, BrandingInstruction } from './media-plan.js';
 export { RenderStatus, LayoutHint, TransitionType } from './media-plan.js';
+export type { BlogPlan, BlogSection } from './blog-plan.js';
+export { EditorialRole } from './blog-plan.js';
