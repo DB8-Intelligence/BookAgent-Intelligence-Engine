@@ -9,14 +9,21 @@
  * É o último estágio do pipeline — recebe outputs prontos e personaliza.
  */
 
-import type { PipelineContext } from '../../types/index.js';
+import { PipelineStage } from '../../domain/value-objects/index.js';
+import type { IModule } from '../../domain/interfaces/module.js';
+import type { ProcessingContext } from '../../core/context.js';
 
-export async function handlePersonalization(context: PipelineContext): Promise<PipelineContext> {
-  // TODO: Implementar personalização
-  // 1. Para cada output gerado
-  // 2. Se há logo em context.input.userContext.logoUrl, aplicar overlay
-  // 3. Injetar CTA (nome, WhatsApp, Instagram, site, região)
-  // 4. Retornar outputs atualizados
+export class PersonalizationModule implements IModule {
+  readonly stage = PipelineStage.PERSONALIZATION;
+  readonly name = 'Personalization';
 
-  return context;
+  async run(context: ProcessingContext): Promise<ProcessingContext> {
+    // TODO: Implementar personalização
+    // 1. Para cada output gerado
+    // 2. Se há logo em context.input.userContext.logoUrl, aplicar overlay
+    // 3. Injetar CTA (nome, WhatsApp, Instagram, site, região)
+    // 4. Retornar outputs atualizados
+
+    return context;
+  }
 }

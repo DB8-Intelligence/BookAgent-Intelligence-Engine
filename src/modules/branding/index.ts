@@ -7,25 +7,27 @@
  * - Paleta de cores (primária, secundária, acento, fundo, texto)
  * - Estilo visual (moderno, clássico, luxo, popular)
  * - Padrões de composição (layout, hierarquia visual)
- *
- * Esses dados são usados por todos os geradores de output
- * para manter consistência visual com o material original.
+ * - Tipografia aproximada
  */
 
-import type { PipelineContext } from '../../types/index.js';
+import { PipelineStage } from '../../domain/value-objects/index.js';
+import { EMPTY_BRANDING } from '../../domain/entities/branding.js';
+import type { IModule } from '../../domain/interfaces/module.js';
+import type { ProcessingContext } from '../../core/context.js';
 
-export async function handleBranding(context: PipelineContext): Promise<PipelineContext> {
-  // TODO: Implementar extração de branding
-  // 1. Analisar imagens para extrair paleta de cores dominantes
-  // 2. Classificar estilo visual usando LLM de visão
-  // 3. Identificar padrões de composição
+export class BrandingModule implements IModule {
+  readonly stage = PipelineStage.BRANDING;
+  readonly name = 'Branding Preservation';
 
-  return {
-    ...context,
-    branding: {
-      colors: { primary: '', secondary: '', accent: '', background: '', text: '' },
-      style: '',
-      composition: '',
-    },
-  };
+  async run(context: ProcessingContext): Promise<ProcessingContext> {
+    // TODO: Implementar extração de branding
+    // 1. Analisar imagens para extrair paleta de cores dominantes
+    // 2. Classificar estilo visual usando IAIAdapter
+    // 3. Identificar padrões de composição
+
+    return {
+      ...context,
+      branding: EMPTY_BRANDING,
+    };
+  }
 }

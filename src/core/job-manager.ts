@@ -14,7 +14,8 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { JobStatus, type Job, type JobInput, type JobResult } from '../types/index.js';
+import { JobStatus } from '../domain/value-objects/index.js';
+import type { Job, JobInput, JobResult } from '../domain/entities/job.js';
 
 export class JobManager {
   private jobs: Map<string, Job> = new Map();

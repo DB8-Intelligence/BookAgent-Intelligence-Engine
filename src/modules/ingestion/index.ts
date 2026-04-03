@@ -10,17 +10,25 @@
  * - Despacho para extractors específicos por tipo
  */
 
-import type { PipelineContext } from '../../types/index.js';
+import { PipelineStage } from '../../domain/value-objects/index.js';
+import type { IModule } from '../../domain/interfaces/module.js';
+import type { ProcessingContext } from '../../core/context.js';
 
-export async function handleIngestion(context: PipelineContext): Promise<PipelineContext> {
-  // TODO: Implementar lógica de ingestão
-  // 1. Baixar/ler arquivo de context.input.fileUrl
-  // 2. Detectar tipo (PDF, vídeo, áudio, PPTX)
-  // 3. Extrair texto bruto
-  // 4. Retornar context enriquecido com extractedText
+export class IngestionModule implements IModule {
+  readonly stage = PipelineStage.INGESTION;
+  readonly name = 'Ingestion';
 
-  return {
-    ...context,
-    extractedText: '', // placeholder
-  };
+  async run(context: ProcessingContext): Promise<ProcessingContext> {
+    // TODO: Implementar lógica de ingestão
+    // 1. Baixar/ler arquivo de context.input.fileUrl
+    // 2. Detectar tipo (PDF, vídeo, áudio, PPTX)
+    // 3. Extrair texto bruto via adapter
+    // 4. Retornar context enriquecido com extractedText
+
+    return {
+      ...context,
+      extractedText: '',
+      pageTexts: [],
+    };
+  }
 }

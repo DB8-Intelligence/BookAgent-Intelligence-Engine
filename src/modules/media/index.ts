@@ -9,22 +9,26 @@
  * - Posts (PNG/JPG)
  * - Apresentações (PPTX/PDF)
  * - Áudio monólogo e podcast (MP3)
- *
- * Cada sub-gerador é uma função independente que recebe
- * fontes, narrativas e branding e produz o arquivo final.
  */
 
-import type { PipelineContext } from '../../types/index.js';
+import { PipelineStage } from '../../domain/value-objects/index.js';
+import type { IModule } from '../../domain/interfaces/module.js';
+import type { ProcessingContext } from '../../core/context.js';
 
-export async function handleMediaGeneration(context: PipelineContext): Promise<PipelineContext> {
-  // TODO: Implementar geração de mídia
-  // 1. Para cada output selecionado em context.selectedOutputs
-  // 2. Chamar sub-gerador específico (reel, carousel, post, etc.)
-  // 3. Salvar arquivo em storage/outputs/{jobId}/
-  // 4. Retornar lista de GeneratedOutput[]
+export class MediaGenerationModule implements IModule {
+  readonly stage = PipelineStage.MEDIA_GENERATION;
+  readonly name = 'Media Generation';
 
-  return {
-    ...context,
-    outputs: [],
-  };
+  async run(context: ProcessingContext): Promise<ProcessingContext> {
+    // TODO: Implementar geração de mídia
+    // 1. Para cada output selecionado em context.selectedOutputs
+    // 2. Chamar sub-gerador específico (reel, carousel, post, etc.)
+    // 3. Salvar arquivo via IStorageAdapter
+    // 4. Retornar lista de GeneratedOutput[]
+
+    return {
+      ...context,
+      outputs: [],
+    };
+  }
 }

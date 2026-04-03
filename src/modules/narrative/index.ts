@@ -8,20 +8,25 @@
  * - Editorial (blog, artigos de autoridade)
  * - Descritiva (apresentações, briefings)
  * - Social (captions para posts, reels, stories)
- *
- * Usa LLMs para geração, parametrizados por tipo de output e tom desejado.
  */
 
-import type { PipelineContext } from '../../types/index.js';
+import { PipelineStage } from '../../domain/value-objects/index.js';
+import type { IModule } from '../../domain/interfaces/module.js';
+import type { ProcessingContext } from '../../core/context.js';
 
-export async function handleNarrative(context: PipelineContext): Promise<PipelineContext> {
-  // TODO: Implementar geração de narrativas
-  // 1. Para cada fonte, gerar narrativas por tipo (comercial, editorial, social)
-  // 2. Considerar branding e tom de voz
-  // 3. Retornar narrativas indexadas por sourceId + tipo
+export class NarrativeModule implements IModule {
+  readonly stage = PipelineStage.NARRATIVE;
+  readonly name = 'Narrative Generation';
 
-  return {
-    ...context,
-    narratives: {},
-  };
+  async run(context: ProcessingContext): Promise<ProcessingContext> {
+    // TODO: Implementar geração de narrativas via IAIAdapter
+    // 1. Para cada fonte, gerar narrativas por tipo
+    // 2. Considerar branding e tom de voz
+    // 3. Retornar narrativas indexadas por sourceId + tipo
+
+    return {
+      ...context,
+      narratives: {},
+    };
+  }
 }

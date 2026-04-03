@@ -3,6 +3,7 @@
  *
  * Cérebro do sistema. Responsável por:
  * - Receber inputs (PDF, vídeo, áudio, etc.)
+ * - Construir o ProcessingContext
  * - Iniciar o pipeline de processamento
  * - Coordenar a execução dos módulos na ordem correta
  * - Retornar o resultado final ao chamador
@@ -11,7 +12,9 @@
  * para o pipeline e os módulos individuais.
  */
 
-import type { Job, JobInput, JobResult, PipelineContext } from '../types/index.js';
+import type { Job, JobInput } from '../domain/entities/job.js';
+import type { IModule } from '../domain/interfaces/module.js';
+import { createContext } from './context.js';
 import { JobManager } from './job-manager.js';
 import { Pipeline } from './pipeline.js';
 
@@ -25,14 +28,22 @@ export class Orchestrator {
   }
 
   /**
+   * Registra um módulo no pipeline.
+   * Deve ser chamado durante a inicialização da aplicação.
+   */
+  registerModule(mod: IModule): void {
+    this.pipeline.registerModule(mod);
+  }
+
+  /**
    * Processa um input completo — da ingestão até a geração de outputs.
    *
    * Fluxo:
    * 1. Cria um job no JobManager
-   * 2. Constrói o contexto inicial do pipeline
+   * 2. Constrói o ProcessingContext
    * 3. Executa o pipeline completo
    * 4. Atualiza o job com o resultado
-   * 5. Retorna o resultado
+   * 5. Retorna o job atualizado
    */
   async process(input: JobInput): Promise<Job> {
     const job = this.jobManager.createJob(input);
@@ -40,11 +51,7 @@ export class Orchestrator {
     try {
       this.jobManager.markProcessing(job.id);
 
-      const context: PipelineContext = {
-        jobId: job.id,
-        input,
-      };
-
+      const context = createContext(job.id, input);
       const result = await this.pipeline.execute(context);
 
       this.jobManager.markCompleted(job.id, result);

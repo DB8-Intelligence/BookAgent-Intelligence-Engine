@@ -1,38 +1,44 @@
 /**
- * Asset Extraction Service
+ * Asset Extraction Module
  *
- * Serviço de alto nível que coordena a extração de assets.
- * É o ponto de entrada do módulo para o pipeline.
+ * Implementa IModule. Extrai imagens e assets visuais de materiais.
  */
 
-import type { PipelineContext } from '../../types/index.js';
+import { PipelineStage } from '../../domain/value-objects/index.js';
+import type { IModule } from '../../domain/interfaces/module.js';
+import type { ProcessingContext } from '../../core/context.js';
 import { AssetExtractor } from './extractor.js';
 
 const DEFAULT_OUTPUT_DIR = 'storage/assets';
 
-export async function handleAssetExtraction(context: PipelineContext): Promise<PipelineContext> {
-  const extractor = new AssetExtractor({
-    outputDir: `${DEFAULT_OUTPUT_DIR}/${context.jobId}`,
-    generateThumbnails: true,
-    minWidth: 100,
-    minHeight: 100,
-  });
+export class AssetExtractionModule implements IModule {
+  readonly stage = PipelineStage.EXTRACTION;
+  readonly name = 'Asset Extraction';
 
-  // TODO: Determinar tipo de arquivo e chamar extractor adequado
-  // Por enquanto, assume PDF
-  const result = await extractor.extractFromPDF(context.input.fileUrl);
+  async run(context: ProcessingContext): Promise<ProcessingContext> {
+    const extractor = new AssetExtractor({
+      outputDir: `${DEFAULT_OUTPUT_DIR}/${context.jobId}`,
+      generateThumbnails: true,
+      minWidth: 100,
+      minHeight: 100,
+    });
 
-  return {
-    ...context,
-    assets: result.assets.map((asset) => ({
-      id: asset.id,
-      filePath: asset.filePath,
-      thumbnailPath: asset.thumbnailPath,
-      width: asset.width,
-      height: asset.height,
-      page: asset.page,
-      position: asset.position ? { x: asset.position.x, y: asset.position.y } : undefined,
-      classification: asset.classification,
-    })),
-  };
+    // TODO: Determinar tipo de arquivo e chamar extractor adequado
+    const result = await extractor.extractFromPDF(context.input.fileUrl);
+
+    return {
+      ...context,
+      assets: result.assets.map((asset) => ({
+        id: asset.id,
+        filePath: asset.filePath,
+        thumbnailPath: asset.thumbnailPath,
+        dimensions: asset.dimensions,
+        page: asset.page,
+        position: asset.boundingBox?.position,
+        format: asset.format,
+        sizeBytes: asset.sizeBytes,
+        classification: asset.classification,
+      })),
+    };
+  }
 }

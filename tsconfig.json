@@ -16,11 +16,11 @@
     "sourceMap": true,
     "baseUrl": ".",
     "paths": {
+      "@domain/*": ["src/domain/*"],
       "@core/*": ["src/core/*"],
       "@modules/*": ["src/modules/*"],
       "@adapters/*": ["src/adapters/*"],
       "@api/*": ["src/api/*"],
-      "@types/*": ["src/types/*"],
       "@utils/*": ["src/utils/*"],
       "@config/*": ["src/config/*"]
     }

@@ -1,11 +1,11 @@
 /**
  * BookAgent Intelligence Engine — Pipeline
  *
- * Define a ordem de execução dos módulos e coordena
- * a passagem de dados entre cada estágio.
+ * Executa módulos na ordem definida, passando o ProcessingContext
+ * de estágio em estágio.
  *
  * Ordem de execução:
- *   1. Ingestion      → recebe arquivo, extrai texto bruto
+ *   1. Ingestion       → recebe arquivo, extrai texto bruto
  *   2. Extraction      → extrai imagens e assets do material
  *   3. Correlation     → correlaciona texto ↔ imagem
  *   4. Branding        → identifica paleta de cores, estilo, tipografia
@@ -15,71 +15,69 @@
  *   8. Media Generation → gera os outputs finais
  *   9. Personalization  → aplica logo, CTA e dados do usuário
  *
- * Cada estágio recebe o PipelineContext, enriquece-o e passa adiante.
+ * Os módulos implementam IModule e são registrados durante a inicialização.
  */
 
-import { PipelineStage, type JobResult, type PipelineContext } from '../types/index.js';
+import type { ProcessingContext } from './context.js';
+import type { IModule } from '../domain/interfaces/module.js';
+import type { JobResult } from '../domain/entities/job.js';
+import { EMPTY_BRANDING } from '../domain/entities/branding.js';
+import { PipelineStage } from '../domain/value-objects/index.js';
+import { logger } from '../utils/logger.js';
 
-export type StageHandler = (context: PipelineContext) => Promise<PipelineContext>;
+/** Ordem fixa de execução dos estágios */
+const STAGE_ORDER: PipelineStage[] = [
+  PipelineStage.INGESTION,
+  PipelineStage.EXTRACTION,
+  PipelineStage.CORRELATION,
+  PipelineStage.BRANDING,
+  PipelineStage.SOURCE_INTELLIGENCE,
+  PipelineStage.NARRATIVE,
+  PipelineStage.OUTPUT_SELECTION,
+  PipelineStage.MEDIA_GENERATION,
+  PipelineStage.PERSONALIZATION,
+];
 
 export class Pipeline {
-  private stages: Map<PipelineStage, StageHandler> = new Map();
+  private modules: Map<PipelineStage, IModule> = new Map();
 
   /**
-   * Registra um handler para um estágio do pipeline.
-   * Os módulos se registram aqui durante a inicialização.
+   * Registra um módulo para um estágio do pipeline.
+   * Cada módulo implementa IModule com stage, name e run().
    */
-  registerStage(stage: PipelineStage, handler: StageHandler): void {
-    this.stages.set(stage, handler);
+  registerModule(mod: IModule): void {
+    this.modules.set(mod.stage, mod);
+    logger.info(`Pipeline: módulo "${mod.name}" registrado para estágio [${mod.stage}]`);
   }
 
   /**
    * Executa todos os estágios na ordem definida.
-   *
-   * O contexto é passado de estágio em estágio,
-   * acumulando dados extraídos e gerados.
+   * Estágios sem módulo registrado são ignorados silenciosamente,
+   * permitindo desenvolvimento incremental.
    */
-  async execute(initialContext: PipelineContext): Promise<JobResult> {
-    const stageOrder: PipelineStage[] = [
-      PipelineStage.INGESTION,
-      PipelineStage.EXTRACTION,
-      PipelineStage.CORRELATION,
-      PipelineStage.BRANDING,
-      PipelineStage.SOURCE_INTELLIGENCE,
-      PipelineStage.NARRATIVE,
-      PipelineStage.OUTPUT_SELECTION,
-      PipelineStage.MEDIA_GENERATION,
-      PipelineStage.PERSONALIZATION,
-    ];
-
+  async execute(initialContext: ProcessingContext): Promise<JobResult> {
     let context = initialContext;
 
-    for (const stage of stageOrder) {
-      const handler = this.stages.get(stage);
-      if (handler) {
-        context = await handler(context);
+    for (const stage of STAGE_ORDER) {
+      const mod = this.modules.get(stage);
+      if (mod) {
+        logger.info(`Pipeline: executando [${stage}] → ${mod.name}`);
+        context = await mod.run(context);
       }
-      // Estágios sem handler registrado são ignorados silenciosamente.
-      // Isso permite desenvolvimento incremental — módulos são adicionados conforme implementados.
     }
 
     return {
       jobId: context.jobId,
       sources: context.sources ?? [],
       outputs: context.outputs ?? [],
-      branding: context.branding ?? {
-        colors: { primary: '', secondary: '', accent: '', background: '', text: '' },
-        style: '',
-        composition: '',
-      },
+      branding: context.branding ?? EMPTY_BRANDING,
     };
   }
 
   /**
-   * Retorna a lista de estágios com handler registrado.
-   * Útil para diagnóstico e health-check.
+   * Retorna a lista de estágios com módulo registrado.
    */
   getRegisteredStages(): PipelineStage[] {
-    return Array.from(this.stages.keys());
+    return Array.from(this.modules.keys());
   }
 }

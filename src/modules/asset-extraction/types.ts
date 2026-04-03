@@ -2,16 +2,15 @@
  * Tipos do módulo Asset Extraction
  */
 
-import type { SourceType } from '../../types/index.js';
+import type { SourceType, Dimensions, BoundingBox } from '../../domain/value-objects/index.js';
 
 export interface ExtractedAsset {
   id: string;
   filePath: string;
   thumbnailPath?: string;
   page: number;
-  position?: { x: number; y: number; width: number; height: number };
-  width: number;
-  height: number;
+  boundingBox?: BoundingBox;
+  dimensions: Dimensions;
   format: string;
   sizeBytes: number;
   classification?: SourceType;

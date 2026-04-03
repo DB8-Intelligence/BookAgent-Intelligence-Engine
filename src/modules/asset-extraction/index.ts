@@ -6,5 +6,5 @@
  */
 
 export { AssetExtractor } from './extractor.js';
-export { handleAssetExtraction } from './service.js';
+export { AssetExtractionModule } from './service.js';
 export type { ExtractedAsset, ExtractionResult, ExtractionOptions } from './types.js';

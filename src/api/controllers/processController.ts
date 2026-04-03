@@ -6,17 +6,27 @@
  */
 
 import type { Request, Response } from 'express';
-import { InputType } from '../../types/index.js';
+import { InputType } from '../../domain/value-objects/index.js';
 import { Orchestrator } from '../../core/orchestrator.js';
 import { ProcessRequestSchema } from '../schemas/process.js';
 
-const orchestrator = new Orchestrator();
+const INPUT_TYPE_MAP: Record<string, InputType> = {
+  pdf: InputType.PDF,
+  video: InputType.VIDEO,
+  audio: InputType.AUDIO,
+  pptx: InputType.PPTX,
+  document: InputType.DOCUMENT,
+};
+
+/** Instância compartilhada do orchestrator — inicializada pelo bootstrap */
+let orchestrator: Orchestrator;
+
+export function setOrchestrator(orch: Orchestrator): void {
+  orchestrator = orch;
+}
 
 /**
- * POST /process
- *
- * Inicia o processamento de um material.
- * Retorna imediatamente com o ID do job para consulta posterior.
+ * POST /process — Inicia o processamento de um material.
  */
 export async function createProcess(req: Request, res: Response): Promise<void> {
   const parsed = ProcessRequestSchema.safeParse(req.body);
@@ -31,10 +41,9 @@ export async function createProcess(req: Request, res: Response): Promise<void> 
 
   const { file_url, type, user_context } = parsed.data;
 
-  // Inicia processamento assíncrono
   const job = await orchestrator.process({
     fileUrl: file_url,
-    type: type as InputType,
+    type: INPUT_TYPE_MAP[type],
     userContext: {
       name: user_context.name,
       whatsapp: user_context.whatsapp,
@@ -53,9 +62,7 @@ export async function createProcess(req: Request, res: Response): Promise<void> 
 }
 
 /**
- * GET /process/:jobId
- *
- * Consulta o status de um job existente.
+ * GET /process/:jobId — Consulta o status de um job.
  */
 export function getProcessStatus(req: Request, res: Response): void {
   const { jobId } = req.params;

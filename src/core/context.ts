@@ -1,0 +1,60 @@
+/**
+ * ProcessingContext
+ *
+ * Objeto central que flui por todo o pipeline.
+ * Cada módulo recebe o context, enriquece-o com seus resultados e devolve.
+ *
+ * O context é a "memória de trabalho" do pipeline — acumula
+ * todos os dados extraídos e gerados ao longo dos estágios.
+ */
+
+import type { Asset } from '../domain/entities/asset.js';
+import type { BrandingProfile } from '../domain/entities/branding.js';
+import type { GeneratedOutput } from '../domain/entities/output.js';
+import type { Source } from '../domain/entities/source.js';
+import type { JobInput } from '../domain/entities/job.js';
+import type { OutputFormat } from '../domain/value-objects/index.js';
+
+export interface ProcessingContext {
+  /** ID do job sendo processado */
+  readonly jobId: string;
+
+  /** Input original da requisição */
+  readonly input: JobInput;
+
+  // --- Populado pelo Ingestion ---
+  extractedText?: string;
+  pageTexts?: Array<{ pageNumber: number; text: string }>;
+  localFilePath?: string;
+
+  // --- Populado pelo Asset Extraction ---
+  assets?: Asset[];
+
+  // --- Populado pelo Correlation ---
+  correlations?: Map<string, string>;
+
+  // --- Populado pelo Branding ---
+  branding?: BrandingProfile;
+
+  // --- Populado pelo Source Intelligence ---
+  sources?: Source[];
+
+  // --- Populado pelo Narrative ---
+  narratives?: Record<string, string>;
+
+  // --- Populado pelo Output Selection ---
+  selectedOutputs?: OutputFormat[];
+
+  // --- Populado pelo Media Generation ---
+  outputs?: GeneratedOutput[];
+}
+
+/**
+ * Cria um ProcessingContext inicial a partir de um JobInput.
+ */
+export function createContext(jobId: string, input: JobInput): ProcessingContext {
+  return {
+    jobId,
+    input,
+  };
+}
