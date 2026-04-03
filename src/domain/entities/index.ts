@@ -34,3 +34,5 @@ export type {
   UserBrandingOverlay,
 } from './personalization.js';
 export { LogoPlacement } from './personalization.js';
+export type { ExportArtifact, ExportResult } from './export-artifact.js';
+export { ExportFormat, ArtifactType, ArtifactStatus } from './export-artifact.js';
