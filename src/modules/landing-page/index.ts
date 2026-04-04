@@ -48,8 +48,9 @@ export class LandingPageModule implements IModule {
       return { ...context, landingPagePlans: [] };
     }
 
-    // --- Build landing page plans ---
-    const plans = buildLandingPagePlans(decisions, narratives, sources, branding);
+    // --- Build landing page plans (com inteligência do bookPrototype) ---
+    const bookPrototype = context.bookPrototype;
+    const plans = buildLandingPagePlans(decisions, narratives, sources, branding, bookPrototype);
 
     if (plans.length === 0) {
       logger.info('[LandingPage] Nenhum output de landing page aprovado — módulo finalizado');
@@ -108,3 +109,4 @@ function logLPSummary(plans: LandingPagePlan[]): void {
 // Re-exports
 export { buildLandingPagePlans } from './lp-plan-builder.js';
 export { buildLPSections } from './lp-section-builder.js';
+export { getPrototypeAdvice } from './prototype-advisor.js';

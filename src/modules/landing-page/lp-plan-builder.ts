@@ -21,6 +21,7 @@ import { NarrativeType } from '../../domain/entities/narrative.js';
 import type { Source } from '../../domain/entities/source.js';
 import type { BrandingProfile } from '../../domain/entities/branding.js';
 import { SourceType } from '../../domain/value-objects/index.js';
+import type { BookPrototype } from '../../domain/entities/book-prototype.js';
 import type { LandingPagePlan } from '../../domain/entities/landing-page-plan.js';
 import { LeadCaptureIntent, LPSectionType } from '../../domain/entities/landing-page-plan.js';
 
@@ -38,6 +39,7 @@ export function buildLandingPagePlans(
   narratives: NarrativePlan[],
   sources: Source[],
   branding?: BrandingProfile,
+  bookPrototype?: BookPrototype,
 ): LandingPagePlan[] {
   const narrativeMap = new Map(narratives.map((n) => [n.id, n]));
 
@@ -53,7 +55,7 @@ export function buildLandingPagePlans(
     const narrative = narrativeMap.get(decision.narrativePlanId);
     if (!narrative) continue;
 
-    const plan = buildSinglePlan(decision, narrative, sources, branding);
+    const plan = buildSinglePlan(decision, narrative, sources, branding, bookPrototype);
     plans.push(plan);
   }
 
@@ -69,13 +71,14 @@ function buildSinglePlan(
   narrative: NarrativePlan,
   sources: Source[],
   branding?: BrandingProfile,
+  bookPrototype?: BookPrototype,
 ): LandingPagePlan {
   // Resolver sources do plano
   const planSourceIds = new Set(narrative.sourceIds);
   const planSources = sources.filter((s) => planSourceIds.has(s.id));
 
-  // Build sections
-  const sections = buildLPSections(narrative.beats, planSources, branding);
+  // Build sections — com inteligência do bookPrototype quando disponível
+  const sections = buildLPSections(narrative.beats, planSources, branding, bookPrototype);
 
   // Título e slug
   const title = generateLPTitle(narrative, planSources);
