@@ -4,8 +4,15 @@
  * Módulo de pipeline que gera AudioPlans a partir dos
  * MediaPlans e NarrativePlans do contexto.
  *
- * Stage: AUDIO_GENERATION (novo estágio, executado após personalization)
- * Ou pode ser executado standalone fora do pipeline.
+ * Stage: RENDER_EXPORT (executa em paralelo com o render export)
+ *
+ * Fase 1 — Planejamento (sempre):
+ *   Constrói AudioPlans estruturados com segmentos, perfis de voz e trilha.
+ *
+ * Fase 2 — Síntese TTS (quando TTS_SYNTHESIS_ENABLED=true e API key disponível):
+ *   Sintetiza cada segmento em MP3 via ITTSAdapter.
+ *   Salva arquivos em storage/outputs/audio/{planId}/
+ *   Resulta em narração real pronta para uso.
  */
 
 import type { IModule } from '../../domain/interfaces/module.js';
@@ -16,6 +23,8 @@ import { buildAudioPlan, buildAudioOnlyPlan } from './audio-plan-builder.js';
 import { generateMediaScript } from '../../generation/media-script-generator.js';
 import type { AudioPlan, AudioGenerationResult } from '../../domain/entities/audio-plan.js';
 import { NarrativeType, ToneOfVoice } from '../../domain/entities/narrative.js';
+import { tryCreateTTSAdapter } from '../../adapters/provider-factory.js';
+import { TTSSynthesisService } from '../../services/tts-synthesis-service.js';
 
 // Re-exports
 export { buildAudioPlan, buildAudioOnlyPlan } from './audio-plan-builder.js';
@@ -33,12 +42,11 @@ export class AudioModule implements IModule {
     const narratives = context.narratives ?? [];
     const plans: AudioPlan[] = [];
 
-    // 1. Generate audio plans for media plans (voiceover)
+    // 1. Gerar AudioPlans para MediaPlans (voiceover)
     for (const mediaPlan of mediaPlans) {
       const narrative = narratives.find((n) => n.id === mediaPlan.narrativePlanId);
       const tone = narrative?.tone ?? ToneOfVoice.ASPIRACIONAL;
 
-      // Generate script first
       const script = await generateMediaScript(mediaPlan, {
         mode: 'local',
         projectName: mediaPlan.title,
@@ -54,7 +62,7 @@ export class AudioModule implements IModule {
       );
     }
 
-    // 2. Generate audio plans for audio-only narratives (monologue, podcast)
+    // 2. Gerar AudioPlans para narrativas de áudio puro (monólogo, podcast)
     const audioNarratives = narratives.filter(
       (n) => n.narrativeType === NarrativeType.AUDIO_MONOLOGUE
         || n.narrativeType === NarrativeType.AUDIO_PODCAST,
@@ -83,9 +91,57 @@ export class AudioModule implements IModule {
       `${result.totalSegments} segments, ${result.totalDurationSeconds}s`,
     );
 
+    // 3. Síntese TTS real (opcional — ativa somente com TTS_SYNTHESIS_ENABLED=true)
+    if (TTSSynthesisService.isEnabled() && plans.length > 0) {
+      await this.synthesizePlans(plans);
+    } else if (plans.length > 0) {
+      logger.info(
+        '[Audio] TTS synthesis skipped (set TTS_SYNTHESIS_ENABLED=true to activate)',
+      );
+    }
+
     return {
       ...context,
       audioResult: result,
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // TTS Synthesis
+  // ---------------------------------------------------------------------------
+
+  private async synthesizePlans(plans: AudioPlan[]): Promise<void> {
+    const ttsAdapter = tryCreateTTSAdapter();
+
+    if (!ttsAdapter) {
+      logger.warn(
+        '[Audio] TTS_SYNTHESIS_ENABLED=true but no TTS API key found. ' +
+        'Set OPENAI_API_KEY (for openai-tts) or ELEVENLABS_API_KEY (for elevenlabs).',
+      );
+      return;
+    }
+
+    const synthesizer = new TTSSynthesisService();
+    const outputBase = process.env.OUTPUTS_DIR
+      ? `${process.env.OUTPUTS_DIR}/audio`
+      : 'storage/outputs/audio';
+
+    logger.info(
+      `[Audio] Starting TTS synthesis: ${plans.length} plans, ` +
+      `provider=${ttsAdapter.provider}, output=${outputBase}`,
+    );
+
+    for (const plan of plans) {
+      try {
+        const result = await synthesizer.synthesizePlan(plan, ttsAdapter, outputBase);
+        logger.info(
+          `[Audio] ✓ Synthesized "${plan.title}": ` +
+          `${result.totalFiles} files, ${result.totalDurationSeconds}s → ${result.outputDir}`,
+        );
+      } catch (err) {
+        logger.warn(`[Audio] Synthesis failed for "${plan.title}": ${err}`);
+        // Não interrompe o pipeline — continua com os demais planos
+      }
+    }
   }
 }

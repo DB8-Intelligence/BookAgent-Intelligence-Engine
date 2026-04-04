@@ -18,6 +18,12 @@ export const ProcessRequestSchema = z.object({
     region: z.string().optional(),
     logo_url: z.string().url().optional(),
   }).optional().default({}),
+  /**
+   * URL para receber notificação POST quando o job finalizar.
+   * Payload: { source, timestamp, jobId, status, artifacts_count?, duration_ms?, error? }
+   * Ideal para integração com n8n: configure o Webhook Trigger do n8n aqui.
+   */
+  webhook_url: z.string().url().optional(),
 });
 
 export type ProcessRequest = z.infer<typeof ProcessRequestSchema>;

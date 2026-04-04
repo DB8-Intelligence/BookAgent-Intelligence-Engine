@@ -10,14 +10,14 @@
  */
 
 import type { Request, Response } from 'express';
-import { Orchestrator } from '../../core/orchestrator.js';
+import type { IOrchestratorLike } from '../types/orchestrator.js';
 import { sendSuccess, sendError } from '../helpers/response.js';
 import type { ArtifactListItem, ArtifactDetailResponse } from '../types/responses.js';
 import { ExportFormat } from '../../domain/entities/export-artifact.js';
 
-let orchestrator: Orchestrator;
+let orchestrator: IOrchestratorLike;
 
-export function setOrchestrator(orch: Orchestrator): void {
+export function setOrchestrator(orch: IOrchestratorLike): void {
   orchestrator = orch;
 }
 

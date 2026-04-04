@@ -2,16 +2,13 @@
  * Blog Exporter
  *
  * Serializa BlogPlan[] em ExportArtifact[] nos formatos:
- * - HTML (artigo completo pronto para publicação)
+ * - HTML (artigo completo pronto para publicação — texto expandido quando AI disponível)
  * - Markdown (para CMS como WordPress, Ghost, Notion)
  * - JSON (dados estruturados para renderização custom)
  *
- * Gera artigos de blog com:
- * - Metadados SEO (title, description, keywords)
- * - Estrutura de headings (H1, H2, H3)
- * - Seções com conteúdo editorial
- * - CTA final personalizado
- * - Referências a assets (hero image, imagens por seção)
+ * Quando um AITextService é fornecido, os artefatos HTML e Markdown
+ * contêm texto corrido final gerado por IA (ou localmente com fallback).
+ * O JSON sempre serializa o plano estrutural bruto.
  */
 
 import { v4 as uuid } from 'uuid';
@@ -23,6 +20,9 @@ import {
   ArtifactType,
   ArtifactStatus,
 } from '../../domain/entities/export-artifact.js';
+import type { AITextService } from '../../services/ai-text-service.js';
+import type { GeneratedBlogArticle, GeneratedBlogSection } from '../../generation/types.js';
+import { logger } from '../../utils/logger.js';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -31,16 +31,32 @@ import {
 /**
  * Exporta BlogPlans como artefatos de blog.
  * Para cada BlogPlan gera:
- * 1. HTML (artigo completo)
- * 2. Markdown (para CMS)
- * 3. JSON (dados estruturados)
+ * 1. HTML (artigo completo — enriquecido com AI quando disponível)
+ * 2. Markdown (para CMS — enriquecido com AI quando disponível)
+ * 3. JSON (dados estruturados do plano)
+ *
+ * @param plans - BlogPlans gerados pelo pipeline
+ * @param aiService - AITextService opcional; quando fornecido, ativa geração com IA
  */
-export function exportBlogPlans(plans: BlogPlan[]): ExportArtifact[] {
+export async function exportBlogPlans(
+  plans: BlogPlan[],
+  aiService?: AITextService | null,
+): Promise<ExportArtifact[]> {
   const artifacts: ExportArtifact[] = [];
 
   for (const plan of plans) {
-    artifacts.push(buildHTMLArtifact(plan));
-    artifacts.push(buildMarkdownArtifact(plan));
+    // Gerar texto do artigo (AI ou local)
+    let article: GeneratedBlogArticle | null = null;
+    if (aiService) {
+      try {
+        article = await aiService.generateBlog(plan);
+      } catch (err) {
+        logger.warn(`[BlogExporter] Text generation failed for "${plan.title}": ${err}`);
+      }
+    }
+
+    artifacts.push(buildHTMLArtifact(plan, article));
+    artifacts.push(buildMarkdownArtifact(plan, article));
     artifacts.push(buildJSONArtifact(plan));
   }
 
@@ -51,9 +67,11 @@ export function exportBlogPlans(plans: BlogPlan[]): ExportArtifact[] {
 // HTML builder
 // ---------------------------------------------------------------------------
 
-function buildHTMLArtifact(plan: BlogPlan): ExportArtifact {
+function buildHTMLArtifact(plan: BlogPlan, article: GeneratedBlogArticle | null): ExportArtifact {
   const warnings: string[] = [];
-  const html = renderBlogHTML(plan, warnings);
+  const html = article
+    ? renderEnrichedBlogHTML(plan, article, warnings)
+    : renderBlogHTML(plan, warnings);
 
   return {
     id: uuid(),
@@ -73,10 +91,113 @@ function buildHTMLArtifact(plan: BlogPlan): ExportArtifact {
   };
 }
 
+/** HTML com texto expandido gerado por IA (V2) */
+function renderEnrichedBlogHTML(
+  plan: BlogPlan,
+  article: GeneratedBlogArticle,
+  warnings: string[],
+): string {
+  const lines: string[] = [];
+
+  lines.push('<!DOCTYPE html>');
+  lines.push('<html lang="pt-BR">');
+  lines.push('<head>');
+  lines.push('  <meta charset="UTF-8">');
+  lines.push('  <meta name="viewport" content="width=device-width, initial-scale=1.0">');
+  lines.push(`  <title>${escapeHTML(article.title)}</title>`);
+  lines.push(`  <meta name="description" content="${escapeHTML(article.metaDescription)}">`);
+  lines.push(`  <meta name="keywords" content="${article.keywords.join(', ')}">`);
+  lines.push('</head>');
+  lines.push('<body>');
+  lines.push('<article>');
+
+  // Hero image
+  if (plan.heroAssetId) {
+    lines.push('  <figure class="hero-image">');
+    lines.push(`    <img src="{{asset:${plan.heroAssetId}}}" alt="${escapeHTML(article.title)}">`);
+    lines.push('  </figure>');
+  }
+
+  // Title
+  lines.push(`  <h1>${escapeHTML(article.title)}</h1>`);
+
+  // Introduction (expanded text)
+  if (article.introduction) {
+    lines.push('  <div class="introduction">');
+    for (const para of article.introduction.split('\n\n').filter(Boolean)) {
+      lines.push(`    <p>${escapeHTML(para.trim())}</p>`);
+    }
+    lines.push('  </div>');
+  } else {
+    warnings.push('Artigo sem introdução');
+  }
+
+  // Sections (with flowing paragraphs)
+  for (let i = 0; i < article.sections.length; i++) {
+    const section = article.sections[i];
+    const planSection = plan.sections[i];
+    lines.push(renderEnrichedSectionHTML(section, planSection));
+  }
+
+  // Conclusion
+  if (article.conclusion) {
+    lines.push('  <div class="conclusion">');
+    lines.push('    <h2>Conclusão</h2>');
+    for (const para of article.conclusion.split('\n\n').filter(Boolean)) {
+      lines.push(`    <p>${escapeHTML(para.trim())}</p>`);
+    }
+    lines.push('  </div>');
+  }
+
+  // CTA
+  if (article.ctaText) {
+    lines.push('  <div class="cta">');
+    lines.push(`    <p class="cta-text">${escapeHTML(article.ctaText)}</p>`);
+    lines.push('  </div>');
+  }
+
+  lines.push('</article>');
+  lines.push('</body>');
+  lines.push('</html>');
+
+  return lines.join('\n');
+}
+
+function renderEnrichedSectionHTML(
+  section: GeneratedBlogSection,
+  planSection?: BlogSection,
+): string {
+  const lines: string[] = [];
+
+  lines.push(`  <section class="section section--${section.editorialRole}">`);
+  lines.push(`    <h2>${escapeHTML(section.heading)}</h2>`);
+
+  // Asset da seção
+  if (section.assetIds.length > 0) {
+    lines.push('    <figure>');
+    lines.push(`      <img src="{{asset:${section.assetIds[0]}}}" alt="${escapeHTML(section.heading)}">`);
+    lines.push('    </figure>');
+  } else if (planSection?.assetIds?.length) {
+    lines.push('    <figure>');
+    lines.push(`      <img src="{{asset:${planSection.assetIds[0]}}}" alt="${escapeHTML(section.heading)}">`);
+    lines.push('    </figure>');
+  }
+
+  // Parágrafos fluidos gerados por IA
+  for (const paragraph of section.paragraphs) {
+    if (paragraph.trim()) {
+      lines.push(`    <p>${escapeHTML(paragraph.trim())}</p>`);
+    }
+  }
+
+  lines.push('  </section>');
+  return lines.join('\n');
+}
+
+/** HTML com dados brutos do plano (V1 — fallback) */
 function renderBlogHTML(plan: BlogPlan, warnings: string[]): string {
   const lines: string[] = [];
 
-  // HTML document
   lines.push('<!DOCTYPE html>');
   lines.push('<html lang="pt-BR">');
   lines.push('<head>');
@@ -89,17 +210,14 @@ function renderBlogHTML(plan: BlogPlan, warnings: string[]): string {
   lines.push('<body>');
   lines.push('<article>');
 
-  // Hero image
   if (plan.heroAssetId) {
     lines.push(`  <figure class="hero-image">`);
     lines.push(`    <img src="{{asset:${plan.heroAssetId}}}" alt="${escapeHTML(plan.title)}">`);
     lines.push(`  </figure>`);
   }
 
-  // Title
   lines.push(`  <h1>${escapeHTML(plan.title)}</h1>`);
 
-  // Introduction
   if (plan.introduction) {
     lines.push(`  <div class="introduction">`);
     lines.push(`    <p>${escapeHTML(plan.introduction)}</p>`);
@@ -108,12 +226,10 @@ function renderBlogHTML(plan: BlogPlan, warnings: string[]): string {
     warnings.push('Artigo sem introdução');
   }
 
-  // Sections
   for (const section of plan.sections) {
     lines.push(renderSectionHTML(section));
   }
 
-  // Conclusion
   if (plan.conclusion) {
     lines.push(`  <div class="conclusion">`);
     lines.push(`    <h2>Conclusão</h2>`);
@@ -121,7 +237,6 @@ function renderBlogHTML(plan: BlogPlan, warnings: string[]): string {
     lines.push(`  </div>`);
   }
 
-  // CTA
   if (plan.ctaText) {
     lines.push(`  <div class="cta">`);
     lines.push(`    <p class="cta-text">${escapeHTML(plan.ctaText)}</p>`);
@@ -141,14 +256,12 @@ function renderSectionHTML(section: BlogSection): string {
   lines.push(`  <section class="section section--${section.editorialRole}">`);
   lines.push(`    <h2>${escapeHTML(section.heading)}</h2>`);
 
-  // Asset da seção
   if (section.assetIds.length > 0) {
     lines.push(`    <figure>`);
     lines.push(`      <img src="{{asset:${section.assetIds[0]}}}" alt="${escapeHTML(section.heading)}">`);
     lines.push(`    </figure>`);
   }
 
-  // Draft points como parágrafos
   if (section.draftPoints.length > 0) {
     for (const point of section.draftPoints) {
       lines.push(`    <p>${escapeHTML(point)}</p>`);
@@ -165,9 +278,11 @@ function renderSectionHTML(section: BlogSection): string {
 // Markdown builder
 // ---------------------------------------------------------------------------
 
-function buildMarkdownArtifact(plan: BlogPlan): ExportArtifact {
+function buildMarkdownArtifact(plan: BlogPlan, article: GeneratedBlogArticle | null): ExportArtifact {
   const warnings: string[] = [];
-  const md = renderBlogMarkdown(plan, warnings);
+  const md = article
+    ? renderEnrichedBlogMarkdown(plan, article, warnings)
+    : renderBlogMarkdown(plan, warnings);
 
   return {
     id: uuid(),
@@ -187,10 +302,85 @@ function buildMarkdownArtifact(plan: BlogPlan): ExportArtifact {
   };
 }
 
-function renderBlogMarkdown(plan: BlogPlan, warnings: string[]): string {
+/** Markdown com texto expandido gerado por IA (V2) */
+function renderEnrichedBlogMarkdown(
+  plan: BlogPlan,
+  article: GeneratedBlogArticle,
+  _warnings: string[],
+): string {
   const lines: string[] = [];
 
   // Frontmatter
+  lines.push('---');
+  lines.push(`title: "${article.title}"`);
+  lines.push(`slug: "${article.slug}"`);
+  lines.push(`description: "${article.metaDescription}"`);
+  lines.push(`keywords: [${article.keywords.map((k) => `"${k}"`).join(', ')}]`);
+  if (plan.heroAssetId) {
+    lines.push(`heroImage: "{{asset:${plan.heroAssetId}}}"`);
+  }
+  lines.push('---');
+  lines.push('');
+
+  lines.push(`# ${article.title}`);
+  lines.push('');
+
+  if (plan.heroAssetId) {
+    lines.push(`![${article.title}]({{asset:${plan.heroAssetId}}})`);
+    lines.push('');
+  }
+
+  // Introduction
+  if (article.introduction) {
+    lines.push(article.introduction.trim());
+    lines.push('');
+  }
+
+  // Sections
+  for (let i = 0; i < article.sections.length; i++) {
+    const section = article.sections[i];
+    const planSection = plan.sections[i];
+
+    lines.push(`## ${section.heading}`);
+    lines.push('');
+
+    const assetId = section.assetIds[0] ?? planSection?.assetIds?.[0];
+    if (assetId) {
+      lines.push(`![${section.heading}]({{asset:${assetId}}})`);
+      lines.push('');
+    }
+
+    for (const paragraph of section.paragraphs) {
+      if (paragraph.trim()) {
+        lines.push(paragraph.trim());
+        lines.push('');
+      }
+    }
+  }
+
+  // Conclusion
+  if (article.conclusion) {
+    lines.push('## Conclusão');
+    lines.push('');
+    lines.push(article.conclusion.trim());
+    lines.push('');
+  }
+
+  // CTA
+  if (article.ctaText) {
+    lines.push('---');
+    lines.push('');
+    lines.push(`**${article.ctaText.trim()}**`);
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+/** Markdown com dados brutos do plano (V1 — fallback) */
+function renderBlogMarkdown(plan: BlogPlan, warnings: string[]): string {
+  const lines: string[] = [];
+
   lines.push('---');
   lines.push(`title: "${plan.title}"`);
   lines.push(`slug: "${plan.slug}"`);
@@ -202,17 +392,14 @@ function renderBlogMarkdown(plan: BlogPlan, warnings: string[]): string {
   lines.push('---');
   lines.push('');
 
-  // Title
   lines.push(`# ${plan.title}`);
   lines.push('');
 
-  // Hero image
   if (plan.heroAssetId) {
     lines.push(`![${plan.title}]({{asset:${plan.heroAssetId}}})`);
     lines.push('');
   }
 
-  // Introduction
   if (plan.introduction) {
     lines.push(plan.introduction);
     lines.push('');
@@ -220,7 +407,6 @@ function renderBlogMarkdown(plan: BlogPlan, warnings: string[]): string {
     warnings.push('Artigo sem introdução');
   }
 
-  // Sections
   for (const section of plan.sections) {
     lines.push(`## ${section.heading}`);
     lines.push('');
@@ -241,7 +427,6 @@ function renderBlogMarkdown(plan: BlogPlan, warnings: string[]): string {
     }
   }
 
-  // Conclusion
   if (plan.conclusion) {
     lines.push('## Conclusão');
     lines.push('');
@@ -249,7 +434,6 @@ function renderBlogMarkdown(plan: BlogPlan, warnings: string[]): string {
     lines.push('');
   }
 
-  // CTA
   if (plan.ctaText) {
     lines.push('---');
     lines.push('');

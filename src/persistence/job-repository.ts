@@ -1,0 +1,171 @@
+/**
+ * Job Repository — Persistência de Jobs no Supabase
+ *
+ * Gerencia a persistência do ciclo de vida dos jobs no Supabase/Postgres.
+ * Tabela: bookagent_jobs
+ *
+ * Operações:
+ * - createJob: Registra novo job (status=pending)
+ * - updateStatus: Atualiza status durante execução
+ * - completeJob: Salva resultado final + contagens
+ * - failJob: Salva erro
+ * - getJob: Busca por ID
+ * - listJobs: Lista com paginação
+ *
+ * Uso:
+ *   const repo = new JobRepository(client);
+ *   await repo.createJob(job);
+ *   await repo.completeJob(job.id, result);
+ */
+
+import type { Job, JobResult } from '../domain/entities/job.js';
+import type { SupabaseClient } from './supabase-client.js';
+import { logger } from '../utils/logger.js';
+
+// ---------------------------------------------------------------------------
+// DB Row type (matches bookagent_jobs schema)
+// ---------------------------------------------------------------------------
+
+export interface JobRow {
+  id: string;
+  status: string;
+  input_file_url: string;
+  input_type: string;
+  user_context: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  error: string | null;
+  delivery_status: string | null;
+  sources_count: number;
+  narratives_count: number;
+  artifacts_count: number;
+  pipeline_duration_ms: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Repository
+// ---------------------------------------------------------------------------
+
+export class JobRepository {
+  private table = 'bookagent_jobs';
+
+  constructor(private client: SupabaseClient) {}
+
+  /**
+   * Registra um job recém-criado no banco (status=pending).
+   * Chamado no início do processo, antes da execução do pipeline.
+   */
+  async createJob(job: Job): Promise<void> {
+    const row: JobRow = {
+      id: job.id,
+      status: job.status,
+      input_file_url: job.input.fileUrl,
+      input_type: job.input.type,
+      user_context: job.input.userContext as Record<string, unknown>,
+      created_at: job.createdAt.toISOString(),
+      updated_at: job.updatedAt.toISOString(),
+      completed_at: null,
+      error: null,
+      delivery_status: null,
+      sources_count: 0,
+      narratives_count: 0,
+      artifacts_count: 0,
+      pipeline_duration_ms: null,
+    };
+
+    await this.client.insert(this.table, row);
+    logger.info(`[JobRepository] Job ${job.id} created (status=${job.status})`);
+  }
+
+  /**
+   * Atualiza status durante execução (pending → processing).
+   */
+  async updateStatus(jobId: string, status: string): Promise<void> {
+    await this.client.update(
+      this.table,
+      { column: 'id', operator: 'eq', value: jobId },
+      {
+        status,
+        updated_at: new Date().toISOString(),
+      },
+    );
+  }
+
+  /**
+   * Persiste resultado final de um job completado com sucesso.
+   * Extrai contagens e metadata do JobResult.
+   */
+  async completeJob(
+    jobId: string,
+    result: JobResult,
+    durationMs?: number,
+  ): Promise<void> {
+    const artifactsCount = result.exportResult?.totalArtifacts ?? 0;
+    const sourcesCount = result.sources?.length ?? 0;
+    const narrativesCount = result.narratives?.length ?? 0;
+    const deliveryStatus = result.deliveryResult?.status ?? null;
+
+    await this.client.update(
+      this.table,
+      { column: 'id', operator: 'eq', value: jobId },
+      {
+        status: 'completed',
+        updated_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+        delivery_status: deliveryStatus,
+        sources_count: sourcesCount,
+        narratives_count: narrativesCount,
+        artifacts_count: artifactsCount,
+        pipeline_duration_ms: durationMs ?? null,
+      },
+    );
+
+    logger.info(
+      `[JobRepository] Job ${jobId} completed: ` +
+      `${sourcesCount} sources, ${narrativesCount} narratives, ${artifactsCount} artifacts`,
+    );
+  }
+
+  /**
+   * Registra falha de um job.
+   */
+  async failJob(jobId: string, error: string): Promise<void> {
+    await this.client.update(
+      this.table,
+      { column: 'id', operator: 'eq', value: jobId },
+      {
+        status: 'failed',
+        updated_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+        error,
+      },
+    );
+
+    logger.info(`[JobRepository] Job ${jobId} failed: ${error.slice(0, 100)}`);
+  }
+
+  /**
+   * Busca um job pelo ID.
+   * Retorna null se não encontrado.
+   */
+  async getJob(jobId: string): Promise<JobRow | null> {
+    const rows = await this.client.select<JobRow>(this.table, {
+      filters: [{ column: 'id', operator: 'eq', value: jobId }],
+      limit: 1,
+    });
+
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Lista jobs com paginação, ordenados por data de criação (mais recentes primeiro).
+   */
+  async listJobs(limit: number = 50): Promise<JobRow[]> {
+    return this.client.select<JobRow>(this.table, {
+      orderBy: 'created_at',
+      orderDesc: true,
+      limit,
+    });
+  }
+}

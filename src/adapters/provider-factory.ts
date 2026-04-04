@@ -6,14 +6,18 @@
  *
  * Configuração via environment variables:
  * - AI_PROVIDER: "anthropic" | "openai" | "gemini" (default: "anthropic")
- * - TTS_PROVIDER: "openai-tts" (default: "openai-tts")
- * - ANTHROPIC_API_KEY, OPENAI_API_KEY: chaves de API
- * - ANTHROPIC_MODEL, OPENAI_MODEL: modelo a usar
+ * - TTS_PROVIDER: "openai-tts" | "elevenlabs" (default: "openai-tts")
+ * - AI_GENERATION_MODE: "auto" | "ai" | "local" (default: "auto")
+ * - ANTHROPIC_API_KEY, ANTHROPIC_MODEL: Claude
+ * - OPENAI_API_KEY, OPENAI_MODEL: GPT-4o
+ * - GEMINI_API_KEY, GEMINI_MODEL: Google Gemini
+ * - ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID: ElevenLabs TTS
  *
  * Uso:
  *   const ai = createAIAdapter();         // usa env vars
  *   const tts = createTTSAdapter();       // usa env vars
- *   const ai2 = createAIAdapter('openai'); // override explícito
+ *   const ai2 = tryCreateAIAdapter();     // null se sem API key
+ *   const tts2 = tryCreateTTSAdapter();   // null se sem API key
  */
 
 import type { IAIAdapter } from '../domain/interfaces/ai-adapter.js';
@@ -22,6 +26,7 @@ import { AnthropicAdapter } from './ai/anthropic/index.js';
 import { OpenAIAdapter } from './ai/openai/index.js';
 import { GeminiAdapter } from './ai/gemini/index.js';
 import { OpenAITTSAdapter } from './tts/openai/index.js';
+import { ElevenLabsAdapter } from './tts/elevenlabs/index.js';
 
 // ---------------------------------------------------------------------------
 // AI Adapter factory
@@ -32,6 +37,7 @@ export type AIProviderName = 'anthropic' | 'openai' | 'gemini';
 /**
  * Cria um adapter de IA com base no provider especificado.
  * Se não especificado, usa AI_PROVIDER do env (default: "anthropic").
+ * Lança erro se a API key não estiver configurada.
  */
 export function createAIAdapter(provider?: AIProviderName): IAIAdapter {
   const name = provider ?? (process.env.AI_PROVIDER as AIProviderName) ?? 'anthropic';
@@ -50,7 +56,7 @@ export function createAIAdapter(provider?: AIProviderName): IAIAdapter {
 
 /**
  * Tenta criar um adapter de IA. Retorna null se a API key não estiver configurada.
- * Útil para modo graceful degradation: se não há key, usa geração local.
+ * Ideal para graceful degradation: sem key → usa geração local.
  */
 export function tryCreateAIAdapter(provider?: AIProviderName): IAIAdapter | null {
   const name = provider ?? (process.env.AI_PROVIDER as AIProviderName) ?? 'anthropic';
@@ -63,8 +69,8 @@ export function tryCreateAIAdapter(provider?: AIProviderName): IAIAdapter | null
       if (!process.env.OPENAI_API_KEY) return null;
       return new OpenAIAdapter();
     case 'gemini':
-      // Gemini still a stub
-      return null;
+      if (!process.env.GEMINI_API_KEY) return null;
+      return new GeminiAdapter();
     default:
       return null;
   }
@@ -74,11 +80,12 @@ export function tryCreateAIAdapter(provider?: AIProviderName): IAIAdapter | null
 // TTS Adapter factory
 // ---------------------------------------------------------------------------
 
-export type TTSProviderName = 'openai-tts';
+export type TTSProviderName = 'openai-tts' | 'elevenlabs';
 
 /**
  * Cria um adapter de TTS com base no provider especificado.
  * Se não especificado, usa TTS_PROVIDER do env (default: "openai-tts").
+ * Lança erro se a API key não estiver configurada.
  */
 export function createTTSAdapter(provider?: TTSProviderName): ITTSAdapter {
   const name = provider ?? (process.env.TTS_PROVIDER as TTSProviderName) ?? 'openai-tts';
@@ -86,6 +93,8 @@ export function createTTSAdapter(provider?: TTSProviderName): ITTSAdapter {
   switch (name) {
     case 'openai-tts':
       return new OpenAITTSAdapter();
+    case 'elevenlabs':
+      return new ElevenLabsAdapter();
     default:
       throw new Error(`[ProviderFactory] Unknown TTS provider: ${name}`);
   }
@@ -93,6 +102,7 @@ export function createTTSAdapter(provider?: TTSProviderName): ITTSAdapter {
 
 /**
  * Tenta criar um adapter de TTS. Retorna null se a API key não estiver configurada.
+ * Ideal para graceful degradation: sem key → pula síntese de áudio.
  */
 export function tryCreateTTSAdapter(provider?: TTSProviderName): ITTSAdapter | null {
   const name = provider ?? (process.env.TTS_PROVIDER as TTSProviderName) ?? 'openai-tts';
@@ -101,6 +111,9 @@ export function tryCreateTTSAdapter(provider?: TTSProviderName): ITTSAdapter | n
     case 'openai-tts':
       if (!process.env.OPENAI_API_KEY) return null;
       return new OpenAITTSAdapter();
+    case 'elevenlabs':
+      if (!process.env.ELEVENLABS_API_KEY) return null;
+      return new ElevenLabsAdapter();
     default:
       return null;
   }
@@ -111,28 +124,41 @@ export function tryCreateTTSAdapter(provider?: TTSProviderName): ITTSAdapter | n
 // ---------------------------------------------------------------------------
 
 export interface ProviderStatus {
-  ai: { provider: string; available: boolean };
-  tts: { provider: string; available: boolean };
+  ai: {
+    provider: string;
+    available: boolean;
+    mode: string;
+    availableProviders: string[];
+  };
+  tts: { provider: string; available: boolean; synthesisEnabled: boolean };
 }
 
 /**
- * Retorna o status de disponibilidade dos providers configurados.
+ * Retorna o status de disponibilidade de todos os providers configurados.
+ * Útil para health checks e diagnóstico.
+ * Reflete todos os providers com API key, não apenas o padrão (AI_PROVIDER).
  */
 export function checkProviderStatus(): ProviderStatus {
   const aiProvider = (process.env.AI_PROVIDER as AIProviderName) ?? 'anthropic';
   const ttsProvider = (process.env.TTS_PROVIDER as TTSProviderName) ?? 'openai-tts';
+  const aiMode = process.env.AI_GENERATION_MODE ?? 'auto';
 
-  const aiAvailable =
-    (aiProvider === 'anthropic' && !!process.env.ANTHROPIC_API_KEY) ||
-    (aiProvider === 'openai' && !!process.env.OPENAI_API_KEY) ||
-    false;
+  // Quais providers têm chaves configuradas
+  const availableProviders: string[] = [];
+  if (process.env.ANTHROPIC_API_KEY) availableProviders.push('anthropic');
+  if (process.env.OPENAI_API_KEY)    availableProviders.push('openai');
+  if (process.env.GEMINI_API_KEY)    availableProviders.push('gemini');
+
+  const aiAvailable = availableProviders.length > 0;
 
   const ttsAvailable =
     (ttsProvider === 'openai-tts' && !!process.env.OPENAI_API_KEY) ||
-    false;
+    (ttsProvider === 'elevenlabs' && !!process.env.ELEVENLABS_API_KEY);
+
+  const synthesisEnabled = process.env.TTS_SYNTHESIS_ENABLED === 'true';
 
   return {
-    ai: { provider: aiProvider, available: aiAvailable },
-    tts: { provider: ttsProvider, available: ttsAvailable },
+    ai: { provider: aiProvider, available: aiAvailable, mode: aiMode, availableProviders },
+    tts: { provider: ttsProvider, available: ttsAvailable, synthesisEnabled },
   };
 }

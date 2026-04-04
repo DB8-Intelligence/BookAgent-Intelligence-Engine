@@ -12,15 +12,12 @@
  * - Transições entre cenas
  * - Metadados de aspect ratio e resolução
  * - CompositionSpec por cena (modelo formal de camadas separadas)
+ * - Script de narração por cena (gerado localmente ou com IA)
  *
  * POLÍTICA DE PRESERVAÇÃO:
  * Assets originais são REFERENCIADOS por ID, nunca modificados.
- * Cada cena inclui um compositionHint que descreve as camadas
- * de composição (asset base + overlays), respeitando a política
- * de asset immutability.
  *
  * @see ASSET_IMMUTABILITY_POLICY em domain/policies/asset-immutability.ts
- * @see CompositionSpec em domain/entities/composition.ts
  */
 
 import { v4 as uuid } from 'uuid';
@@ -32,10 +29,19 @@ import {
   ArtifactType,
   ArtifactStatus,
 } from '../../domain/entities/export-artifact.js';
+import type { AITextService } from '../../services/ai-text-service.js';
+import type { GeneratedMediaScript, GeneratedSceneScript } from '../../generation/types.js';
+import { logger } from '../../utils/logger.js';
 
 // ---------------------------------------------------------------------------
 // Render Spec structure (JSON output)
 // ---------------------------------------------------------------------------
+
+interface NarrationSpec {
+  headline: string;
+  voiceover: string;
+  visualDescription: string;
+}
 
 interface RenderSpec {
   version: string;
@@ -72,12 +78,7 @@ interface RenderSceneSpec {
     showLogo: boolean;
     visualStyle: string;
   };
-  /**
-   * Modelo formal de composição em camadas.
-   * O asset (assetId) é a camada base (somente leitura).
-   * Overlays de texto e branding são camadas separadas acima.
-   * Nenhuma camada modifica o asset original.
-   */
+  narration: NarrationSpec | null;
   compositionHint: {
     baseAssetReadOnly: boolean;
     layerCount: number;
@@ -108,20 +109,35 @@ interface SocialMetadata {
 /**
  * Exporta MediaPlans como artefatos de renderização.
  * Para cada MediaPlan gera:
- * 1. RENDER_SPEC (JSON com especificação técnica completa)
+ * 1. RENDER_SPEC (JSON com especificação técnica + narração por cena)
  * 2. MEDIA_METADATA (JSON com captions e metadados para publicação)
+ *
+ * @param plans - MediaPlans gerados pelo pipeline
+ * @param aiService - AITextService opcional; quando fornecido, ativa scripts com IA
  */
-export function exportMediaPlans(plans: MediaPlan[]): ExportArtifact[] {
+export async function exportMediaPlans(
+  plans: MediaPlan[],
+  aiService?: AITextService | null,
+): Promise<ExportArtifact[]> {
   const artifacts: ExportArtifact[] = [];
 
   for (const plan of plans) {
-    // Render spec
-    const renderArtifact = buildRenderSpecArtifact(plan);
-    artifacts.push(renderArtifact);
+    // Gerar script de narração (AI ou local — sempre gera, agrega ao spec)
+    let script: GeneratedMediaScript | null = null;
+    try {
+      if (aiService) {
+        script = await aiService.generateMediaScript(plan);
+      } else {
+        // Gerar localmente sem AI (ainda agrega valor ao spec)
+        const { generateMediaScript } = await import('../../generation/media-script-generator.js');
+        script = await generateMediaScript(plan, { mode: 'local', projectName: plan.title ?? undefined });
+      }
+    } catch (err) {
+      logger.warn(`[MediaExporter] Script generation failed for "${plan.title}": ${err}`);
+    }
 
-    // Social metadata
-    const metadataArtifact = buildMetadataArtifact(plan);
-    artifacts.push(metadataArtifact);
+    artifacts.push(buildRenderSpecArtifact(plan, script));
+    artifacts.push(buildMetadataArtifact(plan));
   }
 
   return artifacts;
@@ -131,10 +147,12 @@ export function exportMediaPlans(plans: MediaPlan[]): ExportArtifact[] {
 // Render spec builder
 // ---------------------------------------------------------------------------
 
-function buildRenderSpecArtifact(plan: MediaPlan): ExportArtifact {
+function buildRenderSpecArtifact(
+  plan: MediaPlan,
+  script: GeneratedMediaScript | null,
+): ExportArtifact {
   const warnings: string[] = [];
 
-  // Verificar status de renderização
   if (plan.renderStatus === RenderStatus.NEEDS_ASSETS) {
     warnings.push('Plano necessita de assets adicionais para renderização completa');
   }
@@ -145,9 +163,8 @@ function buildRenderSpecArtifact(plan: MediaPlan): ExportArtifact {
     warnings.push('Plano não está pronto para renderização');
   }
 
-  const spec = buildRenderSpec(plan);
+  const spec = buildRenderSpec(plan, script);
   const content = JSON.stringify(spec, null, 2);
-
   const referencedAssetIds = collectAssetIds(plan.scenes);
 
   const status = plan.renderStatus === RenderStatus.READY
@@ -173,14 +190,24 @@ function buildRenderSpecArtifact(plan: MediaPlan): ExportArtifact {
   };
 }
 
-function buildRenderSpec(plan: MediaPlan): RenderSpec {
+function buildRenderSpec(plan: MediaPlan, script: GeneratedMediaScript | null): RenderSpec {
+  // Indexar cenas do script por order para lookup O(1)
+  const scriptSceneMap = new Map<number, GeneratedSceneScript>();
+  if (script) {
+    for (const scene of script.scenes) {
+      scriptSceneMap.set(scene.order, scene);
+    }
+  }
+
   return {
     version: '1.0.0',
     format: plan.format,
     aspectRatio: plan.aspectRatio?.label ?? '9:16',
     resolution: plan.resolution ?? [1080, 1920],
     totalDurationSeconds: plan.totalDurationSeconds,
-    scenes: plan.scenes.map(buildRenderSceneSpec),
+    scenes: plan.scenes.map((scene) =>
+      buildRenderSceneSpec(scene, scriptSceneMap.get(scene.order) ?? null),
+    ),
     branding: {
       logoUrl: (plan.renderMetadata?.userLogo as string) ?? null,
       logoPlacement: (plan.renderMetadata?.userLogoPlacement as string) ?? null,
@@ -190,10 +217,22 @@ function buildRenderSpec(plan: MediaPlan): RenderSpec {
   };
 }
 
-function buildRenderSceneSpec(scene: MediaScene): RenderSceneSpec {
+function buildRenderSceneSpec(
+  scene: MediaScene,
+  scriptScene: GeneratedSceneScript | null,
+): RenderSceneSpec {
   const hasAsset = scene.assetIds.length > 0;
   const hasText = scene.textOverlays.length > 0;
   const hasBranding = scene.branding.showLogo;
+
+  // Narração: usa script gerado se disponível
+  const narration: NarrationSpec | null = scriptScene
+    ? {
+        headline: scriptScene.headline,
+        voiceover: scriptScene.narration,
+        visualDescription: scriptScene.visualDescription,
+      }
+    : null;
 
   return {
     order: scene.order,
@@ -215,13 +254,13 @@ function buildRenderSceneSpec(scene: MediaScene): RenderSceneSpec {
       showLogo: scene.branding.showLogo,
       visualStyle: scene.branding.visualStyle,
     },
-    // Modelo formal de composição: asset é base read-only, overlays são camadas separadas
+    narration,
     compositionHint: {
       baseAssetReadOnly: hasAsset,
       layerCount: (hasAsset ? 1 : 0) + (hasText ? 1 : 0) + (hasBranding ? 1 : 0) + 1,
       hasTextOverlay: hasText,
       hasBrandingOverlay: hasBranding,
-      hasVisualEffect: hasAsset && hasText, // gradiente scrim para legibilidade
+      hasVisualEffect: hasAsset && hasText,
     },
   };
 }
@@ -252,17 +291,13 @@ function buildMetadataArtifact(plan: MediaPlan): ExportArtifact {
 }
 
 function buildSocialMetadata(plan: MediaPlan): SocialMetadata {
-  // Extrair caption dos text overlays da primeira cena
   const firstScene = plan.scenes[0];
   const headline = firstScene?.textOverlays.find((o) => o.role === 'headline')?.text ?? '';
   const ctaScene = plan.scenes.find((s) => s.role === 'cta');
   const ctaText = ctaScene?.textOverlays.find((o) => o.role === 'cta')?.text ?? '';
 
-  // Gerar caption combinando headline e CTA
   const captionParts = [headline, ctaText].filter(Boolean);
   const caption = captionParts.join(' | ');
-
-  // Gerar hashtags a partir dos overlays e títulos
   const hashtags = generateHashtags(plan);
 
   return {
@@ -279,11 +314,9 @@ function buildSocialMetadata(plan: MediaPlan): SocialMetadata {
 function generateHashtags(plan: MediaPlan): string[] {
   const tags = new Set<string>();
 
-  // Tags padrão imobiliário
   tags.add('#imoveis');
   tags.add('#lancamento');
 
-  // Tags baseadas nos overlays
   for (const scene of plan.scenes) {
     for (const overlay of scene.textOverlays) {
       const words = overlay.text

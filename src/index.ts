@@ -4,8 +4,12 @@
  * Inicializa o servidor Express, registra os módulos no pipeline
  * e configura as rotas da API.
  *
+ * Quando SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY estão configurados,
+ * usa PersistentOrchestrator que persiste jobs, artifacts e eventos no banco.
+ * Caso contrário, usa Orchestrator in-memory (modo standalone).
+ *
  * Endpoints:
- *   GET  /health                                    → Health check
+ *   GET  /health                                    → Health check + status de providers
  *   POST /api/v1/process                            → Iniciar processamento
  *   GET  /api/v1/jobs                               → Listar jobs
  *   GET  /api/v1/jobs/:jobId                        → Detalhe do job
@@ -20,15 +24,26 @@ import express from 'express';
 import { config } from './config/index.js';
 import { logger } from './utils/logger.js';
 import { Orchestrator } from './core/orchestrator.js';
+import { SupabaseClient } from './persistence/supabase-client.js';
+import { PersistentOrchestrator } from './persistence/persistent-orchestrator.js';
+import { StorageManager } from './persistence/storage-manager.js';
+import { checkProviderStatus } from './adapters/provider-factory.js';
 
 // --- Controllers (dependency injection) ---
 import { setOrchestrator as setProcessOrch } from './api/controllers/processController.js';
-import { setOrchestrator as setJobsOrch } from './api/controllers/jobsController.js';
+import { setOrchestrator as setJobsOrch, setJobRepository } from './api/controllers/jobsController.js';
 import { setOrchestrator as setArtifactsOrch } from './api/controllers/artifactsController.js';
+import { setSupabaseClientForApproval } from './api/controllers/approvalController.js';
+
+// --- Queue ---
+import { getQueue, QUEUE_NAME } from './queue/queue.js';
+import { isRedisConfigured } from './queue/connection.js';
+import { JobRepository } from './persistence/job-repository.js';
 
 // --- Routes ---
 import processRoutes from './api/routes/process.js';
 import jobsRoutes from './api/routes/jobs.js';
+import approvalRoutes from './api/routes/approval.js';
 
 // --- Middleware ---
 import { errorHandler } from './api/middleware/error-handler.js';
@@ -50,8 +65,32 @@ import { PersonalizationModule } from './modules/personalization/index.js';
 import { RenderExportModule } from './modules/render-export/index.js';
 import { DeliveryModule } from './modules/delivery/index.js';
 
-// --- Bootstrap ---
-const orchestrator = new Orchestrator();
+// ============================================================================
+// Bootstrap
+// ============================================================================
+
+// Garantir diretórios de storage ao iniciar
+const storageManager = new StorageManager();
+storageManager.ensureDirectories().catch((err) => {
+  logger.warn(`[Bootstrap] Failed to create storage directories: ${err}`);
+});
+
+// Criar orchestrator base
+const baseOrchestrator = new Orchestrator();
+
+// Determinar se usar PersistentOrchestrator (com Supabase) ou base (in-memory)
+let orchestrator: Orchestrator | PersistentOrchestrator;
+let persistenceMode: 'supabase' | 'memory' = 'memory';
+
+const supabaseClient = SupabaseClient.tryFromEnv();
+if (supabaseClient) {
+  orchestrator = new PersistentOrchestrator(baseOrchestrator, supabaseClient);
+  persistenceMode = 'supabase';
+  logger.info('[Bootstrap] Persistence mode: Supabase (jobs + artifacts will be persisted)');
+} else {
+  orchestrator = baseOrchestrator;
+  logger.info('[Bootstrap] Persistence mode: in-memory (configure SUPABASE_URL to enable persistence)');
+}
 
 // Registrar todos os 15 módulos no pipeline (ordem definida em pipeline.ts)
 orchestrator.registerModule(new IngestionModule());
@@ -75,18 +114,54 @@ setProcessOrch(orchestrator);
 setJobsOrch(orchestrator);
 setArtifactsOrch(orchestrator);
 
-// --- Express ---
+// Injetar JobRepository no jobsController (fallback para leitura no Supabase)
+if (supabaseClient) {
+  setJobRepository(new JobRepository(supabaseClient));
+  setSupabaseClientForApproval(supabaseClient);
+}
+
+// Inicializar fila (se Redis configurado)
+const queueMode = isRedisConfigured();
+if (queueMode) {
+  const q = getQueue();
+  if (q) {
+    logger.info(`[Bootstrap] Queue mode: BullMQ (queue="${QUEUE_NAME}")`);
+  } else {
+    logger.warn('[Bootstrap] Redis configured but queue init failed — using sync mode');
+  }
+} else {
+  logger.info('[Bootstrap] Queue mode: sync (configure REDIS_URL to enable async processing)');
+}
+
+// ============================================================================
+// Express
+// ============================================================================
+
 const app = express();
 
 app.use(express.json({ limit: '10mb' }));
 
-// Health check
+// Health check — inclui status de providers e persistence
 app.get('/health', (_req, res) => {
+  const providers = checkProviderStatus();
+
   res.json({
     status: 'ok',
     engine: 'bookagent-intelligence-engine',
     version: '0.2.0',
     uptime: process.uptime(),
+    persistence: {
+      mode: persistenceMode,
+      supabase: persistenceMode === 'supabase',
+    },
+    queue: {
+      mode:    queueMode ? 'bullmq' : 'sync',
+      enabled: queueMode,
+    },
+    providers: {
+      ai: providers.ai,
+      tts: providers.tts,
+    },
   });
 });
 
@@ -94,13 +169,19 @@ app.get('/health', (_req, res) => {
 const prefix = config.api.prefix;
 app.use(`${prefix}/process`, processRoutes);
 app.use(`${prefix}/jobs`, jobsRoutes);
+app.use(`${prefix}/jobs`, approvalRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);
 
 app.listen(config.port, () => {
+  const status = checkProviderStatus();
+
   logger.info(`BookAgent Intelligence Engine running on port ${config.port}`);
   logger.info(`API prefix: ${prefix}`);
+  logger.info(`Persistence: ${persistenceMode}`);
+  logger.info(`AI Provider: ${status.ai.provider} (${status.ai.available ? 'configured' : 'no key — local mode'})`);
+  logger.info(`TTS Provider: ${status.tts.provider} (${status.tts.available ? 'configured' : 'no key'})`);
   logger.info(`Endpoints:`);
   logger.info(`  POST ${prefix}/process`);
   logger.info(`  GET  ${prefix}/jobs`);
@@ -110,6 +191,13 @@ app.listen(config.port, () => {
   logger.info(`  GET  ${prefix}/jobs/:jobId/artifacts`);
   logger.info(`  GET  ${prefix}/jobs/:jobId/artifacts/:id`);
   logger.info(`  GET  ${prefix}/jobs/:jobId/artifacts/:id/download`);
+  logger.info(`  GET  ${prefix}/jobs/:jobId/dashboard`);
+  logger.info(`  POST ${prefix}/jobs/:jobId/approve`);
+  logger.info(`  POST ${prefix}/jobs/:jobId/reject`);
+  logger.info(`  POST ${prefix}/jobs/:jobId/comment`);
+  logger.info(`  GET  ${prefix}/jobs/:jobId/comments`);
+  logger.info(`  POST ${prefix}/jobs/:jobId/publish`);
+  logger.info(`  GET  ${prefix}/jobs/:jobId/publications`);
 });
 
 export default app;

@@ -1,26 +1,40 @@
 /**
- * Logger utilitário.
+ * Logger utilitário — BookAgent Intelligence Engine
  *
- * Wrapper simples sobre console para padronizar logs.
- * Evolução futura: integração com winston/pino, log levels, structured logging.
+ * Wrapper sobre console com log levels e structured output.
+ * Parte 53: removido ruído de string vazia, adicionado nível fatal.
  */
+
+function formatData(data: unknown): string {
+  if (data === undefined || data === null) return '';
+  if (typeof data === 'string') return ` ${data}`;
+  try {
+    return ` ${JSON.stringify(data)}`;
+  } catch {
+    return ` [unserializable]`;
+  }
+}
 
 export const logger = {
   info: (message: string, data?: unknown) => {
-    console.log(`[INFO] ${new Date().toISOString()} ${message}`, data ?? '');
+    console.log(`[INFO] ${new Date().toISOString()} ${message}${formatData(data)}`);
   },
 
   warn: (message: string, data?: unknown) => {
-    console.warn(`[WARN] ${new Date().toISOString()} ${message}`, data ?? '');
+    console.warn(`[WARN] ${new Date().toISOString()} ${message}${formatData(data)}`);
   },
 
   error: (message: string, data?: unknown) => {
-    console.error(`[ERROR] ${new Date().toISOString()} ${message}`, data ?? '');
+    console.error(`[ERROR] ${new Date().toISOString()} ${message}${formatData(data)}`);
+  },
+
+  fatal: (message: string, data?: unknown) => {
+    console.error(`[FATAL] ${new Date().toISOString()} ${message}${formatData(data)}`);
   },
 
   debug: (message: string, data?: unknown) => {
     if (process.env.DEBUG) {
-      console.debug(`[DEBUG] ${new Date().toISOString()} ${message}`, data ?? '');
+      console.debug(`[DEBUG] ${new Date().toISOString()} ${message}${formatData(data)}`);
     }
   },
 };

@@ -17,13 +17,25 @@ import { v4 as uuidv4 } from 'uuid';
 import { JobStatus } from '../domain/value-objects/index.js';
 import type { Job, JobInput, JobResult } from '../domain/entities/job.js';
 
+/** Máximo de jobs mantidos em memória. Evita crescimento ilimitado em produção. */
+const MAX_IN_MEMORY_JOBS = 500;
+
 export class JobManager {
   private jobs: Map<string, Job> = new Map();
 
   /**
    * Cria um novo job no estado PENDING.
+   * Se o limite MAX_IN_MEMORY_JOBS for atingido, remove os jobs mais antigos (FIFO).
    */
   createJob(input: JobInput): Job {
+    if (this.jobs.size >= MAX_IN_MEMORY_JOBS) {
+      // Remove o job mais antigo (primeiro inserido no Map)
+      const oldestKey = this.jobs.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.jobs.delete(oldestKey);
+      }
+    }
+
     const job: Job = {
       id: uuidv4(),
       status: JobStatus.PENDING,

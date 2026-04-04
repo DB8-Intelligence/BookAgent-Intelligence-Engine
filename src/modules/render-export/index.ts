@@ -5,18 +5,20 @@
  * LandingPagePlan) em artefatos exportáveis prontos para consumo.
  *
  * Pipeline interno:
- * 1. Exportar MediaPlans → RENDER_SPEC (JSON) + MEDIA_METADATA (JSON)
- * 2. Exportar BlogPlans → HTML + Markdown + JSON
- * 3. Exportar LandingPagePlans → HTML + JSON
+ * 1. Exportar MediaPlans → RENDER_SPEC (com narração) + MEDIA_METADATA
+ * 2. Exportar BlogPlans → HTML (texto expandido) + Markdown + JSON
+ * 3. Exportar LandingPagePlans → HTML (copy gerada) + JSON
  * 4. Validar artefatos e consolidar resultado
  *
+ * Quando AI_PROVIDER + API key estão configurados e AI_GENERATION_MODE
+ * não é 'local', os artefatos HTML/MD contêm texto final gerado por IA.
+ * Fallback automático para geração local se IA não estiver disponível.
+ *
  * Cada artefato é auto-contido e rastreável ao plano de origem.
- * Assets são referenciados por ID ({{asset:<id>}}) nos templates,
- * permitindo resolução lazy no momento da renderização final.
+ * Assets são referenciados por ID ({{asset:<id>}}) nos templates.
  *
  * Este módulo NÃO renderiza vídeo/imagem — ele gera especificações
- * técnicas (render specs) que podem ser consumidas por motores
- * externos (FFmpeg, Remotion, Canvas, Sharp, etc.).
+ * técnicas (render specs) e texto editorializado pronto para publicação.
  */
 
 import { PipelineStage } from '../../domain/value-objects/index.js';
@@ -25,6 +27,8 @@ import { ArtifactType, ArtifactStatus } from '../../domain/entities/export-artif
 import type { IModule } from '../../domain/interfaces/module.js';
 import type { ProcessingContext } from '../../core/context.js';
 import { logger } from '../../utils/logger.js';
+import { createProviderRouter } from '../../adapters/provider-router.js';
+import { AITextService } from '../../services/ai-text-service.js';
 
 import { exportMediaPlans } from './media-exporter.js';
 import { exportBlogPlans } from './blog-exporter.js';
@@ -44,19 +48,38 @@ export class RenderExportModule implements IModule {
         `${mediaPlans.length} media, ${blogPlans.length} blog, ${lpPlans.length} LP`,
     );
 
-    // --- Etapa 1: Exportar MediaPlans ---
+    // ProviderRouter resolve o melhor adapter por tipo de conteúdo
+    // Graceful degradation: sem chaves → geração local para todas as tarefas
+    const router = createProviderRouter();
+    const aiService = router.hasAnyProvider()
+      ? new AITextService(router)
+      : null;
+
+    if (aiService) {
+      const table = router.getRoutingTable();
+      const mode = process.env.AI_GENERATION_MODE ?? 'auto';
+      logger.info(
+        `[RenderExport] AI text generation active (mode=${mode}, ` +
+        `blog=${table.blog ?? 'local'}, landing=${table.landing_page ?? 'local'}, ` +
+        `media=${table.media_script ?? 'local'})`,
+      );
+    } else {
+      logger.info('[RenderExport] No AI keys — using local text generation for all tasks');
+    }
+
+    // --- Etapa 1: Exportar MediaPlans (async — com narração) ---
     const mediaArtifacts = mediaPlans.length > 0
-      ? exportMediaPlans(mediaPlans)
+      ? await exportMediaPlans(mediaPlans, aiService)
       : [];
 
-    // --- Etapa 2: Exportar BlogPlans ---
+    // --- Etapa 2: Exportar BlogPlans (async — com texto expandido) ---
     const blogArtifacts = blogPlans.length > 0
-      ? exportBlogPlans(blogPlans)
+      ? await exportBlogPlans(blogPlans, aiService)
       : [];
 
-    // --- Etapa 3: Exportar LandingPagePlans ---
+    // --- Etapa 3: Exportar LandingPagePlans (async — com copy gerada) ---
     const lpArtifacts = lpPlans.length > 0
-      ? exportLandingPagePlans(lpPlans)
+      ? await exportLandingPagePlans(lpPlans, aiService)
       : [];
 
     // --- Consolidar resultado ---
@@ -110,7 +133,6 @@ function logExportSummary(result: ExportResult): void {
     logger.warn(`[RenderExport] ${result.invalid} artefatos inválidos`);
   }
 
-  // Log detalhado por artefato
   for (const artifact of result.artifacts) {
     const sizeKB = (artifact.sizeBytes / 1024).toFixed(1);
     const statusIcon = artifact.status === 'valid' ? '✓'
