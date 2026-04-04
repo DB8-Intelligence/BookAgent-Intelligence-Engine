@@ -29,4 +29,8 @@ export interface ExtractionOptions {
   generateThumbnails?: boolean;
   minWidth?: number;
   minHeight?: number;
+  /** Estratégia de extração decidida pelo BookCompatibilityAnalysis */
+  strategy?: 'embedded-extraction' | 'page-render' | 'hybrid' | 'manual-review';
+  /** DPI para renderização de página (usado em page-render e hybrid) */
+  renderDpi?: number;
 }

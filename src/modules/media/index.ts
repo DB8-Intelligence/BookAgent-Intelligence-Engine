@@ -50,8 +50,9 @@ export class MediaGenerationModule implements IModule {
       return { ...context, mediaPlans: [], outputs: [] };
     }
 
-    // --- Build media plans ---
-    const plans = buildMediaPlans(decisions, narratives, sources, assets, branding);
+    // --- Build media plans (com inteligência do bookPrototype) ---
+    const bookPrototype = context.bookPrototype;
+    const plans = buildMediaPlans(decisions, narratives, sources, assets, branding, bookPrototype);
 
     // --- Log ---
     logMediaSummary(plans);

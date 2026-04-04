@@ -19,6 +19,8 @@ import { BeatRole } from '../../domain/entities/narrative.js';
 import type { BrandingProfile } from '../../domain/entities/branding.js';
 import type { Source } from '../../domain/entities/source.js';
 import type { Asset } from '../../domain/entities/asset.js';
+import type { BookPrototype } from '../../domain/entities/book-prototype.js';
+import { CompositionPattern } from '../../domain/entities/book-prototype.js';
 import type {
   MediaScene,
   TextOverlay,
@@ -64,16 +66,25 @@ const ROLE_TRANSITION: Record<BeatRole, TransitionType> = {
 
 /**
  * Compõe cenas a partir de beats narrativos.
+ *
+ * Quando bookPrototype está disponível, os layout hints são refinados
+ * com base nos padrões de composição detectados no book original.
+ * Isso garante que os outputs respeitem o estilo editorial do material.
  */
 export function composeScenes(
   beats: NarrativeBeat[],
   sources: Source[],
   assets: Asset[],
   branding?: BrandingProfile,
+  bookPrototype?: BookPrototype,
 ): MediaScene[] {
   const sourceMap = new Map(sources.map((s) => [s.id, s]));
   const assetMap = new Map(assets.map((a) => [a.id, a]));
   const brandingInstr = buildBrandingInstruction(branding);
+
+  // Extrair padrão dominante do book (se disponível)
+  const dominantPattern = bookPrototype?.layoutPatterns?.[0]?.compositionPattern;
+  const designMode = bookPrototype?.designHierarchy?.dominantMode;
 
   return beats.map((beat, index) => {
     const source = beat.sourceId ? sourceMap.get(beat.sourceId) : undefined;
@@ -84,9 +95,12 @@ export function composeScenes(
     // Gerar text overlays
     const textOverlays = buildTextOverlays(beat, source);
 
-    // Determinar layout
+    // Determinar layout — refinado pelo bookPrototype quando disponível
     const hasVisuals = resolvedAssetIds.length > 0 && beat.showVisuals;
-    const layoutHint = determineLayout(beat.role, hasVisuals, resolvedAssetIds.length);
+    const layoutHint = determineLayout(
+      beat.role, hasVisuals, resolvedAssetIds.length,
+      dominantPattern, designMode,
+    );
 
     // Ajustar branding por cena (CTA usa accent como background)
     const sceneBranding = beat.role === BeatRole.CTA
@@ -163,10 +177,26 @@ function buildTextOverlays(
 // Layout determination
 // ---------------------------------------------------------------------------
 
+/** Mapeia CompositionPattern do book para LayoutHint de mídia */
+const COMPOSITION_TO_LAYOUT: Partial<Record<CompositionPattern, LayoutHint>> = {
+  [CompositionPattern.FULL_BLEED_OVERLAY]: LayoutHint.FULL_BLEED,
+  [CompositionPattern.SPLIT_HORIZONTAL]: LayoutHint.SPLIT_HORIZONTAL,
+  [CompositionPattern.SPLIT_VERTICAL]: LayoutHint.SPLIT_VERTICAL,
+  [CompositionPattern.GRID]: LayoutHint.GRID,
+  [CompositionPattern.TEXT_CENTERED]: LayoutHint.TEXT_CENTERED,
+  [CompositionPattern.SINGLE_COLUMN]: LayoutHint.SPLIT_VERTICAL,
+  [CompositionPattern.TWO_COLUMN]: LayoutHint.SPLIT_HORIZONTAL,
+  [CompositionPattern.INSET]: LayoutHint.OVERLAY,
+  [CompositionPattern.MINIMAL]: LayoutHint.MINIMAL,
+  [CompositionPattern.CARD_BLOCK]: LayoutHint.OVERLAY,
+};
+
 function determineLayout(
   role: BeatRole,
   hasVisuals: boolean,
   assetCount: number,
+  dominantPattern?: CompositionPattern,
+  designMode?: 'image-first' | 'text-first' | 'balanced',
 ): LayoutHint {
   // No visuals → text centered
   if (!hasVisuals) return LayoutHint.TEXT_CENTERED;
@@ -174,8 +204,34 @@ function determineLayout(
   // Multiple assets → grid
   if (assetCount >= 3) return LayoutHint.GRID;
 
-  // Default: role-based
-  return ROLE_LAYOUT[role] ?? LayoutHint.OVERLAY;
+  // Role-based default
+  const roleDefault = ROLE_LAYOUT[role] ?? LayoutHint.OVERLAY;
+
+  // Se não há bookPrototype, usar apenas role-based
+  if (!dominantPattern) return roleDefault;
+
+  // Com bookPrototype: refinar com base no estilo do book
+  // Para HOOK e SHOWCASE: respeitar o padrão dominante do book
+  if (role === BeatRole.HOOK || role === BeatRole.SHOWCASE || role === BeatRole.LIFESTYLE) {
+    const bookLayout = COMPOSITION_TO_LAYOUT[dominantPattern];
+    if (bookLayout) return bookLayout;
+  }
+
+  // Para image-first books: preferir full-bleed em cenas visuais
+  if (designMode === 'image-first' && hasVisuals) {
+    if (role !== BeatRole.CTA && role !== BeatRole.SOCIAL_PROOF) {
+      return LayoutHint.FULL_BLEED;
+    }
+  }
+
+  // Para text-first books: preferir overlays e splits
+  if (designMode === 'text-first' && hasVisuals) {
+    if (roleDefault === LayoutHint.FULL_BLEED) {
+      return LayoutHint.OVERLAY;
+    }
+  }
+
+  return roleDefault;
 }
 
 // ---------------------------------------------------------------------------

@@ -25,6 +25,7 @@ import { RenderStatus } from '../../domain/entities/media-plan.js';
 import { OUTPUT_SPECS } from '../../domain/entities/output-spec.js';
 import type { AspectRatio } from '../../domain/value-objects/index.js';
 import { ASPECT_RATIOS } from '../../domain/value-objects/index.js';
+import type { BookPrototype } from '../../domain/entities/book-prototype.js';
 
 import { composeScenes } from './scene-composer.js';
 
@@ -47,6 +48,7 @@ export function buildMediaPlans(
   sources: Source[],
   assets: Asset[],
   branding?: BrandingProfile,
+  bookPrototype?: BookPrototype,
 ): MediaPlan[] {
   const narrativeMap = new Map(narratives.map((n) => [n.id, n]));
 
@@ -63,7 +65,7 @@ export function buildMediaPlans(
     const narrative = narrativeMap.get(decision.narrativePlanId);
     if (!narrative) continue;
 
-    const plan = buildSinglePlan(decision, narrative, sources, assets, branding);
+    const plan = buildSinglePlan(decision, narrative, sources, assets, branding, bookPrototype);
     plans.push(plan);
   }
 
@@ -87,9 +89,10 @@ function buildSinglePlan(
   sources: Source[],
   assets: Asset[],
   branding?: BrandingProfile,
+  bookPrototype?: BookPrototype,
 ): MediaPlan {
-  // Compor cenas
-  const scenes = composeScenes(narrative.beats, sources, assets, branding);
+  // Compor cenas — com inteligência do bookPrototype quando disponível
+  const scenes = composeScenes(narrative.beats, sources, assets, branding, bookPrototype);
 
   // Resolver aspect ratio e resolução
   const specKey = formatToSpecKey(decision.format);

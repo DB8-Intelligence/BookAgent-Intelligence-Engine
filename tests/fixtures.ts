@@ -81,6 +81,7 @@ export function createMockAsset(overrides?: Partial<Asset>): Asset {
     sizeBytes: 250000,
     origin: AssetOrigin.PDF_EXTRACTED,
     hash: 'abc123def456',
+    isOriginal: true as const,
     ...overrides,
   };
 }

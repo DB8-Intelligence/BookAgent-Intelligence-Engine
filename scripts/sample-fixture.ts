@@ -208,6 +208,7 @@ export const SAMPLE_ASSETS: Asset[] = [
     format: 'jpg',
     sizeBytes: 850_000,
     origin: AssetOrigin.PDF_EXTRACTED,
+    isOriginal: true as const,
     hash: 'a1b2c3d4e5f6',
   },
   {
@@ -219,6 +220,7 @@ export const SAMPLE_ASSETS: Asset[] = [
     format: 'png',
     sizeBytes: 45_000,
     origin: AssetOrigin.PDF_EXTRACTED,
+    isOriginal: true as const,
     hash: 'b2c3d4e5f6a1',
   },
   // Página 2 — Conceito
@@ -231,6 +233,7 @@ export const SAMPLE_ASSETS: Asset[] = [
     format: 'jpg',
     sizeBytes: 620_000,
     origin: AssetOrigin.PDF_EXTRACTED,
+    isOriginal: true as const,
     hash: 'c3d4e5f6a1b2',
   },
   // Página 3 — Lazer
@@ -243,6 +246,7 @@ export const SAMPLE_ASSETS: Asset[] = [
     format: 'jpg',
     sizeBytes: 720_000,
     origin: AssetOrigin.PDF_EXTRACTED,
+    isOriginal: true as const,
     hash: 'd4e5f6a1b2c3',
   },
   {
@@ -254,6 +258,7 @@ export const SAMPLE_ASSETS: Asset[] = [
     format: 'jpg',
     sizeBytes: 480_000,
     origin: AssetOrigin.PDF_EXTRACTED,
+    isOriginal: true as const,
     hash: 'e5f6a1b2c3d4',
   },
   // Página 4 — Lazer cont.
@@ -266,6 +271,7 @@ export const SAMPLE_ASSETS: Asset[] = [
     format: 'jpg',
     sizeBytes: 550_000,
     origin: AssetOrigin.PDF_EXTRACTED,
+    isOriginal: true as const,
     hash: 'f6a1b2c3d4e5',
   },
   // Página 5 — Diferenciais
@@ -278,6 +284,7 @@ export const SAMPLE_ASSETS: Asset[] = [
     format: 'jpg',
     sizeBytes: 390_000,
     origin: AssetOrigin.PDF_EXTRACTED,
+    isOriginal: true as const,
     hash: 'a1f6b2e5c3d4',
   },
   // Página 6 — Acabamentos
@@ -290,6 +297,7 @@ export const SAMPLE_ASSETS: Asset[] = [
     format: 'jpg',
     sizeBytes: 320_000,
     origin: AssetOrigin.PDF_EXTRACTED,
+    isOriginal: true as const,
     hash: 'b2a1c3f6d4e5',
   },
   {
@@ -301,6 +309,7 @@ export const SAMPLE_ASSETS: Asset[] = [
     format: 'jpg',
     sizeBytes: 310_000,
     origin: AssetOrigin.PDF_EXTRACTED,
+    isOriginal: true as const,
     hash: 'c3b2d4a1e5f6',
   },
   // Página 7 — Plantas
@@ -313,6 +322,7 @@ export const SAMPLE_ASSETS: Asset[] = [
     format: 'png',
     sizeBytes: 180_000,
     origin: AssetOrigin.PDF_EXTRACTED,
+    isOriginal: true as const,
     hash: 'd4c3e5b2f6a1',
   },
   {
@@ -324,6 +334,7 @@ export const SAMPLE_ASSETS: Asset[] = [
     format: 'png',
     sizeBytes: 195_000,
     origin: AssetOrigin.PDF_EXTRACTED,
+    isOriginal: true as const,
     hash: 'e5d4f6c3a1b2',
   },
   // Página 8 — Localização
@@ -336,6 +347,7 @@ export const SAMPLE_ASSETS: Asset[] = [
     format: 'jpg',
     sizeBytes: 420_000,
     origin: AssetOrigin.PDF_EXTRACTED,
+    isOriginal: true as const,
     hash: 'f6e5a1d4b2c3',
   },
   // Página 10 — CTA
@@ -348,6 +360,7 @@ export const SAMPLE_ASSETS: Asset[] = [
     format: 'jpg',
     sizeBytes: 680_000,
     origin: AssetOrigin.PDF_EXTRACTED,
+    isOriginal: true as const,
     hash: 'a1b2e5f6c3d4',
   },
 ];
