@@ -20,6 +20,8 @@ import type { LandingPagePlan } from '../domain/entities/landing-page-plan.js';
 import type { PersonalizationResult } from '../domain/entities/personalization.js';
 import type { ExportResult } from '../domain/entities/export-artifact.js';
 import type { AudioGenerationResult } from '../domain/entities/audio-plan.js';
+import type { BookCompatibilityProfile } from '../domain/entities/book-compatibility.js';
+import type { BookPrototype } from '../domain/entities/book-prototype.js';
 import type { Source } from '../domain/entities/source.js';
 import type { JobInput } from '../domain/entities/job.js';
 import type { ModuleExecutionLog } from '../domain/entities/module-log.js';
@@ -36,6 +38,12 @@ export interface ProcessingContext {
   extractedText?: string;
   pageTexts?: Array<{ pageNumber: number; text: string }>;
   localFilePath?: string;
+
+  // --- Populado pelo Book Compatibility Analysis ---
+  bookCompatibility?: BookCompatibilityProfile;
+
+  // --- Populado pelo Book Reverse Engineering ---
+  bookPrototype?: BookPrototype;
 
   // --- Populado pelo Asset Extraction ---
   assets?: Asset[];

@@ -53,6 +53,8 @@ export enum OutputFormat {
 
 export enum PipelineStage {
   INGESTION = 'ingestion',
+  BOOK_ANALYSIS = 'book_analysis',
+  REVERSE_ENGINEERING = 'reverse_engineering',
   EXTRACTION = 'extraction',
   CORRELATION = 'correlation',
   BRANDING = 'branding',

@@ -5,15 +5,18 @@
  * de estágio em estágio. Registra logs de execução automaticamente.
  *
  * Ordem de execução:
- *   1. Ingestion       → recebe arquivo, extrai texto bruto
- *   2. Extraction      → extrai imagens e assets do material
- *   3. Correlation     → correlaciona texto ↔ imagem
- *   4. Branding        → identifica paleta de cores, estilo, tipografia
- *   5. Source Intel     → classifica e estrutura fontes
- *   6. Narrative        → gera narrativas por fonte
- *   7. Output Selection → decide quais formatos gerar
- *   8. Media Generation → gera os outputs finais
- *   9. Personalization  → aplica logo, CTA e dados do usuário
+ *   1. Ingestion              → recebe arquivo, extrai texto bruto
+ *   2. Book Analysis          → analisa compatibilidade do PDF, decide strategy
+ *   3. Reverse Engineering    → analisa estrutura editorial, gera protótipo
+ *   4. Extraction             → extrai imagens e assets do material
+ *   5. Correlation            → correlaciona texto ↔ imagem
+ *   6. Branding               → identifica paleta de cores, estilo, tipografia
+ *   7. Source Intel            → classifica e estrutura fontes
+ *   8. Narrative              → gera narrativas por fonte
+ *   9. Output Selection       → decide quais formatos gerar
+ *  10. Media Generation       → gera os outputs finais
+ *  11. Personalization        → aplica logo, CTA e dados do usuário
+ *  12. Render/Export          → renderiza e exporta artefatos finais
  */
 
 import type { ProcessingContext } from './context.js';
@@ -28,6 +31,8 @@ import { logger } from '../utils/logger.js';
 /** Ordem fixa de execução dos estágios */
 const STAGE_ORDER: PipelineStage[] = [
   PipelineStage.INGESTION,
+  PipelineStage.BOOK_ANALYSIS,
+  PipelineStage.REVERSE_ENGINEERING,
   PipelineStage.EXTRACTION,
   PipelineStage.CORRELATION,
   PipelineStage.BRANDING,
