@@ -107,6 +107,11 @@ export class Pipeline {
       sources: context.sources ?? [],
       outputs: context.outputs ?? [],
       branding: context.branding ?? EMPTY_BRANDING,
+      selectedOutputs: context.selectedOutputs,
+      mediaPlans: context.mediaPlans,
+      blogPlans: context.blogPlans,
+      landingPagePlans: context.landingPagePlans,
+      exportResult: context.exportResult,
     };
   }
 

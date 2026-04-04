@@ -1,18 +1,14 @@
 /**
  * Routes: Process
  *
- * Endpoints para processamento de materiais:
- *
- * POST /process       → Iniciar processamento
- * GET  /process/:id   → Consultar status do job
+ * POST /process — Iniciar processamento de material
  */
 
 import { Router } from 'express';
-import { createProcess, getProcessStatus } from '../controllers/processController.js';
+import { createProcess } from '../controllers/processController.js';
 
 const router = Router();
 
 router.post('/', createProcess);
-router.get('/:jobId', getProcessStatus);
 
 export default router;

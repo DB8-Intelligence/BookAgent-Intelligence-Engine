@@ -10,6 +10,11 @@ import type { Source } from './source.js';
 import type { GeneratedOutput } from './output.js';
 import type { BrandingProfile } from './branding.js';
 import type { UserContext } from './user-context.js';
+import type { MediaPlan } from './media-plan.js';
+import type { BlogPlan } from './blog-plan.js';
+import type { LandingPagePlan } from './landing-page-plan.js';
+import type { OutputDecision } from './output-decision.js';
+import type { ExportResult } from './export-artifact.js';
 import type { InputType, JobStatus } from '../value-objects/index.js';
 
 export interface JobInput {
@@ -23,6 +28,21 @@ export interface JobResult {
   sources: Source[];
   outputs: GeneratedOutput[];
   branding: BrandingProfile;
+
+  /** Decisões de viabilidade por formato */
+  selectedOutputs?: OutputDecision[];
+
+  /** Planos de mídia gerados */
+  mediaPlans?: MediaPlan[];
+
+  /** Planos de blog gerados */
+  blogPlans?: BlogPlan[];
+
+  /** Planos de landing page gerados */
+  landingPagePlans?: LandingPagePlan[];
+
+  /** Resultado da exportação (artifacts) */
+  exportResult?: ExportResult;
 }
 
 export interface Job {
