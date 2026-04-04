@@ -19,6 +19,7 @@ import type { BlogPlan } from '../domain/entities/blog-plan.js';
 import type { LandingPagePlan } from '../domain/entities/landing-page-plan.js';
 import type { PersonalizationResult } from '../domain/entities/personalization.js';
 import type { ExportResult } from '../domain/entities/export-artifact.js';
+import type { AudioGenerationResult } from '../domain/entities/audio-plan.js';
 import type { Source } from '../domain/entities/source.js';
 import type { JobInput } from '../domain/entities/job.js';
 import type { ModuleExecutionLog } from '../domain/entities/module-log.js';
@@ -66,6 +67,9 @@ export interface ProcessingContext {
 
   // --- Populado pelo Personalization ---
   personalization?: PersonalizationResult;
+
+  // --- Populado pelo Audio ---
+  audioResult?: AudioGenerationResult;
 
   // --- Populado pelo Render/Export ---
   exportResult?: ExportResult;

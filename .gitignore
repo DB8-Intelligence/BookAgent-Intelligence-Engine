@@ -5,6 +5,7 @@ storage/outputs/*
 storage/temp/*
 storage/sample-run/
 storage/video-demo/
+storage/validation/
 !storage/assets/.gitkeep
 !storage/outputs/.gitkeep
 !storage/temp/.gitkeep
