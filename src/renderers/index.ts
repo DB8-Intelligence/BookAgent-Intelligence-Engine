@@ -93,3 +93,4 @@ export function renderAll(
 export { renderBlog, type BlogRenderResult } from './blog-renderer.js';
 export { renderLandingPage, type LandingPageRenderResult } from './landing-page-renderer.js';
 export { renderStoryboard, type StoryboardRenderResult } from './media-storyboard-renderer.js';
+export { renderVideo, checkFFmpeg, type VideoRenderOptions, type VideoRenderResult } from './video/index.js';
