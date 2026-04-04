@@ -11,9 +11,16 @@
  * - Instruções de branding (cores, logo)
  * - Transições entre cenas
  * - Metadados de aspect ratio e resolução
+ * - CompositionSpec por cena (modelo formal de camadas separadas)
  *
- * Também gera artefatos MEDIA_METADATA com captions, hashtags e
- * metadados para publicação em redes sociais.
+ * POLÍTICA DE PRESERVAÇÃO:
+ * Assets originais são REFERENCIADOS por ID, nunca modificados.
+ * Cada cena inclui um compositionHint que descreve as camadas
+ * de composição (asset base + overlays), respeitando a política
+ * de asset immutability.
+ *
+ * @see ASSET_IMMUTABILITY_POLICY em domain/policies/asset-immutability.ts
+ * @see CompositionSpec em domain/entities/composition.ts
  */
 
 import { v4 as uuid } from 'uuid';
@@ -64,6 +71,19 @@ interface RenderSceneSpec {
     accentColor: string;
     showLogo: boolean;
     visualStyle: string;
+  };
+  /**
+   * Modelo formal de composição em camadas.
+   * O asset (assetId) é a camada base (somente leitura).
+   * Overlays de texto e branding são camadas separadas acima.
+   * Nenhuma camada modifica o asset original.
+   */
+  compositionHint: {
+    baseAssetReadOnly: boolean;
+    layerCount: number;
+    hasTextOverlay: boolean;
+    hasBrandingOverlay: boolean;
+    hasVisualEffect: boolean;
   };
 }
 
@@ -171,6 +191,10 @@ function buildRenderSpec(plan: MediaPlan): RenderSpec {
 }
 
 function buildRenderSceneSpec(scene: MediaScene): RenderSceneSpec {
+  const hasAsset = scene.assetIds.length > 0;
+  const hasText = scene.textOverlays.length > 0;
+  const hasBranding = scene.branding.showLogo;
+
   return {
     order: scene.order,
     role: scene.role,
@@ -190,6 +214,14 @@ function buildRenderSceneSpec(scene: MediaScene): RenderSceneSpec {
       accentColor: scene.branding.accentColor,
       showLogo: scene.branding.showLogo,
       visualStyle: scene.branding.visualStyle,
+    },
+    // Modelo formal de composição: asset é base read-only, overlays são camadas separadas
+    compositionHint: {
+      baseAssetReadOnly: hasAsset,
+      layerCount: (hasAsset ? 1 : 0) + (hasText ? 1 : 0) + (hasBranding ? 1 : 0) + 1,
+      hasTextOverlay: hasText,
+      hasBrandingOverlay: hasBranding,
+      hasVisualEffect: hasAsset && hasText, // gradiente scrim para legibilidade
     },
   };
 }

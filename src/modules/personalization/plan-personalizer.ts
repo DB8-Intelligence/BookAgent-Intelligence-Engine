@@ -8,6 +8,12 @@
  *
  * Preserva o branding original do material — a personalização
  * do usuário é uma camada adicional, não uma substituição.
+ *
+ * POLÍTICA DE PRESERVAÇÃO: Este módulo NÃO modifica assets originais.
+ * Logo, CTA e dados do usuário são adicionados como overlays em camada
+ * separada (branding.showLogo, textOverlays, renderMetadata).
+ *
+ * @see ASSET_IMMUTABILITY_POLICY em domain/policies/asset-immutability.ts
  */
 
 import type { PersonalizationProfile } from '../../domain/entities/personalization.js';
