@@ -34,6 +34,8 @@ import { setOrchestrator as setProcessOrch } from './api/controllers/processCont
 import { setOrchestrator as setJobsOrch, setJobRepository } from './api/controllers/jobsController.js';
 import { setOrchestrator as setArtifactsOrch } from './api/controllers/artifactsController.js';
 import { setSupabaseClientForApproval } from './api/controllers/approvalController.js';
+import { setPlanGuardSupabaseClient } from './api/middleware/plan-guard.js';
+import { metrics } from './observability/metrics.js';
 
 // --- Queue ---
 import { getQueue, QUEUE_NAME } from './queue/queue.js';
@@ -118,6 +120,8 @@ setArtifactsOrch(orchestrator);
 if (supabaseClient) {
   setJobRepository(new JobRepository(supabaseClient));
   setSupabaseClientForApproval(supabaseClient);
+  setPlanGuardSupabaseClient(supabaseClient);
+  metrics.setSupabaseClient(supabaseClient);
 }
 
 // Inicializar fila (se Redis configurado)
@@ -161,6 +165,10 @@ app.get('/health', (_req, res) => {
     providers: {
       ai: providers.ai,
       tts: providers.tts,
+    },
+    plans: {
+      available: ['basic', 'pro', 'business'],
+      enforcement: 'active',
     },
   });
 });
