@@ -43,6 +43,9 @@ import { RenderExportModule } from '../src/modules/render-export/index.js';
 // Fixture
 import { createSampleContext, SAMPLE_PAGE_TEXTS, SAMPLE_ASSETS } from './sample-fixture.js';
 
+// Renderers
+import { renderAll } from '../src/renderers/index.js';
+
 // ---------------------------------------------------------------------------
 // Branding Stub — injeta um BrandingProfile fake (sem Sharp)
 // ---------------------------------------------------------------------------
@@ -252,8 +255,28 @@ async function main() {
   console.log(`[TIMING] Pipeline executado em ${elapsed}ms`);
   console.log();
 
+  // --- Rich Rendering ---
+  console.log('[RENDER] Generating polished outputs...');
+  const rendered = renderAll(
+    ctx.blogPlans ?? [],
+    ctx.landingPagePlans ?? [],
+    ctx.mediaPlans ?? [],
+    ctx.personalization?.profile,
+  );
+  console.log(`[RENDER] ${rendered.totalOutputs} outputs rendered:`);
+  for (const b of rendered.blogs) {
+    console.log(`  Blog: "${b.title}" — ${b.result.wordCount} words, ${b.result.sectionCount} sections`);
+  }
+  for (const lp of rendered.landingPages) {
+    console.log(`  LP: "${lp.title}" — ${lp.result.sectionCount} sections, form=${lp.result.hasForm}, cta=${lp.result.hasCTA}`);
+  }
+  for (const sb of rendered.storyboards) {
+    console.log(`  Storyboard: "${sb.title}" [${sb.format}] — ${sb.result.sceneCount} scenes, ${sb.result.totalDuration ?? '?'}s, status=${sb.result.renderStatus}`);
+  }
+  console.log();
+
   // --- Save to disk ---
-  await saveResults(ctx);
+  await saveResults(ctx, rendered);
 
   console.log('='.repeat(70));
   console.log('  SAMPLE RUN COMPLETE');
@@ -265,7 +288,7 @@ async function main() {
 // Save results to disk
 // ---------------------------------------------------------------------------
 
-async function saveResults(ctx: ProcessingContext) {
+async function saveResults(ctx: ProcessingContext, rendered?: import('../src/renderers/index.js').RenderedOutput) {
   await mkdir(OUTPUT_DIR, { recursive: true });
 
   // Summary JSON
@@ -320,6 +343,30 @@ async function saveResults(ctx: ProcessingContext) {
       const filename = `${safeName}--${safeFormat}.${ext}`;
       await writeFile(join(artifactsDir, filename), artifact.content);
       console.log(`[SAVE] artifacts/${filename}`);
+    }
+  }
+
+  // Rich rendered outputs
+  if (rendered) {
+    const renderedDir = join(OUTPUT_DIR, 'rendered');
+    await mkdir(renderedDir, { recursive: true });
+
+    for (const blog of rendered.blogs) {
+      await writeFile(join(renderedDir, `blog--${blog.slug}.html`), blog.result.html);
+      console.log(`[SAVE] rendered/blog--${blog.slug}.html`);
+      await writeFile(join(renderedDir, `blog--${blog.slug}.md`), blog.result.markdown);
+      console.log(`[SAVE] rendered/blog--${blog.slug}.md`);
+    }
+
+    for (const lp of rendered.landingPages) {
+      await writeFile(join(renderedDir, `lp--${lp.slug}.html`), lp.result.html);
+      console.log(`[SAVE] rendered/lp--${lp.slug}.html`);
+    }
+
+    for (const sb of rendered.storyboards) {
+      const safeName = sb.format.replace(/[^a-z0-9_]/g, '-');
+      await writeFile(join(renderedDir, `storyboard--${safeName}.html`), sb.result.html);
+      console.log(`[SAVE] rendered/storyboard--${safeName}.html`);
     }
   }
 }
