@@ -85,7 +85,7 @@ app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     engine: 'bookagent-intelligence-engine',
-    version: '0.1.0',
+    version: '0.2.0',
     uptime: process.uptime(),
   });
 });

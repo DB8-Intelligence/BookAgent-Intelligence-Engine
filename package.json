@@ -1,6 +1,6 @@
 {
   "name": "bookagent-intelligence-engine",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Motor de inteligência documental e geração de conteúdo multimodal para o mercado imobiliário",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,7 +11,8 @@
     "lint": "eslint src/ --ext .ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "sample": "tsx scripts/sample-run.ts"
+    "sample": "tsx scripts/sample-run.ts",
+    "validate": "tsc --noEmit && vitest run && tsx scripts/sample-run.ts"
   },
   "keywords": [
     "real-estate",
