@@ -24,6 +24,7 @@ import type { ProcessingContext } from '../../core/context.js';
 import { PipelineStage } from '../../domain/value-objects/index.js';
 import { classifyAllPages } from './page-classifier.js';
 import { buildBookPrototype } from './layout-analyzer.js';
+import { logger } from '../../utils/logger.js';
 
 // Re-exports
 export { classifyPage, classifyAllPages } from './page-classifier.js';
@@ -43,18 +44,14 @@ export class BookReverseEngineeringModule implements IModule {
     const assets = context.assets ?? [];
 
     if (pageTexts.length === 0) {
-      console.log(
-        `[INFO] ${new Date().toISOString()} [${this.name}] Skipping — no page texts available`,
-      );
+      logger.info(`[${this.name}] Skipping — no page texts available`);
       return context;
     }
 
     const startTime = Date.now();
 
     // 1. Classify all pages
-    console.log(
-      `[INFO] ${new Date().toISOString()} [${this.name}] Analyzing ${pageTexts.length} pages...`,
-    );
+    logger.info(`[${this.name}] Analyzing ${pageTexts.length} pages...`);
 
     const archetypes = classifyAllPages(pageTexts, assets);
 
@@ -63,30 +60,16 @@ export class BookReverseEngineeringModule implements IModule {
     const prototype = buildBookPrototype(archetypes, analysisTimeMs);
 
     // 3. Log results
-    console.log(
-      `[INFO] ${new Date().toISOString()} [${this.name}] Pages classified: ${prototype.pageCount}`,
-    );
-    console.log(
-      `[INFO] ${new Date().toISOString()} [${this.name}] Layout patterns found: ${prototype.layoutPatterns.length}`,
-    );
-    console.log(
-      `[INFO] ${new Date().toISOString()} [${this.name}] Design mode: ${prototype.designHierarchy.dominantMode}`,
-    );
-    console.log(
-      `[INFO] ${new Date().toISOString()} [${this.name}] Consistency score: ${prototype.consistencyScore.toFixed(2)}`,
-    );
-    console.log(
-      `[INFO] ${new Date().toISOString()} [${this.name}] Archetype distribution: ${JSON.stringify(prototype.archetypeDistribution)}`,
-    );
-    console.log(
-      `[INFO] ${new Date().toISOString()} [${this.name}] Narrative flow: ${prototype.designHierarchy.hasNarrativeFlow ? 'detected' : 'not detected'}`,
-    );
+    logger.info(`[${this.name}] Pages classified: ${prototype.pageCount}`);
+    logger.info(`[${this.name}] Layout patterns found: ${prototype.layoutPatterns.length}`);
+    logger.info(`[${this.name}] Design mode: ${prototype.designHierarchy.dominantMode}`);
+    logger.info(`[${this.name}] Consistency score: ${prototype.consistencyScore.toFixed(2)}`);
+    logger.info(`[${this.name}] Archetype distribution: ${JSON.stringify(prototype.archetypeDistribution)}`);
+    logger.info(`[${this.name}] Narrative flow: ${prototype.designHierarchy.hasNarrativeFlow ? 'detected' : 'not detected'}`);
 
     if (prototype.layoutPatterns.length > 0) {
       const top = prototype.layoutPatterns[0];
-      console.log(
-        `[INFO] ${new Date().toISOString()} [${this.name}] Dominant pattern: "${top.name}" (${top.frequency} pages)`,
-      );
+      logger.info(`[${this.name}] Dominant pattern: "${top.name}" (${top.frequency} pages)`);
     }
 
     return {

@@ -56,14 +56,17 @@ export enum PipelineStage {
   BOOK_ANALYSIS = 'book_analysis',
   REVERSE_ENGINEERING = 'reverse_engineering',
   EXTRACTION = 'extraction',
-  CORRELATION = 'correlation',
   BRANDING = 'branding',
+  CORRELATION = 'correlation',
   SOURCE_INTELLIGENCE = 'source_intelligence',
   NARRATIVE = 'narrative',
   OUTPUT_SELECTION = 'output_selection',
   MEDIA_GENERATION = 'media_generation',
+  BLOG = 'blog',
+  LANDING_PAGE = 'landing_page',
   PERSONALIZATION = 'personalization',
   RENDER_EXPORT = 'render_export',
+  DELIVERY = 'delivery',
 }
 
 /** Origem de um asset no sistema */

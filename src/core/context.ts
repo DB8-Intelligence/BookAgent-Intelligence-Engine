@@ -22,6 +22,7 @@ import type { ExportResult } from '../domain/entities/export-artifact.js';
 import type { AudioGenerationResult } from '../domain/entities/audio-plan.js';
 import type { BookCompatibilityProfile } from '../domain/entities/book-compatibility.js';
 import type { BookPrototype } from '../domain/entities/book-prototype.js';
+import type { DeliveryResult } from '../domain/entities/delivery.js';
 import type { Source } from '../domain/entities/source.js';
 import type { JobInput } from '../domain/entities/job.js';
 import type { ModuleExecutionLog } from '../domain/entities/module-log.js';
@@ -81,6 +82,9 @@ export interface ProcessingContext {
 
   // --- Populado pelo Render/Export ---
   exportResult?: ExportResult;
+
+  // --- Populado pelo Delivery ---
+  deliveryResult?: DeliveryResult;
 
   // --- Gerenciado pelo Pipeline ---
   /** Log de execução de cada módulo (preenchido automaticamente pelo Pipeline) */

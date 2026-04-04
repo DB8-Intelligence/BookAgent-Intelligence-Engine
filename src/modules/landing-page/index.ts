@@ -29,7 +29,7 @@ import { logger } from '../../utils/logger.js';
 import { buildLandingPagePlans } from './lp-plan-builder.js';
 
 export class LandingPageModule implements IModule {
-  readonly stage = PipelineStage.MEDIA_GENERATION;
+  readonly stage = PipelineStage.LANDING_PAGE;
   readonly name = 'Landing Page Engine';
 
   async run(context: ProcessingContext): Promise<ProcessingContext> {

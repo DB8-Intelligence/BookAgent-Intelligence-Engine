@@ -8,14 +8,12 @@
  * Estratégia:
  * - Bypassa Ingestion, Extraction e Branding (requerem arquivo real / Sharp)
  * - Injeta dados de fixture realistas no ProcessingContext
- * - Executa sequencialmente: Correlation → Source Intelligence → Narrative →
- *   Output Selection → Media → Blog → Landing Page →
- *   Personalization → Render/Export
+ * - Executa todos os 15 estágios do pipeline (com stubs para os 3 primeiros)
+ * - Ordem: Ingestion(stub) → BookAnalysis(stub) → ReverseEngineering →
+ *   Extraction(stub) → Branding(stub) → Correlation → SourceIntelligence →
+ *   Narrative → OutputSelection → Media → Blog → LandingPage →
+ *   Personalization → RenderExport → Delivery
  * - Gera relatório detalhado no console e em storage/sample-run/
- *
- * Nota: Blog e Landing Page compartilham PipelineStage.MEDIA_GENERATION
- * com o MediaGenerationModule, então são executados manualmente em
- * sequência fora do Pipeline formal.
  *
  * Uso:
  *   npx tsx scripts/sample-run.ts
@@ -30,6 +28,7 @@ import { PipelineStage } from '../src/domain/value-objects/index.js';
 import { EMPTY_BRANDING } from '../src/domain/entities/branding.js';
 
 // Pipeline modules
+import { BookReverseEngineeringModule } from '../src/modules/book-reverse-engineering/index.js';
 import { CorrelationModule } from '../src/modules/correlation/index.js';
 import { SourceIntelligenceModule } from '../src/modules/source-intelligence/index.js';
 import { NarrativeModule } from '../src/modules/narrative/index.js';
@@ -39,12 +38,56 @@ import { BlogModule } from '../src/modules/blog/index.js';
 import { LandingPageModule } from '../src/modules/landing-page/index.js';
 import { PersonalizationModule } from '../src/modules/personalization/index.js';
 import { RenderExportModule } from '../src/modules/render-export/index.js';
+import { DeliveryModule } from '../src/modules/delivery/index.js';
 
 // Fixture
 import { createSampleContext, SAMPLE_PAGE_TEXTS, SAMPLE_ASSETS } from './sample-fixture.js';
 
 // Renderers
 import { renderAll } from '../src/renderers/index.js';
+
+// ---------------------------------------------------------------------------
+// BookCompatibility Stub — injeta perfil de compatibilidade
+// ---------------------------------------------------------------------------
+
+class BookCompatibilityStubModule implements IModule {
+  readonly stage = PipelineStage.BOOK_ANALYSIS;
+  readonly name = 'BookCompatibility (Stub)';
+
+  async run(context: ProcessingContext): Promise<ProcessingContext> {
+    const { BookStructureType, ExtractionStrategy, ExtractionConfidence } = await import('../src/domain/entities/book-compatibility.js');
+    return {
+      ...context,
+      bookCompatibility: {
+        structureType: BookStructureType.EMBEDDED_ASSETS,
+        recommendedStrategy: ExtractionStrategy.EMBEDDED_EXTRACTION,
+        confidence: ExtractionConfidence.HIGH,
+        rationale: 'Fixture: PDF com imagens embutidas e texto vetorial.',
+        warnings: [],
+        analysisTimeMs: 2,
+        signals: {
+          pageCount: (context.pageTexts ?? []).length,
+          embeddedImageCount: (context.assets ?? []).length,
+          avgEmbeddedImageSize: 250000,
+          pagesWithEmbeddedImages: 0.8,
+          hasVectorText: true,
+          avgTextPerPage: 500,
+          hasHighResImages: true,
+          hasRasterizedPages: false,
+          rasterizedPageRatio: 0,
+          creatorTool: 'Adobe InDesign',
+          hasLayerIndicators: false,
+          fileSizeBytes: 5_000_000,
+          imageToFileSizeRatio: 0.65,
+        },
+        strategyScores: [
+          { strategy: ExtractionStrategy.EMBEDDED_EXTRACTION, score: 0.9, confidence: ExtractionConfidence.HIGH, rationale: 'Imagens embutidas de alta qualidade' },
+          { strategy: ExtractionStrategy.PAGE_RENDER, score: 0.6, confidence: ExtractionConfidence.MEDIUM, rationale: 'Possível mas desnecessário' },
+        ],
+      },
+    };
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Branding Stub — injeta um BrandingProfile fake (sem Sharp)
@@ -128,8 +171,16 @@ async function main() {
   console.log();
   const startTime = Date.now();
 
-  ctx = await runModule(new CorrelationModule(), ctx);
+  // Stages 1-4: Ingestion + BookAnalysis + ReverseEngineering + Extraction → stubs/real
+  // (Ingestion and Extraction are bypassed via fixture; BookAnalysis stubbed)
+  ctx = await runModule(new BookCompatibilityStubModule(), ctx);
+  ctx = await runModule(new BookReverseEngineeringModule(), ctx);
+
+  // Stage 5: Branding (stub — requires Sharp for real execution)
   ctx = await runModule(new BrandingStubModule(), ctx);
+
+  // Stages 6-15: Real modules
+  ctx = await runModule(new CorrelationModule(), ctx);
   ctx = await runModule(new SourceIntelligenceModule(), ctx);
   ctx = await runModule(new NarrativeModule(), ctx);
   ctx = await runModule(new OutputSelectionModule(), ctx);
@@ -138,6 +189,7 @@ async function main() {
   ctx = await runModule(new LandingPageModule(), ctx);
   ctx = await runModule(new PersonalizationModule(), ctx);
   ctx = await runModule(new RenderExportModule(), ctx);
+  ctx = await runModule(new DeliveryModule(), ctx);
 
   const elapsed = Date.now() - startTime;
   console.log();
@@ -251,6 +303,26 @@ async function main() {
   }
   console.log();
 
+  // Book Prototype
+  const prototype = ctx.bookPrototype;
+  if (prototype) {
+    console.log(`[BOOK PROTOTYPE] ${prototype.pageCount} pages analyzed:`);
+    console.log(`  Design mode: ${prototype.designHierarchy.dominantMode}`);
+    console.log(`  Consistency: ${prototype.consistencyScore.toFixed(2)}`);
+    console.log(`  Layout patterns: ${prototype.layoutPatterns.length}`);
+    console.log(`  Archetypes: ${JSON.stringify(prototype.archetypeDistribution)}`);
+    console.log();
+  }
+
+  // Delivery
+  const delivery = ctx.deliveryResult;
+  if (delivery) {
+    console.log(`[DELIVERY] status=${delivery.status}, artifacts=${delivery.totalArtifacts}`);
+    console.log(`  channels: ${delivery.channels.join(', ')}`);
+    console.log(`  summary: ${delivery.summary}`);
+    console.log();
+  }
+
   // Timing
   console.log(`[TIMING] Pipeline executado em ${elapsed}ms`);
   console.log();
@@ -295,9 +367,11 @@ async function saveResults(ctx: ProcessingContext, rendered?: import('../src/ren
   const summary = {
     jobId: ctx.jobId,
     pipelineStages: [
-      'correlation', 'branding (stub)', 'source_intelligence', 'narrative',
-      'output_selection', 'media_generation', 'blog', 'landing_page',
-      'personalization', 'render_export',
+      'ingestion (fixture)', 'book_analysis (stub)', 'reverse_engineering',
+      'extraction (fixture)', 'branding (stub)', 'correlation',
+      'source_intelligence', 'narrative', 'output_selection',
+      'media_generation', 'blog', 'landing_page',
+      'personalization', 'render_export', 'delivery',
     ],
     correlations: (ctx.correlations ?? []).length,
     sources: (ctx.sources ?? []).map((s) => ({

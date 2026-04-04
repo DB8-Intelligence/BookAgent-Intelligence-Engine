@@ -33,32 +33,42 @@ import jobsRoutes from './api/routes/jobs.js';
 // --- Middleware ---
 import { errorHandler } from './api/middleware/error-handler.js';
 
-// --- Módulos do Pipeline ---
+// --- Módulos do Pipeline (15 estágios) ---
 import { IngestionModule } from './modules/ingestion/index.js';
+import { BookCompatibilityAnalysisModule } from './modules/book-compatibility-analysis/index.js';
+import { BookReverseEngineeringModule } from './modules/book-reverse-engineering/index.js';
 import { AssetExtractionModule } from './modules/asset-extraction/index.js';
-import { CorrelationModule } from './modules/correlation/index.js';
 import { BrandingModule } from './modules/branding/index.js';
+import { CorrelationModule } from './modules/correlation/index.js';
 import { SourceIntelligenceModule } from './modules/source-intelligence/index.js';
 import { NarrativeModule } from './modules/narrative/index.js';
 import { OutputSelectionModule } from './modules/output-selection/index.js';
 import { MediaGenerationModule } from './modules/media/index.js';
+import { BlogModule } from './modules/blog/index.js';
+import { LandingPageModule } from './modules/landing-page/index.js';
 import { PersonalizationModule } from './modules/personalization/index.js';
 import { RenderExportModule } from './modules/render-export/index.js';
+import { DeliveryModule } from './modules/delivery/index.js';
 
 // --- Bootstrap ---
 const orchestrator = new Orchestrator();
 
-// Registrar todos os módulos no pipeline
+// Registrar todos os 15 módulos no pipeline (ordem definida em pipeline.ts)
 orchestrator.registerModule(new IngestionModule());
+orchestrator.registerModule(new BookCompatibilityAnalysisModule());
+orchestrator.registerModule(new BookReverseEngineeringModule());
 orchestrator.registerModule(new AssetExtractionModule());
-orchestrator.registerModule(new CorrelationModule());
 orchestrator.registerModule(new BrandingModule());
+orchestrator.registerModule(new CorrelationModule());
 orchestrator.registerModule(new SourceIntelligenceModule());
 orchestrator.registerModule(new NarrativeModule());
 orchestrator.registerModule(new OutputSelectionModule());
 orchestrator.registerModule(new MediaGenerationModule());
+orchestrator.registerModule(new BlogModule());
+orchestrator.registerModule(new LandingPageModule());
 orchestrator.registerModule(new PersonalizationModule());
 orchestrator.registerModule(new RenderExportModule());
+orchestrator.registerModule(new DeliveryModule());
 
 // Compartilhar orchestrator com todos os controllers
 setProcessOrch(orchestrator);

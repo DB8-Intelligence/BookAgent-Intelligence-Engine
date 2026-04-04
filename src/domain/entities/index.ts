@@ -36,3 +36,5 @@ export type {
 export { LogoPlacement } from './personalization.js';
 export type { ExportArtifact, ExportResult } from './export-artifact.js';
 export { ExportFormat, ArtifactType, ArtifactStatus } from './export-artifact.js';
+export type { DeliveryResult, DeliveryManifestEntry } from './delivery.js';
+export { DeliveryStatus, DeliveryChannel } from './delivery.js';

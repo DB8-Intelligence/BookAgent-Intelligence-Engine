@@ -23,6 +23,7 @@ import { PipelineStage } from '../../domain/value-objects/index.js';
 import { inspectPDF } from './pdf-inspector.js';
 import { recommendStrategy } from './strategy-recommender.js';
 import type { BookCompatibilityProfile } from '../../domain/entities/book-compatibility.js';
+import { logger } from '../../utils/logger.js';
 
 // Re-exports
 export { inspectPDF } from './pdf-inspector.js';
@@ -38,18 +39,14 @@ export class BookCompatibilityAnalysisModule implements IModule {
     const pageCount = pageTexts.length;
 
     if (!filePath) {
-      console.log(
-        `[INFO] ${new Date().toISOString()} [${this.name}] Skipping — no local file path available`,
-      );
+      logger.info(`[${this.name}] Skipping — no local file path available`);
       return context;
     }
 
     const startTime = Date.now();
 
     // 1. Inspect PDF structure
-    console.log(
-      `[INFO] ${new Date().toISOString()} [${this.name}] Analyzing PDF: ${filePath} (${pageCount} pages)`,
-    );
+    logger.info(`[${this.name}] Analyzing PDF: ${filePath} (${pageCount} pages)`);
 
     const signals = await inspectPDF(filePath, pageTexts, pageCount);
 
@@ -63,29 +60,18 @@ export class BookCompatibilityAnalysisModule implements IModule {
     };
 
     // 3. Log results
-    console.log(
-      `[INFO] ${new Date().toISOString()} [${this.name}] Structure: ${profile.structureType}`,
+    logger.info(`[${this.name}] Structure: ${profile.structureType}`);
+    logger.info(`[${this.name}] Strategy: ${profile.recommendedStrategy} (confidence: ${profile.confidence})`);
+    logger.info(
+      `[${this.name}] Signals: images=${signals.embeddedImageCount}, ` +
+      `vectorText=${signals.hasVectorText}, rasterized=${Math.round(signals.rasterizedPageRatio * 100)}%, ` +
+      `creator=${signals.creatorTool ?? 'unknown'}, layers=${signals.hasLayerIndicators}`,
     );
-    console.log(
-      `[INFO] ${new Date().toISOString()} [${this.name}] Strategy: ${profile.recommendedStrategy} (confidence: ${profile.confidence})`,
-    );
-    console.log(
-      `[INFO] ${new Date().toISOString()} [${this.name}] Signals: ` +
-      `images=${signals.embeddedImageCount}, ` +
-      `vectorText=${signals.hasVectorText}, ` +
-      `rasterized=${Math.round(signals.rasterizedPageRatio * 100)}%, ` +
-      `creator=${signals.creatorTool ?? 'unknown'}, ` +
-      `layers=${signals.hasLayerIndicators}`,
-    );
-    console.log(
-      `[INFO] ${new Date().toISOString()} [${this.name}] Rationale: ${profile.rationale}`,
-    );
+    logger.info(`[${this.name}] Rationale: ${profile.rationale}`);
 
     if (profile.warnings.length > 0) {
       for (const warning of profile.warnings) {
-        console.log(
-          `[WARN] ${new Date().toISOString()} [${this.name}] ${warning}`,
-        );
+        logger.warn(`[${this.name}] ${warning}`);
       }
     }
 

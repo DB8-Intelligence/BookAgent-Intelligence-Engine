@@ -29,7 +29,7 @@ import { logger } from '../../utils/logger.js';
 import { buildBlogPlans } from './blog-plan-builder.js';
 
 export class BlogModule implements IModule {
-  readonly stage = PipelineStage.MEDIA_GENERATION;
+  readonly stage = PipelineStage.BLOG;
   readonly name = 'Blog Engine';
 
   async run(context: ProcessingContext): Promise<ProcessingContext> {

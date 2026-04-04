@@ -4,19 +4,22 @@
  * Executa módulos na ordem definida, passando o ProcessingContext
  * de estágio em estágio. Registra logs de execução automaticamente.
  *
- * Ordem de execução:
+ * Ordem de execução (15 estágios):
  *   1. Ingestion              → recebe arquivo, extrai texto bruto
  *   2. Book Analysis          → analisa compatibilidade do PDF, decide strategy
  *   3. Reverse Engineering    → analisa estrutura editorial, gera protótipo
  *   4. Extraction             → extrai imagens e assets do material
- *   5. Correlation            → correlaciona texto ↔ imagem
- *   6. Branding               → identifica paleta de cores, estilo, tipografia
+ *   5. Branding               → identifica paleta de cores, estilo, tipografia
+ *   6. Correlation            → correlaciona texto ↔ imagem (usa branding como contexto)
  *   7. Source Intel            → classifica e estrutura fontes
  *   8. Narrative              → gera narrativas por fonte
  *   9. Output Selection       → decide quais formatos gerar
- *  10. Media Generation       → gera os outputs finais
- *  11. Personalization        → aplica logo, CTA e dados do usuário
- *  12. Render/Export          → renderiza e exporta artefatos finais
+ *  10. Media Generation       → gera planos de mídia/vídeo
+ *  11. Blog                   → gera planos de artigos para blog
+ *  12. Landing Page           → gera planos de landing pages
+ *  13. Personalization        → aplica logo, CTA e dados do usuário
+ *  14. Render/Export          → renderiza e exporta artefatos finais
+ *  15. Delivery               → prepara entrega e notificação
  */
 
 import type { ProcessingContext } from './context.js';
@@ -28,20 +31,23 @@ import { EMPTY_BRANDING } from '../domain/entities/branding.js';
 import { PipelineStage, ModuleStatus } from '../domain/value-objects/index.js';
 import { logger } from '../utils/logger.js';
 
-/** Ordem fixa de execução dos estágios */
+/** Ordem fixa de execução dos 15 estágios */
 const STAGE_ORDER: PipelineStage[] = [
   PipelineStage.INGESTION,
   PipelineStage.BOOK_ANALYSIS,
   PipelineStage.REVERSE_ENGINEERING,
   PipelineStage.EXTRACTION,
-  PipelineStage.CORRELATION,
   PipelineStage.BRANDING,
+  PipelineStage.CORRELATION,
   PipelineStage.SOURCE_INTELLIGENCE,
   PipelineStage.NARRATIVE,
   PipelineStage.OUTPUT_SELECTION,
   PipelineStage.MEDIA_GENERATION,
+  PipelineStage.BLOG,
+  PipelineStage.LANDING_PAGE,
   PipelineStage.PERSONALIZATION,
   PipelineStage.RENDER_EXPORT,
+  PipelineStage.DELIVERY,
 ];
 
 export class Pipeline {
@@ -114,10 +120,12 @@ export class Pipeline {
       outputs: context.outputs ?? [],
       branding: context.branding ?? EMPTY_BRANDING,
       selectedOutputs: context.selectedOutputs,
+      narratives: context.narratives,
       mediaPlans: context.mediaPlans,
       blogPlans: context.blogPlans,
       landingPagePlans: context.landingPagePlans,
       exportResult: context.exportResult,
+      deliveryResult: context.deliveryResult,
     };
   }
 

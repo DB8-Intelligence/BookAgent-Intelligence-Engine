@@ -11,6 +11,7 @@
 import type { IModule } from '../../domain/interfaces/module.js';
 import type { ProcessingContext } from '../../core/context.js';
 import { PipelineStage } from '../../domain/value-objects/index.js';
+import { logger } from '../../utils/logger.js';
 import { buildAudioPlan, buildAudioOnlyPlan } from './audio-plan-builder.js';
 import { generateMediaScript } from '../../generation/media-script-generator.js';
 import type { AudioPlan, AudioGenerationResult } from '../../domain/entities/audio-plan.js';
@@ -46,8 +47,8 @@ export class AudioModule implements IModule {
       const audioPlan = buildAudioPlan(mediaPlan, script, tone);
       plans.push(audioPlan);
 
-      console.log(
-        `[INFO] ${new Date().toISOString()} [Audio] ${mediaPlan.format}: ` +
+      logger.info(
+        `[Audio] ${mediaPlan.format}: ` +
         `${audioPlan.segments.length} segments, ${audioPlan.totalDurationSeconds}s, ` +
         `mode=${audioPlan.narrationMode}, voice=${audioPlan.voices[0].voiceType}`,
       );
@@ -64,8 +65,8 @@ export class AudioModule implements IModule {
       const audioPlan = buildAudioOnlyPlan(narrative, projectName);
       plans.push(audioPlan);
 
-      console.log(
-        `[INFO] ${new Date().toISOString()} [Audio] ${narrative.narrativeType}: ` +
+      logger.info(
+        `[Audio] ${narrative.narrativeType}: ` +
         `${audioPlan.segments.length} segments, ${audioPlan.totalDurationSeconds}s, ` +
         `mode=${audioPlan.narrationMode}, voices=${audioPlan.voices.length}`,
       );
@@ -77,8 +78,8 @@ export class AudioModule implements IModule {
       totalDurationSeconds: plans.reduce((sum, p) => sum + p.totalDurationSeconds, 0),
     };
 
-    console.log(
-      `[INFO] ${new Date().toISOString()} [Audio] Total: ${result.plans.length} audio plans, ` +
+    logger.info(
+      `[Audio] Total: ${result.plans.length} audio plans, ` +
       `${result.totalSegments} segments, ${result.totalDurationSeconds}s`,
     );
 
