@@ -31,7 +31,7 @@ import { exportBlogPlans } from './blog-exporter.js';
 import { exportLandingPagePlans } from './lp-exporter.js';
 
 export class RenderExportModule implements IModule {
-  readonly stage = PipelineStage.PERSONALIZATION; // Runs after personalization
+  readonly stage = PipelineStage.RENDER_EXPORT;
   readonly name = 'Render/Export Engine';
 
   async run(context: ProcessingContext): Promise<ProcessingContext> {

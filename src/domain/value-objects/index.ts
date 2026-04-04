@@ -61,6 +61,7 @@ export enum PipelineStage {
   OUTPUT_SELECTION = 'output_selection',
   MEDIA_GENERATION = 'media_generation',
   PERSONALIZATION = 'personalization',
+  RENDER_EXPORT = 'render_export',
 }
 
 /** Origem de um asset no sistema */

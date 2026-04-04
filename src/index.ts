@@ -43,6 +43,7 @@ import { NarrativeModule } from './modules/narrative/index.js';
 import { OutputSelectionModule } from './modules/output-selection/index.js';
 import { MediaGenerationModule } from './modules/media/index.js';
 import { PersonalizationModule } from './modules/personalization/index.js';
+import { RenderExportModule } from './modules/render-export/index.js';
 
 // --- Bootstrap ---
 const orchestrator = new Orchestrator();
@@ -57,6 +58,7 @@ orchestrator.registerModule(new NarrativeModule());
 orchestrator.registerModule(new OutputSelectionModule());
 orchestrator.registerModule(new MediaGenerationModule());
 orchestrator.registerModule(new PersonalizationModule());
+orchestrator.registerModule(new RenderExportModule());
 
 // Compartilhar orchestrator com todos os controllers
 setProcessOrch(orchestrator);

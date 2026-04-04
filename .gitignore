@@ -3,6 +3,7 @@ dist/
 storage/assets/*
 storage/outputs/*
 storage/temp/*
+storage/sample-run/
 !storage/assets/.gitkeep
 !storage/outputs/.gitkeep
 !storage/temp/.gitkeep

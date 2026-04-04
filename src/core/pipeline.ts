@@ -36,6 +36,7 @@ const STAGE_ORDER: PipelineStage[] = [
   PipelineStage.OUTPUT_SELECTION,
   PipelineStage.MEDIA_GENERATION,
   PipelineStage.PERSONALIZATION,
+  PipelineStage.RENDER_EXPORT,
 ];
 
 export class Pipeline {
