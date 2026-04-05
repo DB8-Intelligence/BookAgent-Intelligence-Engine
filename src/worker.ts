@@ -20,6 +20,7 @@
 
 import { isRedisConfigured } from './queue/connection.js';
 import { createWorker } from './queue/worker.js';
+import { createVideoWorker } from './queue/video-worker.js';
 import { Orchestrator } from './core/orchestrator.js';
 import { SupabaseClient } from './persistence/supabase-client.js';
 import { JobRepository } from './persistence/job-repository.js';
@@ -111,7 +112,23 @@ if (!worker) {
   process.exit(1);
 }
 
-logger.info('[Worker] BookAgent worker running. Waiting for jobs...');
+// ============================================================================
+// Video Render Worker (dedicated queue)
+// ============================================================================
+
+const videoWorker = createVideoWorker({
+  supabase: supabaseClient,
+  outputDir: 'storage/outputs/video',
+  tempDir:   'storage/temp/video',
+});
+
+if (videoWorker) {
+  logger.info('[Worker] Video render worker started (bookagent-video-render).');
+} else {
+  logger.info('[Worker] Video render worker not started (same Redis required).');
+}
+
+logger.info('[Worker] BookAgent workers running. Waiting for jobs...');
 
 // ============================================================================
 // Graceful shutdown
@@ -121,8 +138,11 @@ async function shutdown(signal: string): Promise<void> {
   logger.info(`[Worker] Received ${signal}. Shutting down gracefully...`);
 
   // Parar de aceitar novos jobs, aguardar os em andamento
-  await worker?.close();
-  logger.info('[Worker] Worker stopped. All in-flight jobs completed.');
+  await Promise.all([
+    worker?.close(),
+    videoWorker?.close(),
+  ]);
+  logger.info('[Worker] All workers stopped. In-flight jobs completed.');
   process.exit(0);
 }
 

@@ -1,14 +1,15 @@
 /**
- * Video Renderer — V1
+ * Video Renderer — V1 (LEGACY)
+ *
+ * @deprecated Use renderFromSpec() from spec-renderer.ts instead.
+ * This function consumes MediaPlan directly, bypassing the RenderSpec contract.
+ * Preserved for backwards compatibility only — will be removed in a future version.
+ *
+ * New code should use:
+ *   import { renderFromSpec } from './spec-renderer.js';
+ *   const result = await renderFromSpec(renderSpec, options);
  *
  * Transforma MediaPlan em vídeo real (.mp4) usando ffmpeg.
- *
- * Pipeline:
- * 1. Resolve assets (assetId → file path)
- * 2. Para cada cena: gera clip individual (imagem + texto + duração)
- * 3. Aplica transições (fade/cut) entre cenas
- * 4. Concatena todos os clips em vídeo final
- * 5. Exporta .mp4 com h264
  *
  * V1 Limitations:
  * - Apenas imagens estáticas por cena (sem motion)
@@ -48,13 +49,18 @@ const MAX_SCENE_DURATION = 30;
 // ---------------------------------------------------------------------------
 
 /**
+ * @deprecated Use renderFromSpec() instead. This function bypasses the RenderSpec contract.
  * Renderiza um MediaPlan em arquivo de vídeo .mp4.
  */
 export async function renderVideo(
   plan: MediaPlan,
   options: VideoRenderOptions,
 ): Promise<VideoRenderResult> {
-  const warnings: string[] = [];
+  console.warn(
+    '[DEPRECATED] renderVideo(MediaPlan) is deprecated. ' +
+    'Use renderFromSpec(RenderSpec) from spec-renderer.ts instead.'
+  );
+  const warnings: string[] = ['DEPRECATED: renderVideo(MediaPlan) used instead of renderFromSpec(RenderSpec)'];
   const skippedScenes: number[] = [];
 
   // 1. Check ffmpeg

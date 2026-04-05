@@ -32,60 +32,9 @@ import {
 } from './ffmpeg.js';
 import { logger } from '../../utils/logger.js';
 
-// ============================================================================
-// RenderSpec types (mirrors media-exporter.ts output)
-// ============================================================================
-
-export interface RenderSpec {
-  version: string;
-  format: string;
-  aspectRatio: string;
-  resolution: [number, number];
-  totalDurationSeconds: number | null;
-  scenes: RenderSceneSpec[];
-  branding: {
-    logoUrl: string | null;
-    logoPlacement: string | null;
-    signature: string | null;
-  };
-  metadata: Record<string, unknown>;
-}
-
-export interface RenderSceneSpec {
-  order: number;
-  role: string;
-  durationSeconds: number | null;
-  assetId: string | null;
-  /** Multiple asset IDs for GRID/SPLIT layouts */
-  assetIds?: string[];
-  layout: string;
-  transition: string;
-  textOverlays: Array<{
-    text: string;
-    role: string;
-    position: string;
-    size: string;
-  }>;
-  branding: {
-    backgroundColor: string;
-    textColor: string;
-    accentColor: string;
-    showLogo: boolean;
-    visualStyle: string;
-  };
-  narration: {
-    headline: string;
-    voiceover: string;
-    visualDescription: string;
-  } | null;
-  compositionHint: {
-    baseAssetReadOnly: boolean;
-    layerCount: number;
-    hasTextOverlay: boolean;
-    hasBrandingOverlay: boolean;
-    hasVisualEffect: boolean;
-  };
-}
+// Re-export shared types for backwards compatibility
+import type { RenderSpec, RenderSceneSpec } from '../../types/render-spec.js';
+export type { RenderSpec, RenderSceneSpec };
 
 export interface SpecRenderOptions {
   outputDir: string;
