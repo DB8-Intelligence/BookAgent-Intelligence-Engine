@@ -6,15 +6,11 @@
  * 2. Montar um manifesto de entrega (DeliveryResult)
  * 3. Preparar URLs/caminhos de acesso aos artifacts
  * 4. Registrar canais de entrega disponíveis
+ * 5. Indicar se vídeo render está pendente (post-pipeline async)
  *
- * Na fase atual (pré-integração), o módulo:
- * - Monta o manifesto a partir do exportResult
- * - Marca artifacts como prontos para acesso via API
- * - NÃO faz upload para storage externo
- * - NÃO dispara webhooks reais
- * - NÃO envia e-mails
- *
- * Esses comportamentos serão adicionados na fase de integração.
+ * Parte 59.3: Integração de vídeo no delivery manifest.
+ * Video .mp4 artifacts são adicionados ao manifesto quando disponíveis
+ * via Supabase lookup (rendered async pelo video-worker).
  */
 
 import { PipelineStage } from '../../domain/value-objects/index.js';
@@ -59,19 +55,34 @@ export class DeliveryModule implements IModule {
       localPath: a.filePath,
     }));
 
+    // Check if any RENDER_SPEC artifacts exist → video render available post-approval
+    const { ArtifactType } = await import('../../domain/entities/export-artifact.js');
+    const hasRenderSpecs = exportResult.artifacts.some(
+      (a) => a.artifactType === ArtifactType.MEDIA_RENDER_SPEC,
+    );
+    const channels = [DeliveryChannel.API];
+    if (hasRenderSpecs) {
+      channels.push(DeliveryChannel.WEBHOOK);
+    }
+
+    const videoNote = hasRenderSpecs
+      ? ' Vídeo disponível via POST /render-video após aprovação.'
+      : '';
+
     const result: DeliveryResult = {
       status: DeliveryStatus.READY,
       jobId: context.jobId,
       completedAt: new Date(),
       totalArtifacts: manifest.length,
       manifest,
-      channels: [DeliveryChannel.API],
+      channels,
       webhookSent: false,
-      summary: `${manifest.length} artifact(s) prontos para acesso via API.`,
+      summary: `${manifest.length} artifact(s) prontos para acesso via API.${videoNote}`,
     };
 
     logger.info(
-      `[Delivery] ${result.totalArtifacts} artifacts prontos — status=${result.status}`,
+      `[Delivery] ${result.totalArtifacts} artifacts prontos — status=${result.status}` +
+      (hasRenderSpecs ? ' (video render available post-approval)' : ''),
     );
 
     return { ...context, deliveryResult: result };

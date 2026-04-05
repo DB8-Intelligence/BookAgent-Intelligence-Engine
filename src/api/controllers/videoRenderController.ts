@@ -82,6 +82,20 @@ export async function renderVideo(req: Request, res: Response): Promise<void> {
   }
 
   try {
+    // Validate job ownership — check user_id matches if resolvedUserId is present
+    const requesterId = req.resolvedUserId;
+    if (requesterId) {
+      const jobMeta = await supabase.select<{ user_id: string }>('bookagent_job_meta', {
+        filters: [{ column: 'job_id', operator: 'eq', value: jobId }],
+        select: 'user_id',
+        limit: 1,
+      });
+      if (jobMeta.length > 0 && jobMeta[0].user_id && jobMeta[0].user_id !== requesterId) {
+        sendError(res, 'FORBIDDEN', 'You do not own this job', 403);
+        return;
+      }
+    }
+
     // Find RenderSpec artifact
     const filters = [
       { column: 'job_id', operator: 'eq' as const, value: jobId },
@@ -245,6 +259,29 @@ export async function getVideoStatus(req: Request, res: Response): Promise<void>
       response.sizeBytes = meta.video_render_size_bytes;
       response.durationSeconds = meta.video_render_duration_seconds;
       response.sceneCount = meta.video_render_scene_count;
+
+      // Lookup the VIDEO_RENDER artifact for download URL
+      try {
+        const videoArtifacts = await supabase.select<{ id: string; file_path: string | null }>(
+          'bookagent_job_artifacts',
+          {
+            filters: [
+              { column: 'job_id', operator: 'eq', value: jobId },
+              { column: 'artifact_type', operator: 'eq', value: 'VIDEO_RENDER' },
+            ],
+            select: 'id,file_path',
+            orderBy: 'created_at',
+            orderDesc: true,
+            limit: 1,
+          },
+        );
+        if (videoArtifacts.length > 0) {
+          response.videoArtifactId = videoArtifacts[0].id;
+          response.videoFilePath = videoArtifacts[0].file_path;
+        }
+      } catch {
+        // Non-critical — continue without artifact lookup
+      }
     }
 
     if (status === 'failed') {

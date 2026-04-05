@@ -15,7 +15,7 @@
  */
 
 import type { Job as BullJob } from 'bullmq';
-import type { VideoRenderJobData, WebhookPayload } from './types.js';
+import type { VideoRenderJobData } from './types.js';
 import type { SupabaseClient } from '../persistence/supabase-client.js';
 import type { RenderSpec } from '../types/render-spec.js';
 import { renderFromSpec } from '../renderers/video/spec-renderer.js';
@@ -144,15 +144,19 @@ export async function processVideoRenderJob(
       `${result.durationSeconds.toFixed(1)}s video, rendered in ${(durationMs / 1000).toFixed(1)}s)`
     );
 
-    // 7. Webhook
+    // 7. Webhook — video-specific payload for n8n/WhatsApp integration
     if (webhookUrl) {
-      await sendWebhook(webhookUrl, {
-        source: 'bookagent',
-        timestamp: new Date().toISOString(),
+      await sendVideoWebhook(webhookUrl, {
         jobId,
         status: 'completed',
-        artifacts_count: 1,
-        duration_ms: durationMs,
+        videoPath: result.outputPath,
+        filename: result.filename,
+        sizeBytes: result.sizeBytes,
+        durationSeconds: result.durationSeconds,
+        sceneCount: result.sceneCount,
+        resolution: result.resolution,
+        format: spec.format,
+        renderTimeMs: durationMs,
       });
     }
   } catch (err) {
@@ -181,9 +185,7 @@ export async function processVideoRenderJob(
       });
 
       if (webhookUrl) {
-        await sendWebhook(webhookUrl, {
-          source: 'bookagent',
-          timestamp: new Date().toISOString(),
+        await sendVideoWebhook(webhookUrl, {
           jobId,
           status: 'failed',
           error: message,
@@ -217,15 +219,38 @@ async function updateVideoStatus(
   }
 }
 
-async function sendWebhook(url: string, payload: WebhookPayload): Promise<void> {
+/**
+ * Video-specific webhook payload for n8n/WhatsApp/Instagram integration.
+ * Includes video metadata that downstream automations need.
+ */
+interface VideoWebhookPayload {
+  jobId: string;
+  status: 'completed' | 'failed';
+  videoPath?: string;
+  filename?: string;
+  sizeBytes?: number;
+  durationSeconds?: number;
+  sceneCount?: number;
+  resolution?: [number, number];
+  format?: string;
+  renderTimeMs?: number;
+  error?: string;
+}
+
+async function sendVideoWebhook(url: string, payload: VideoWebhookPayload): Promise<void> {
   try {
+    const body = {
+      source: 'bookagent-video',
+      timestamp: new Date().toISOString(),
+      ...payload,
+    };
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
     if (response.ok) {
-      logger.info(`[VideoProcessor] Webhook delivered → ${url}`);
+      logger.info(`[VideoProcessor] Webhook delivered → ${url} (status=${payload.status})`);
     } else {
       logger.warn(`[VideoProcessor] Webhook returned ${response.status} → ${url}`);
     }
