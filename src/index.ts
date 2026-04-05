@@ -18,6 +18,11 @@
  *   GET  /api/v1/jobs/:jobId/artifacts              → Artifacts do job
  *   GET  /api/v1/jobs/:jobId/artifacts/:id          → Detalhe do artifact
  *   GET  /api/v1/jobs/:jobId/artifacts/:id/download → Download do artifact
+ *   POST /api/v1/leads/register                     → Registrar lead (Fluxo 7)
+ *   GET  /api/v1/leads/:phone                       → Dados do lead
+ *   PATCH /api/v1/leads/:phone/stage                → Atualizar estágio do funil
+ *   POST /api/v1/leads/:phone/event                 → Log de evento
+ *   POST /api/v1/leads/:phone/demo                  → Incrementar uso de demo (trial)
  */
 
 import express from 'express';
@@ -35,6 +40,7 @@ import { setOrchestrator as setJobsOrch, setJobRepository } from './api/controll
 import { setOrchestrator as setArtifactsOrch } from './api/controllers/artifactsController.js';
 import { setSupabaseClientForApproval } from './api/controllers/approvalController.js';
 import { setPlanGuardSupabaseClient } from './api/middleware/plan-guard.js';
+import { setLeadsSupabaseClient } from './api/controllers/leadsController.js';
 import { metrics } from './observability/metrics.js';
 
 // --- Queue ---
@@ -46,6 +52,7 @@ import { JobRepository } from './persistence/job-repository.js';
 import processRoutes from './api/routes/process.js';
 import jobsRoutes from './api/routes/jobs.js';
 import approvalRoutes from './api/routes/approval.js';
+import leadsRoutes from './api/routes/leads.js';
 
 // --- Middleware ---
 import { errorHandler } from './api/middleware/error-handler.js';
@@ -121,6 +128,7 @@ if (supabaseClient) {
   setJobRepository(new JobRepository(supabaseClient));
   setSupabaseClientForApproval(supabaseClient);
   setPlanGuardSupabaseClient(supabaseClient);
+  setLeadsSupabaseClient(supabaseClient);
   metrics.setSupabaseClient(supabaseClient);
 }
 
@@ -178,6 +186,7 @@ const prefix = config.api.prefix;
 app.use(`${prefix}/process`, processRoutes);
 app.use(`${prefix}/jobs`, jobsRoutes);
 app.use(`${prefix}/jobs`, approvalRoutes);
+app.use(`${prefix}/leads`, leadsRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);
@@ -206,6 +215,11 @@ app.listen(config.port, () => {
   logger.info(`  GET  ${prefix}/jobs/:jobId/comments`);
   logger.info(`  POST ${prefix}/jobs/:jobId/publish`);
   logger.info(`  GET  ${prefix}/jobs/:jobId/publications`);
+  logger.info(`  POST ${prefix}/leads/register`);
+  logger.info(`  GET  ${prefix}/leads/:phone`);
+  logger.info(`  PATCH ${prefix}/leads/:phone/stage`);
+  logger.info(`  POST ${prefix}/leads/:phone/event`);
+  logger.info(`  POST ${prefix}/leads/:phone/demo`);
 });
 
 export default app;
