@@ -47,6 +47,8 @@ export interface MetricPayload {
   success?: boolean;
   /** approval_action: decisão (approved, rejected, comment) */
   decision?: string;
+  /** cost_brl: custo operacional em centavos */
+  costBRL?: number;
   /** Metadados adicionais livres */
   metadata?: Record<string, unknown>;
 }
@@ -61,6 +63,7 @@ interface UsageMetricRow {
   platform: string | null;
   success: boolean | null;
   decision: string | null;
+  cost_brl: number | null;
   metadata: Record<string, unknown> | null;
 }
 
@@ -98,6 +101,7 @@ class MetricsTracker {
       platform: payload.platform ?? null,
       success: payload.success ?? null,
       decision: payload.decision ?? null,
+      cost_brl: payload.costBRL ?? null,
       metadata: payload.metadata ?? null,
     };
 

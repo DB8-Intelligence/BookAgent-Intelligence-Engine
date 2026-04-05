@@ -24,6 +24,10 @@ import {
   getJobDashboardView,
   socialPublishJob,
 } from '../controllers/approvalController.js';
+import {
+  renderVideo,
+  getVideoStatus,
+} from '../controllers/videoRenderController.js';
 
 const router = Router({ mergeParams: true });
 
@@ -41,6 +45,10 @@ router.post('/:jobId/publish',         publishJob);
 router.post('/:jobId/social-publish',  socialPublishJob);
 
 router.get('/:jobId/publications',   getJobPublications);
+
+// Vídeo — renderização assíncrona pós-aprovação (Parte 59.1)
+router.post('/:jobId/render-video',  renderVideo);
+router.get('/:jobId/video-status',   getVideoStatus);
 
 // Visão dashboard completa
 router.get('/:jobId/dashboard',  getJobDashboardView);

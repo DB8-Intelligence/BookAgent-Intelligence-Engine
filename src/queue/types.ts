@@ -29,6 +29,29 @@ export interface BookAgentJobData {
   webhookUrl?: string;
 }
 
+/**
+ * VideoRenderJobData — payload for async video render jobs.
+ * Triggered post-approval, consumes a RenderSpec artifact.
+ *
+ * Parte 59.1: Video render as async job
+ */
+export interface VideoRenderJobData {
+  /** Original pipeline job ID (for artifact lookup) */
+  jobId: string;
+
+  /** RenderSpec artifact ID to render */
+  artifactId: string;
+
+  /** The RenderSpec JSON content */
+  renderSpecJson: string;
+
+  /** Map of assetId → storage URL (to be downloaded before render) */
+  assetUrls: Record<string, string>;
+
+  /** Webhook URL for notification on completion */
+  webhookUrl?: string;
+}
+
 /** Resultado do webhook POST */
 export interface WebhookPayload {
   source: 'bookagent';

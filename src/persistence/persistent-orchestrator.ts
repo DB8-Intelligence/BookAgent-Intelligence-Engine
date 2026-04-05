@@ -30,6 +30,7 @@ import { JobRepository } from './job-repository.js';
 import { ArtifactRepository } from './artifact-repository.js';
 import { StorageManager } from './storage-manager.js';
 import { logger } from '../utils/logger.js';
+import { getPlan, type PlanTier } from '../plans/plan-config.js';
 
 // ---------------------------------------------------------------------------
 // PersistentOrchestrator
@@ -71,23 +72,22 @@ export class PersistentOrchestrator {
    */
   async process(input: JobInput): Promise<Job> {
     const startTime = Date.now();
+    const tier = (input.userContext as any)?.planTier as PlanTier ?? 'basic';
+    const plan = getPlan(tier);
 
-    // Criar job in-memory primeiro para obter o ID
-    // Usamos o orchestrator para criar via seu JobManager
     let previewJob: Job | undefined;
 
     try {
       previewJob = await this.orchestrator.process(input);
     } catch (err) {
-      // Pipeline falhou — tentar persistir o erro
       logger.error(`[PersistentOrchestrator] Pipeline failed: ${err}`);
-      // Não há job para persistir aqui (falha antes de criar)
       throw err;
     }
 
-    // Pipeline executou — agora persistir resultado
     const durationMs = Date.now() - startTime;
-    await this.persistJobResult(previewJob, durationMs);
+    const costBRL = plan.estimatedCostPerJobBRL;
+
+    await this.persistJobResult(previewJob, durationMs, costBRL);
 
     return previewJob;
   }
@@ -158,7 +158,7 @@ export class PersistentOrchestrator {
    *
    * Todas as operações são best-effort: falhas são logadas mas não propagadas.
    */
-  private async persistJobResult(job: Job, durationMs: number): Promise<void> {
+  private async persistJobResult(job: Job, durationMs: number, costBRL: number): Promise<void> {
     // 1. Persistir job no Supabase
     await this.safeExec('persist job', async () => {
       if (job.status === 'completed' && job.result) {
@@ -168,7 +168,7 @@ export class PersistentOrchestrator {
         } catch {
           // Job já existe — apenas atualizar
         }
-        await this.jobRepo.completeJob(job.id, job.result as JobResult, durationMs);
+        await this.jobRepo.completeJob(job.id, job.result as JobResult, durationMs, costBRL);
       } else if (job.status === 'failed') {
         try {
           await this.jobRepo.createJob(job);

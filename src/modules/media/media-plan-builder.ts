@@ -28,6 +28,7 @@ import { ASPECT_RATIOS } from '../../domain/value-objects/index.js';
 import type { BookPrototype } from '../../domain/entities/book-prototype.js';
 
 import { composeScenes } from './scene-composer.js';
+import { logger } from '../../utils/logger.js';
 
 /** Formatos que são visuais/audiovisuais (vs puramente textuais) */
 const MEDIA_FORMATS = new Set([
@@ -63,7 +64,13 @@ export function buildMediaPlans(
 
   for (const decision of approvedMedia) {
     const narrative = narrativeMap.get(decision.narrativePlanId);
-    if (!narrative) continue;
+    if (!narrative) {
+      logger.warn(
+        `[MediaPlanBuilder] Narrative plan "${decision.narrativePlanId}" not found for approved decision ` +
+        `"${decision.id}" (format=${decision.format}). Skipping.`
+      );
+      continue;
+    }
 
     const plan = buildSinglePlan(decision, narrative, sources, assets, branding, bookPrototype);
     plans.push(plan);

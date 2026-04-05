@@ -63,6 +63,8 @@ interface RenderSceneSpec {
   role: string;
   durationSeconds: number | null;
   assetId: string | null;
+  /** All asset IDs for multi-asset layouts (GRID, SPLIT). Parte 59.1 */
+  assetIds: string[];
   layout: string;
   transition: string;
   textOverlays: Array<{
@@ -239,6 +241,7 @@ function buildRenderSceneSpec(
     role: scene.role,
     durationSeconds: scene.durationSeconds ?? null,
     assetId: scene.assetIds[0] ?? null,
+    assetIds: [...scene.assetIds],
     layout: scene.layoutHint,
     transition: scene.transition,
     textOverlays: scene.textOverlays.map((o) => ({

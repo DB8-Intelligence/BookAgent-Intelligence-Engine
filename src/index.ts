@@ -43,6 +43,7 @@ import { setOrchestrator as setProcessOrch } from './api/controllers/processCont
 import { setOrchestrator as setJobsOrch, setJobRepository } from './api/controllers/jobsController.js';
 import { setOrchestrator as setArtifactsOrch } from './api/controllers/artifactsController.js';
 import { setSupabaseClientForApproval } from './api/controllers/approvalController.js';
+import { setVideoRenderSupabaseClient } from './api/controllers/videoRenderController.js';
 import { setPlanGuardSupabaseClient } from './api/middleware/plan-guard.js';
 import { setLeadsSupabaseClient } from './api/controllers/leadsController.js';
 import { setOpsSupabaseClient } from './api/controllers/opsController.js';
@@ -133,6 +134,7 @@ setArtifactsOrch(orchestrator);
 if (supabaseClient) {
   setJobRepository(new JobRepository(supabaseClient));
   setSupabaseClientForApproval(supabaseClient);
+  setVideoRenderSupabaseClient(supabaseClient);
   setPlanGuardSupabaseClient(supabaseClient);
   setLeadsSupabaseClient(supabaseClient);
   setOpsSupabaseClient(supabaseClient);

@@ -41,6 +41,8 @@ export interface JobRow {
   narratives_count: number;
   artifacts_count: number;
   pipeline_duration_ms: number | null;
+  cost_brl: number | null;
+  tenant_id: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +74,8 @@ export class JobRepository {
       narratives_count: 0,
       artifacts_count: 0,
       pipeline_duration_ms: null,
+      cost_brl: 0,
+      tenant_id: (job.input.userContext as any)?.tenantId ?? null,
     };
 
     await this.client.insert(this.table, row);
@@ -100,6 +104,7 @@ export class JobRepository {
     jobId: string,
     result: JobResult,
     durationMs?: number,
+    costBRL?: number,
   ): Promise<void> {
     const artifactsCount = result.exportResult?.totalArtifacts ?? 0;
     const sourcesCount = result.sources?.length ?? 0;
@@ -118,6 +123,7 @@ export class JobRepository {
         narratives_count: narrativesCount,
         artifacts_count: artifactsCount,
         pipeline_duration_ms: durationMs ?? null,
+        cost_brl: costBRL ?? 0,
       },
     );
 

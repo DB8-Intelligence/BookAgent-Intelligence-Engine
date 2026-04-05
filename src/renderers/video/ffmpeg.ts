@@ -264,11 +264,21 @@ function resolveY(position: string, frameHeight: number, fontSize: number): stri
   }
 }
 
+/**
+ * Escapes text for FFmpeg drawtext filter.
+ * Must handle: backslash, quote, colon, semicolon, percent, brackets, newlines.
+ * Order matters: backslash must be escaped first.
+ */
 function escapeFFmpegText(text: string): string {
   return text
-    .replace(/\\/g, '\\\\\\\\')
-    .replace(/'/g, "\\'")
-    .replace(/:/g, '\\:')
-    .replace(/%/g, '%%')
-    .replace(/\n/g, '');
+    .replace(/\\/g, '\\\\\\\\')     // backslash
+    .replace(/'/g, "\\'")           // single quote
+    .replace(/"/g, '\\"')           // double quote (P1 fix)
+    .replace(/:/g, '\\:')           // colon (drawtext separator)
+    .replace(/;/g, '\\;')           // semicolon (P1 fix)
+    .replace(/\[/g, '\\[')          // brackets (P1 fix)
+    .replace(/\]/g, '\\]')          // brackets (P1 fix)
+    .replace(/%/g, '%%')            // percent (drawtext expansion)
+    .replace(/\n/g, '')             // newlines not supported in drawtext
+    .replace(/\r/g, '');            // carriage return
 }
