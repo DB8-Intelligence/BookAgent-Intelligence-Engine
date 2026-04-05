@@ -90,22 +90,41 @@ const RegisterSchema = z.object({
 });
 
 const UpdateStageSchema = z.object({
-  stage:   z.enum(['new','demo_sent','demo_processing','demo_delivered','offer_sent','converted','lost','reactivated']),
-  notes:   z.string().optional(),
-  job_id:  z.string().uuid().optional(),
-  plan_tier: z.enum(['basic','pro','business']).optional(),
+  stage: z.enum(['new', 'demo_sent', 'demo_processing', 'demo_delivered', 'offer_sent', 'converted', 'lost', 'reactivated']),
+  notes: z.string().optional(),
+  job_id: z.string().uuid().optional(),
+  plan_tier: z.enum(['basic', 'pro', 'business']).optional(),
+  force: z.boolean().optional().default(false), // Pular validação de máquina de estados
 });
 
+const VALID_LEAD_TRANSITIONS: Record<LeadStage, LeadStage[]> = {
+  'new': ['demo_sent', 'demo_processing', 'lost'],
+  'demo_sent': ['demo_processing', 'lost'],
+  'demo_processing': ['demo_delivered', 'lost'],
+  'demo_delivered': ['offer_sent', 'lost', 'demo_processing'],
+  'offer_sent': ['converted', 'lost', 'demo_processing'],
+  'converted': ['reactivated'],
+  'lost': ['reactivated'],
+  'reactivated': ['demo_sent', 'demo_processing'],
+};
+
 const AddEventSchema = z.object({
-  event_type: z.enum(['message_received','message_sent','pdf_received','demo_completed','offer_sent','follow_up_sent','converted','opted_out','reactivated']),
-  direction:  z.enum(['inbound','outbound']).optional(),
-  content:    z.string().max(1000).optional(),
-  metadata:   z.record(z.unknown()).optional(),
+  event_type: z.enum(['message_received', 'message_sent', 'pdf_received', 'demo_completed', 'offer_sent', 'follow_up_sent', 'converted', 'opted_out', 'reactivated']),
+  direction: z.enum(['inbound', 'outbound']).optional(),
+  content: z.string().max(1000).optional(),
+  metadata: z.record(z.unknown()).optional(),
 });
 
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/** Valida se a transição de estágio é permitida pela regra de negócio. */
+function isValidLeadTransition(current: LeadStage, next: LeadStage): boolean {
+  if (current === next) return true;
+  const allowed = VALID_LEAD_TRANSITIONS[current];
+  return allowed ? allowed.includes(next) : true;
+}
 
 function requireSupabase(res: Response): boolean {
   if (!supabase) {
@@ -317,7 +336,7 @@ export async function updateLeadStage(req: Request, res: Response): Promise<void
     return;
   }
 
-  const { stage, notes, job_id, plan_tier } = parsed.data;
+  const { stage, notes, job_id, plan_tier, force } = parsed.data;
 
   try {
     // Verificar que o lead existe
@@ -332,6 +351,18 @@ export async function updateLeadStage(req: Request, res: Response): Promise<void
     }
 
     const lead = rows[0];
+
+    // Validação da máquina de estados
+    if (!force && !isValidLeadTransition(lead.stage, stage)) {
+      sendError(
+        res,
+        'INVALID_TRANSITION',
+        `Transição comercial inválida: ${lead.stage} → ${stage}. Use 'force: true' para pular.`,
+        409,
+      );
+      return;
+    }
+
     const updates: Partial<LeadRow> = {
       stage,
       last_activity_at: new Date().toISOString(),

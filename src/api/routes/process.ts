@@ -13,6 +13,7 @@
  */
 
 import { Router } from 'express';
+import { authMiddleware } from '../middleware/auth.js';
 import { createProcess } from '../controllers/processController.js';
 import { planGuard } from '../middleware/plan-guard.js';
 import { requestRateLimiter, jobRateLimiter } from '../middleware/rate-limiter.js';
@@ -21,6 +22,7 @@ const router = Router();
 
 router.post(
   '/',
+  authMiddleware, // Protege o acesso geral ao engine
   requestRateLimiter,
   planGuard,
   jobRateLimiter,

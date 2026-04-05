@@ -23,6 +23,10 @@
  *   PATCH /api/v1/leads/:phone/stage                → Atualizar estágio do funil
  *   POST /api/v1/leads/:phone/event                 → Log de evento
  *   POST /api/v1/leads/:phone/demo                  → Incrementar uso de demo (trial)
+ *   GET  /api/v1/ops/dashboard                      → Dashboard operacional (protegido)
+ *   GET  /api/v1/ops/queue                          → Saúde da fila BullMQ
+ *   GET  /api/v1/ops/costs                          → Análise de custos e margem
+ *   GET  /api/v1/ops/growth                         → Fase de crescimento e recomendações
  */
 
 import express from 'express';
@@ -41,6 +45,7 @@ import { setOrchestrator as setArtifactsOrch } from './api/controllers/artifacts
 import { setSupabaseClientForApproval } from './api/controllers/approvalController.js';
 import { setPlanGuardSupabaseClient } from './api/middleware/plan-guard.js';
 import { setLeadsSupabaseClient } from './api/controllers/leadsController.js';
+import { setOpsSupabaseClient } from './api/controllers/opsController.js';
 import { metrics } from './observability/metrics.js';
 
 // --- Queue ---
@@ -53,6 +58,7 @@ import processRoutes from './api/routes/process.js';
 import jobsRoutes from './api/routes/jobs.js';
 import approvalRoutes from './api/routes/approval.js';
 import leadsRoutes from './api/routes/leads.js';
+import opsRoutes from './api/routes/ops.js';
 
 // --- Middleware ---
 import { errorHandler } from './api/middleware/error-handler.js';
@@ -129,6 +135,7 @@ if (supabaseClient) {
   setSupabaseClientForApproval(supabaseClient);
   setPlanGuardSupabaseClient(supabaseClient);
   setLeadsSupabaseClient(supabaseClient);
+  setOpsSupabaseClient(supabaseClient);
   metrics.setSupabaseClient(supabaseClient);
 }
 
@@ -187,6 +194,7 @@ app.use(`${prefix}/process`, processRoutes);
 app.use(`${prefix}/jobs`, jobsRoutes);
 app.use(`${prefix}/jobs`, approvalRoutes);
 app.use(`${prefix}/leads`, leadsRoutes);
+app.use(`${prefix}/ops`, opsRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);
@@ -220,6 +228,10 @@ app.listen(config.port, () => {
   logger.info(`  PATCH ${prefix}/leads/:phone/stage`);
   logger.info(`  POST ${prefix}/leads/:phone/event`);
   logger.info(`  POST ${prefix}/leads/:phone/demo`);
+  logger.info(`  GET  ${prefix}/ops/dashboard`);
+  logger.info(`  GET  ${prefix}/ops/queue`);
+  logger.info(`  GET  ${prefix}/ops/costs`);
+  logger.info(`  GET  ${prefix}/ops/growth`);
 });
 
 export default app;

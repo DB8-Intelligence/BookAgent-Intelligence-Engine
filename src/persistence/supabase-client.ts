@@ -94,6 +94,55 @@ export class SupabaseClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Internal request with retry logic
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Executa um fetch com retentativas exponenciais em caso de falhas de rede
+   * ou erros temporários (502, 503, 504).
+   */
+  private async request(
+    url: string,
+    options: RequestInit,
+    retries: number = 3,
+    backoff: number = 500,
+  ): Promise<Response> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const response = await fetch(url, {
+          ...options,
+          // Adiciona timeout para evitar requests presos infinitamente
+          signal: AbortSignal.timeout(15_000),
+        });
+
+        // Se for sucesso ou erro do cliente (4xx), não tenta novamente
+        if (response.ok || (response.status >= 400 && response.status < 500)) {
+          return response;
+        }
+
+        // Se for erro de servidor (5xx), pode ser temporário
+        logger.warn(
+          `[SupabaseClient] Attempt ${attempt + 1}/${retries + 1} failed with status ${response.status}.`,
+        );
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        logger.warn(
+          `[SupabaseClient] Attempt ${attempt + 1}/${retries + 1} failed: ${lastError.message}`,
+        );
+      }
+
+      if (attempt < retries) {
+        const delay = backoff * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    throw lastError || new Error(`[SupabaseClient] Request failed after ${retries} retries`);
+  }
+
+  // ---------------------------------------------------------------------------
   // CRUD operations
   // ---------------------------------------------------------------------------
 
@@ -105,7 +154,7 @@ export class SupabaseClient {
     const url = `${this.baseUrl}/${table}`;
     const body = Array.isArray(data) ? data : [data];
 
-    const response = await fetch(url, {
+    const response = await this.request(url, {
       method: 'POST',
       headers: this.headers,
       body: JSON.stringify(body),
@@ -130,7 +179,7 @@ export class SupabaseClient {
     const filterParam = buildFilterParam(filter);
     const url = `${this.baseUrl}/${table}?${filterParam}`;
 
-    const response = await fetch(url, {
+    const response = await this.request(url, {
       method: 'PATCH',
       headers: this.headers,
       body: JSON.stringify(data),
@@ -158,7 +207,7 @@ export class SupabaseClient {
     };
     const body = Array.isArray(data) ? data : [data];
 
-    const response = await fetch(url, {
+    const response = await this.request(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -209,7 +258,7 @@ export class SupabaseClient {
     const queryString = params.toString();
     const url = `${this.baseUrl}/${table}${queryString ? `?${queryString}` : ''}`;
 
-    const response = await fetch(url, {
+    const response = await this.request(url, {
       method: 'GET',
       headers: {
         ...this.headers,
@@ -233,10 +282,10 @@ export class SupabaseClient {
     try {
       // Fazer um SELECT simples na tabela de jobs para testar conectividade
       const url = `${this.baseUrl}/bookagent_jobs?select=id&limit=1`;
-      const response = await fetch(url, {
+      const response = await this.request(url, {
         method: 'GET',
         headers: this.headers,
-      });
+      }, 1, 200); // retry rápido para ping
       return response.ok || response.status === 404; // 404 = tabela não existe ainda, mas conexão OK
     } catch {
       return false;

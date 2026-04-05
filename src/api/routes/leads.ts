@@ -14,6 +14,7 @@
  */
 
 import { Router } from 'express';
+import { authMiddleware } from '../middleware/auth.js';
 import {
   registerLead,
   getLead,
@@ -23,6 +24,9 @@ import {
 } from '../controllers/leadsController.js';
 
 const router = Router();
+
+// Proteção para todos os endpoints de gestão de leads (n8n/internos)
+router.use(authMiddleware);
 
 router.post('/register',          registerLead);
 router.get('/:phone',             getLead);

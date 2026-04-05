@@ -22,6 +22,7 @@ export const config = {
 
   api: {
     prefix: '/api/v1',
+    apiKey: process.env.BOOKAGENT_API_KEY ?? null, // Chave para proteção de endpoints (n8n, internos)
   },
 
   queue: {
