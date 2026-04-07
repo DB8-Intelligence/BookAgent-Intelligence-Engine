@@ -1,0 +1,11 @@
+node_modules
+dist
+storage
+.env
+.env.local
+*.log
+.git
+web
+docs
+scripts
+*.md
