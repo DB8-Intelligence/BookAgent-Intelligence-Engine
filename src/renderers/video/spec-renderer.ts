@@ -28,6 +28,10 @@ import {
   buildColorClipArgs,
   buildConcatArgs,
   buildXfadeArgs,
+  buildAudioMixArgs,
+  buildNarrationOverlayArgs,
+  buildSubtitleBurnInArgs,
+  buildSubtitleDrawTextArgs,
   type DrawTextSpec,
 } from './ffmpeg.js';
 import { logger } from '../../utils/logger.js';
@@ -47,6 +51,14 @@ export interface SpecRenderOptions {
   globalTimeoutMs?: number;
   /** Per-scene timeout in ms (default: 60s) */
   sceneTimeoutMs?: number;
+  /** Path to background music file (Parte 62) */
+  musicTrackPath?: string;
+  /** Path to narration audio file (Parte 62) */
+  narrationPath?: string;
+  /** Path to ASS subtitle file for burn-in (Parte 64) */
+  subtitleAssPath?: string;
+  /** FFmpeg drawtext filter string for burn-in fallback (Parte 64) */
+  subtitleDrawTextFilter?: string;
 }
 
 // ============================================================================
@@ -93,7 +105,10 @@ export async function renderFromSpec(
 
   const [width, height] = spec.resolution;
   const fps = options.fps ?? DEFAULT_FPS;
-  const fadeDuration = options.fadeDuration ?? DEFAULT_FADE_DURATION;
+  // Parte 63: transition profile overrides fade duration
+  const fadeDuration = spec.transitionProfile?.transitionDuration
+    ?? options.fadeDuration
+    ?? DEFAULT_FADE_DURATION;
 
   logger.info(`[SpecRenderer] Rendering ${spec.scenes.length} scenes at ${width}x${height} (${spec.format})`);
 
@@ -108,6 +123,9 @@ export async function renderFromSpec(
       break;
     }
 
+    // Parte 63: Preset motion profile overrides default scene duration
+    const presetSceneDuration = spec.motionProfile?.defaultSceneDuration ?? null;
+
     const clip = await renderSceneFromSpec(scene, {
       tempDir: options.tempDir,
       assetMap: options.assetMap,
@@ -115,6 +133,7 @@ export async function renderFromSpec(
       height,
       fps,
       timeoutMs: sceneTimeout,
+      presetSceneDuration,
     });
 
     if (clip) {
@@ -139,13 +158,129 @@ export async function renderFromSpec(
     height,
   });
 
+  // ---------- Audio mixing (Parte 62) ----------
+  const totalDuration = clips.reduce((sum, c) => sum + c.duration, 0);
+  let videoWithAudioPath = assembledPath;
+
+  const hasMusic = !!options.musicTrackPath && existsSync(options.musicTrackPath);
+  const hasNarration = !!options.narrationPath && existsSync(options.narrationPath);
+
+  if (hasMusic || hasNarration) {
+    const mixedPath = join(options.tempDir, `mixed-${Date.now()}.mp4`);
+
+    if (hasMusic) {
+      // Mix music (+ optional narration) into video
+      const mixArgs = buildAudioMixArgs({
+        videoPath: assembledPath,
+        musicPath: options.musicTrackPath!,
+        narrationPath: hasNarration ? options.narrationPath : undefined,
+        outputPath: mixedPath,
+        musicVolume: spec.mixConfig?.musicVolume ?? 0.15,
+        narrationVolume: spec.mixConfig?.narrationVolume ?? 1.0,
+        duckingDb: spec.mixConfig?.duckingDb ?? -10,
+        fadeInSeconds: spec.mixConfig?.fadeInSeconds ?? 2,
+        fadeOutSeconds: spec.mixConfig?.fadeOutSeconds ?? 3,
+        videoDurationSeconds: totalDuration,
+      });
+
+      const mixResult = await runFFmpeg(mixArgs, 120_000);
+      if (mixResult.exitCode === 0) {
+        videoWithAudioPath = mixedPath;
+        logger.info('[SpecRenderer] Background music mixed successfully');
+      } else {
+        warnings.push(`Music mix failed: ${mixResult.stderr.slice(-200)}`);
+        logger.warn(`[SpecRenderer] Music mix failed — proceeding without music`);
+      }
+    } else if (hasNarration) {
+      // Narration only (no music)
+      const narrArgs = buildNarrationOverlayArgs({
+        videoPath: assembledPath,
+        narrationPath: options.narrationPath!,
+        outputPath: mixedPath,
+      });
+
+      const narrResult = await runFFmpeg(narrArgs, 120_000);
+      if (narrResult.exitCode === 0) {
+        videoWithAudioPath = mixedPath;
+        logger.info('[SpecRenderer] Narration overlaid successfully');
+      } else {
+        warnings.push(`Narration overlay failed: ${narrResult.stderr.slice(-200)}`);
+        logger.warn('[SpecRenderer] Narration overlay failed — proceeding without audio');
+      }
+    }
+  }
+
+  // ---------- Subtitle burn-in (Parte 64) ----------
+  let videoWithSubsPath = videoWithAudioPath;
+
+  const hasAssSubs = !!options.subtitleAssPath && existsSync(options.subtitleAssPath);
+  const hasDrawTextSubs = !!options.subtitleDrawTextFilter;
+
+  if (hasAssSubs) {
+    const captionedPath = join(options.tempDir, `captioned-${Date.now()}.mp4`);
+    const subsResult = await runFFmpeg(
+      buildSubtitleBurnInArgs({
+        videoPath: videoWithAudioPath,
+        assFilePath: options.subtitleAssPath!,
+        outputPath: captionedPath,
+      }),
+      120_000,
+    );
+
+    if (subsResult.exitCode === 0) {
+      videoWithSubsPath = captionedPath;
+      logger.info('[SpecRenderer] Subtitles burned in (ASS)');
+    } else {
+      warnings.push(`Subtitle burn-in (ASS) failed: ${subsResult.stderr.slice(-200)}`);
+      logger.warn('[SpecRenderer] Subtitle ASS burn-in failed — trying drawtext fallback');
+
+      // Fallback to drawtext if ASS failed and drawtext filter is available
+      if (hasDrawTextSubs) {
+        const fallbackPath = join(options.tempDir, `captioned-dt-${Date.now()}.mp4`);
+        const dtResult = await runFFmpeg(
+          buildSubtitleDrawTextArgs({
+            videoPath: videoWithAudioPath,
+            drawTextFilter: options.subtitleDrawTextFilter!,
+            outputPath: fallbackPath,
+          }),
+          120_000,
+        );
+        if (dtResult.exitCode === 0) {
+          videoWithSubsPath = fallbackPath;
+          logger.info('[SpecRenderer] Subtitles burned in (drawtext fallback)');
+        } else {
+          warnings.push(`Subtitle drawtext fallback also failed`);
+          logger.warn('[SpecRenderer] Subtitle drawtext fallback failed — proceeding without captions');
+        }
+      }
+    }
+  } else if (hasDrawTextSubs) {
+    const captionedPath = join(options.tempDir, `captioned-dt-${Date.now()}.mp4`);
+    const dtResult = await runFFmpeg(
+      buildSubtitleDrawTextArgs({
+        videoPath: videoWithAudioPath,
+        drawTextFilter: options.subtitleDrawTextFilter!,
+        outputPath: captionedPath,
+      }),
+      120_000,
+    );
+
+    if (dtResult.exitCode === 0) {
+      videoWithSubsPath = captionedPath;
+      logger.info('[SpecRenderer] Subtitles burned in (drawtext)');
+    } else {
+      warnings.push(`Subtitle drawtext failed: ${dtResult.stderr.slice(-200)}`);
+      logger.warn('[SpecRenderer] Subtitle drawtext failed — proceeding without captions');
+    }
+  }
+
   // Finalize to output
   const slug = slugify(spec.format);
   const filename = `${slug}--${Date.now()}.mp4`;
   const outputPath = join(options.outputDir, filename);
 
   const finalResult = await runFFmpeg([
-    '-y', '-i', assembledPath,
+    '-y', '-i', videoWithSubsPath,
     '-c', 'copy',
     '-movflags', '+faststart',
     outputPath,
@@ -156,7 +291,6 @@ export async function renderFromSpec(
   }
 
   const fileStat = await stat(outputPath);
-  const totalDuration = clips.reduce((sum, c) => sum + c.duration, 0);
 
   // Cleanup temp
   await cleanupTemp(options.tempDir);
@@ -192,11 +326,14 @@ async function renderSceneFromSpec(
     height: number;
     fps: number;
     timeoutMs: number;
+    /** Default scene duration from preset motionProfile (Parte 63) */
+    presetSceneDuration?: number | null;
   },
 ): Promise<{ index: number; clipPath: string; duration: number; transition: string } | null> {
   const { tempDir, assetMap, width, height, fps, timeoutMs } = opts;
   const clipPath = join(tempDir, `scene-${String(scene.order).padStart(3, '0')}.mp4`);
-  const duration = clampDuration(scene.durationSeconds);
+  // Parte 63: scene duration falls back to preset default, then global default
+  const duration = clampDuration(scene.durationSeconds ?? opts.presetSceneDuration ?? null);
 
   const textOverlays: DrawTextSpec[] = scene.textOverlays.map((o) => ({
     text: o.text,

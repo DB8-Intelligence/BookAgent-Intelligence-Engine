@@ -17,3 +17,6 @@ coverage/
 .vscode/
 .idea/
 storage/multi-book/
+web/node_modules/
+web/.next/
+web/tsconfig.tsbuildinfo

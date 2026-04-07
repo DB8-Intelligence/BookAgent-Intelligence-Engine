@@ -65,8 +65,10 @@ export enum PipelineStage {
   BLOG = 'blog',
   LANDING_PAGE = 'landing_page',
   PERSONALIZATION = 'personalization',
+  CONTENT_SCORING = 'content_scoring',
   RENDER_EXPORT = 'render_export',
   DELIVERY = 'delivery',
+  PERFORMANCE_MONITORING = 'performance_monitoring',
 }
 
 /** Origem de um asset no sistema */

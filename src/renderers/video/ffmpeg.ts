@@ -213,6 +213,193 @@ export function buildXfadeArgs(opts: {
 }
 
 // ---------------------------------------------------------------------------
+// Audio mixing — Parte 62: Background Music Engine
+// ---------------------------------------------------------------------------
+
+export interface AudioMixOpts {
+  /** Path to the video file (with or without existing audio) */
+  videoPath: string;
+  /** Path to the background music track */
+  musicPath: string;
+  /** Path to optional narration audio */
+  narrationPath?: string;
+  /** Output path for the mixed video */
+  outputPath: string;
+  /** Music volume 0.0-1.0 (default: 0.15) */
+  musicVolume?: number;
+  /** Narration volume 0.0-1.0 (default: 1.0) */
+  narrationVolume?: number;
+  /** Ducking reduction in dB (default: -10) — applied to music when narration is present */
+  duckingDb?: number;
+  /** Fade-in duration for music (seconds) */
+  fadeInSeconds?: number;
+  /** Fade-out duration for music (seconds) */
+  fadeOutSeconds?: number;
+  /** Total video duration (seconds) — needed for fade-out timing */
+  videoDurationSeconds: number;
+}
+
+/**
+ * Builds ffmpeg args to mix background music into a video.
+ *
+ * Strategy:
+ * - If narration exists: music + narration → ducking (sidechaincompress or volume reduction)
+ * - If no narration: music only at set volume
+ * - Always: fade in at start, fade out at end
+ *
+ * Simple ducking approach (V1):
+ *   Music is set to a low volume (musicVolume) and further reduced by duckingDb.
+ *   When narration is present, both are mixed; narration always has priority.
+ */
+export function buildAudioMixArgs(opts: AudioMixOpts): string[] {
+  const musicVol = opts.musicVolume ?? 0.15;
+  const narrationVol = opts.narrationVolume ?? 1.0;
+  const fadeIn = opts.fadeInSeconds ?? 2;
+  const fadeOut = opts.fadeOutSeconds ?? 3;
+  const duration = opts.videoDurationSeconds;
+  const fadeOutStart = Math.max(0, duration - fadeOut);
+
+  // Build music filter: volume + fade in + fade out
+  const musicFilter = [
+    `volume=${musicVol}`,
+    `afade=t=in:st=0:d=${fadeIn}`,
+    `afade=t=out:st=${fadeOutStart}:d=${fadeOut}`,
+  ].join(',');
+
+  if (opts.narrationPath) {
+    // 3 inputs: video, music, narration
+    // Mix narration (loud) + music (quiet with ducking)
+    const duckVol = dbToVolume(opts.duckingDb ?? -10);
+    const duckFilter = `volume=${(musicVol * duckVol).toFixed(4)}`;
+
+    return [
+      '-y',
+      '-i', opts.videoPath,
+      '-i', opts.musicPath,
+      '-i', opts.narrationPath,
+      '-filter_complex',
+      // Music: set volume + fade
+      `[1:a]${musicFilter},${duckFilter}[music];` +
+      // Narration: set volume
+      `[2:a]volume=${narrationVol}[narr];` +
+      // Mix music + narration
+      `[music][narr]amix=inputs=2:duration=first:dropout_transition=2[aout]`,
+      '-map', '0:v',
+      '-map', '[aout]',
+      '-c:v', 'copy',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-shortest',
+      '-movflags', '+faststart',
+      opts.outputPath,
+    ];
+  }
+
+  // 2 inputs: video + music only (no narration)
+  return [
+    '-y',
+    '-i', opts.videoPath,
+    '-i', opts.musicPath,
+    '-filter_complex',
+    `[1:a]${musicFilter}[music]`,
+    '-map', '0:v',
+    '-map', '[music]',
+    '-c:v', 'copy',
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    '-shortest',
+    '-movflags', '+faststart',
+    opts.outputPath,
+  ];
+}
+
+/**
+ * Builds ffmpeg args to mix narration audio onto a video (without music).
+ * Used as fallback when no music track is available.
+ */
+export function buildNarrationOverlayArgs(opts: {
+  videoPath: string;
+  narrationPath: string;
+  outputPath: string;
+  narrationVolume?: number;
+}): string[] {
+  const vol = opts.narrationVolume ?? 1.0;
+
+  return [
+    '-y',
+    '-i', opts.videoPath,
+    '-i', opts.narrationPath,
+    '-filter_complex',
+    `[1:a]volume=${vol}[narr]`,
+    '-map', '0:v',
+    '-map', '[narr]',
+    '-c:v', 'copy',
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    '-shortest',
+    '-movflags', '+faststart',
+    opts.outputPath,
+  ];
+}
+
+/** Convert dB reduction to linear volume multiplier */
+function dbToVolume(db: number): number {
+  return Math.pow(10, db / 20);
+}
+
+// ---------------------------------------------------------------------------
+// Subtitle burn-in — Parte 64: Subtitle/Caption Engine
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds ffmpeg args to burn subtitles into a video using ASS file.
+ * Uses the "ass" filter which supports rich formatting.
+ */
+export function buildSubtitleBurnInArgs(opts: {
+  videoPath: string;
+  assFilePath: string;
+  outputPath: string;
+}): string[] {
+  // Use subtitles filter with ASS file for rich formatting
+  // The file path needs forward slashes and escaping for filter syntax
+  const safePath = opts.assFilePath.replace(/\\/g, '/').replace(/:/g, '\\:');
+
+  return [
+    '-y',
+    '-i', opts.videoPath,
+    '-vf', `ass='${safePath}'`,
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-crf', '23',
+    '-c:a', 'copy',
+    '-movflags', '+faststart',
+    opts.outputPath,
+  ];
+}
+
+/**
+ * Builds ffmpeg args to burn subtitles using drawtext filters (fallback).
+ * Less robust than ASS but doesn't require libass.
+ */
+export function buildSubtitleDrawTextArgs(opts: {
+  videoPath: string;
+  drawTextFilter: string;
+  outputPath: string;
+}): string[] {
+  return [
+    '-y',
+    '-i', opts.videoPath,
+    '-vf', opts.drawTextFilter,
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-crf', '23',
+    '-c:a', 'copy',
+    '-movflags', '+faststart',
+    opts.outputPath,
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // DrawText filter
 // ---------------------------------------------------------------------------
 

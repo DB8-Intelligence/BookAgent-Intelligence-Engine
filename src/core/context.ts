@@ -23,8 +23,11 @@ import type { AudioGenerationResult } from '../domain/entities/audio-plan.js';
 import type { BookCompatibilityProfile } from '../domain/entities/book-compatibility.js';
 import type { BookPrototype } from '../domain/entities/book-prototype.js';
 import type { DeliveryResult } from '../domain/entities/delivery.js';
+import type { ContentScore } from '../domain/entities/content-score.js';
+import type { JobCost } from '../domain/entities/job-cost.js';
 import type { Source } from '../domain/entities/source.js';
 import type { JobInput } from '../domain/entities/job.js';
+import type { TenantContext } from '../domain/entities/tenant.js';
 import type { ModuleExecutionLog } from '../domain/entities/module-log.js';
 import type { OutputFormat } from '../domain/value-objects/index.js';
 
@@ -34,6 +37,10 @@ export interface ProcessingContext {
 
   /** Input original da requisição */
   readonly input: JobInput;
+
+  // --- Tenant Context (Parte 74) ---
+  /** Contexto do tenant — isolamento, governança, feature flags */
+  tenantContext?: TenantContext;
 
   // --- Populado pelo Ingestion ---
   extractedText?: string;
@@ -83,8 +90,14 @@ export interface ProcessingContext {
   // --- Populado pelo Render/Export ---
   exportResult?: ExportResult;
 
+  // --- Populado pelo Content Scoring (Parte 70) ---
+  scores?: ContentScore[];
+
   // --- Populado pelo Delivery ---
   deliveryResult?: DeliveryResult;
+
+  // --- Populado pelo Performance Monitoring (Parte 71) ---
+  costMetrics?: JobCost;
 
   // --- Gerenciado pelo Pipeline ---
   /** Log de execução de cada módulo (preenchido automaticamente pelo Pipeline) */
@@ -93,11 +106,17 @@ export interface ProcessingContext {
 
 /**
  * Cria um ProcessingContext inicial a partir de um JobInput.
+ * @param tenantCtx — TenantContext opcional (Parte 74). Se omitido, pipeline roda sem tenant governance.
  */
-export function createContext(jobId: string, input: JobInput): ProcessingContext {
+export function createContext(
+  jobId: string,
+  input: JobInput,
+  tenantCtx?: TenantContext,
+): ProcessingContext {
   return {
     jobId,
     input,
+    tenantContext: tenantCtx,
     executionLogs: [],
   };
 }

@@ -31,6 +31,10 @@ import {
 } from '../../domain/entities/export-artifact.js';
 import type { AITextService } from '../../services/ai-text-service.js';
 import type { GeneratedMediaScript, GeneratedSceneScript } from '../../generation/types.js';
+import type { ToneOfVoice } from '../../domain/entities/narrative.js';
+import { resolvePreset } from '../presets/index.js';
+import { DEFAULT_MIX_CONFIG } from '../../domain/entities/music.js';
+import type { SoundtrackProfile } from '../../domain/entities/audio-plan.js';
 import { logger } from '../../utils/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -55,6 +59,35 @@ interface RenderSpec {
     logoPlacement: string | null;
     signature: string | null;
   };
+  /** Background music reference (Parte 62) */
+  backgroundMusic?: {
+    trackId: string;
+    trackPath?: string;
+    mood: string;
+  } | null;
+  /** Audio mix config (Parte 62) */
+  mixConfig?: {
+    musicVolume: number;
+    narrationVolume: number;
+    duckingDb: number;
+    fadeInSeconds: number;
+    fadeOutSeconds: number;
+  } | null;
+  /** Preset ID (Parte 63) */
+  presetId?: string | null;
+  /** Motion profile from preset (Parte 63) */
+  motionProfile?: {
+    defaultSceneDuration: number;
+    motionIntensity: string;
+    kenBurnsEnabled: boolean;
+    kenBurnsZoomFactor: number;
+  } | null;
+  /** Transition profile from preset (Parte 63) */
+  transitionProfile?: {
+    defaultTransition: string;
+    transitionDuration: number;
+    allowedTransitions: string[];
+  } | null;
   metadata: Record<string, unknown>;
 }
 
@@ -108,6 +141,18 @@ interface SocialMetadata {
 // Public API
 // ---------------------------------------------------------------------------
 
+/** Options for exportMediaPlans (Parte 62+63 additions) */
+export interface ExportMediaOptions {
+  /** AI text service for script generation */
+  aiService?: AITextService | null;
+  /** Tone of voice for preset inference (Parte 63) */
+  tone?: ToneOfVoice;
+  /** Explicit preset ID override (Parte 63) */
+  presetId?: string;
+  /** Soundtrack profile from AudioPlan (Parte 62) */
+  soundtrackProfile?: SoundtrackProfile;
+}
+
 /**
  * Exporta MediaPlans como artefatos de renderização.
  * Para cada MediaPlan gera:
@@ -115,20 +160,25 @@ interface SocialMetadata {
  * 2. MEDIA_METADATA (JSON com captions e metadados para publicação)
  *
  * @param plans - MediaPlans gerados pelo pipeline
- * @param aiService - AITextService opcional; quando fornecido, ativa scripts com IA
+ * @param aiServiceOrOpts - AITextService ou ExportMediaOptions
  */
 export async function exportMediaPlans(
   plans: MediaPlan[],
-  aiService?: AITextService | null,
+  aiServiceOrOpts?: AITextService | ExportMediaOptions | null,
 ): Promise<ExportArtifact[]> {
+  // Backwards-compatible: accept AITextService directly or options object
+  const opts: ExportMediaOptions = aiServiceOrOpts && typeof aiServiceOrOpts === 'object' && 'aiService' in aiServiceOrOpts
+    ? aiServiceOrOpts as ExportMediaOptions
+    : { aiService: aiServiceOrOpts as AITextService | null | undefined };
+
   const artifacts: ExportArtifact[] = [];
 
   for (const plan of plans) {
     // Gerar script de narração (AI ou local — sempre gera, agrega ao spec)
     let script: GeneratedMediaScript | null = null;
     try {
-      if (aiService) {
-        script = await aiService.generateMediaScript(plan);
+      if (opts.aiService) {
+        script = await opts.aiService.generateMediaScript(plan);
       } else {
         // Gerar localmente sem AI (ainda agrega valor ao spec)
         const { generateMediaScript } = await import('../../generation/media-script-generator.js');
@@ -138,7 +188,7 @@ export async function exportMediaPlans(
       logger.warn(`[MediaExporter] Script generation failed for "${plan.title}": ${err}`);
     }
 
-    artifacts.push(buildRenderSpecArtifact(plan, script));
+    artifacts.push(buildRenderSpecArtifact(plan, script, opts));
     artifacts.push(buildMetadataArtifact(plan));
   }
 
@@ -152,6 +202,7 @@ export async function exportMediaPlans(
 function buildRenderSpecArtifact(
   plan: MediaPlan,
   script: GeneratedMediaScript | null,
+  opts?: ExportMediaOptions,
 ): ExportArtifact {
   const warnings: string[] = [];
 
@@ -165,7 +216,7 @@ function buildRenderSpecArtifact(
     warnings.push('Plano não está pronto para renderização');
   }
 
-  const spec = buildRenderSpec(plan, script);
+  const spec = buildRenderSpec(plan, script, opts);
   const content = JSON.stringify(spec, null, 2);
   const referencedAssetIds = collectAssetIds(plan.scenes);
 
@@ -192,7 +243,11 @@ function buildRenderSpecArtifact(
   };
 }
 
-function buildRenderSpec(plan: MediaPlan, script: GeneratedMediaScript | null): RenderSpec {
+function buildRenderSpec(
+  plan: MediaPlan,
+  script: GeneratedMediaScript | null,
+  opts?: ExportMediaOptions,
+): RenderSpec {
   // Indexar cenas do script por order para lookup O(1)
   const scriptSceneMap = new Map<number, GeneratedSceneScript>();
   if (script) {
@@ -201,8 +256,34 @@ function buildRenderSpec(plan: MediaPlan, script: GeneratedMediaScript | null): 
     }
   }
 
+  // Parte 63: Resolve preset
+  const { presetId, motionProfile, transitionProfile } = resolvePreset(
+    plan.format,
+    opts?.tone,
+    opts?.presetId,
+  );
+
+  // Parte 62: Build music + mix config from soundtrack profile
+  const soundtrack = opts?.soundtrackProfile;
+  const backgroundMusic = soundtrack && soundtrack.category !== 'none'
+    ? {
+        trackId: soundtrack.trackPath ?? soundtrack.category,
+        trackPath: soundtrack.trackPath,
+        mood: soundtrack.category,
+      }
+    : null;
+  const mixConfig = soundtrack && soundtrack.category !== 'none'
+    ? {
+        musicVolume: soundtrack.volume ?? DEFAULT_MIX_CONFIG.musicVolume,
+        narrationVolume: DEFAULT_MIX_CONFIG.narrationVolume,
+        duckingDb: DEFAULT_MIX_CONFIG.duckingDb,
+        fadeInSeconds: soundtrack.fadeInDuration ?? DEFAULT_MIX_CONFIG.fadeInSeconds,
+        fadeOutSeconds: soundtrack.fadeOutDuration ?? DEFAULT_MIX_CONFIG.fadeOutSeconds,
+      }
+    : null;
+
   return {
-    version: '1.0.0',
+    version: '1.1.0',
     format: plan.format,
     aspectRatio: plan.aspectRatio?.label ?? '9:16',
     resolution: plan.resolution ?? [1080, 1920],
@@ -215,6 +296,11 @@ function buildRenderSpec(plan: MediaPlan, script: GeneratedMediaScript | null): 
       logoPlacement: (plan.renderMetadata?.userLogoPlacement as string) ?? null,
       signature: (plan.renderMetadata?.userSignature as string) ?? null,
     },
+    backgroundMusic,
+    mixConfig,
+    presetId,
+    motionProfile,
+    transitionProfile,
     metadata: plan.renderMetadata ?? {},
   };
 }

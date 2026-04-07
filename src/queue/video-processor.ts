@@ -19,9 +19,13 @@ import type { VideoRenderJobData } from './types.js';
 import type { SupabaseClient } from '../persistence/supabase-client.js';
 import type { RenderSpec } from '../types/render-spec.js';
 import { renderFromSpec } from '../renderers/video/spec-renderer.js';
+import { selectTrack, resolveTrackPath, profileFromSoundtrackCategory } from '../modules/music/index.js';
+import { buildSubtitleTrackFromSpec, exportSRT, exportVTT, exportASS, toFFmpegFilter } from '../modules/subtitles/index.js';
+import { SoundtrackCategory } from '../domain/entities/audio-plan.js';
 import { logger } from '../utils/logger.js';
 import { metrics } from '../observability/metrics.js';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { v4 as uuid } from 'uuid';
 
 // ============================================================================
@@ -82,21 +86,88 @@ export async function processVideoRenderJob(
       `${assetMap.size} assets, format=${spec.format}`
     );
 
-    // 3. Render video
+    // 2b. Resolve background music (Parte 62)
+    let musicTrackPath: string | undefined;
+    const soundtrackHint = bullJob.data.soundtrackCategory;
+    const specMusic = spec.backgroundMusic;
+
+    if (specMusic?.trackPath && existsSync(specMusic.trackPath)) {
+      // Explicit track path from RenderSpec
+      musicTrackPath = specMusic.trackPath;
+      logger.info(`[VideoProcessor] Using explicit music track: ${musicTrackPath}`);
+    } else if (soundtrackHint && soundtrackHint !== 'none') {
+      // Select from catalog based on soundtrack category
+      const profile = profileFromSoundtrackCategory(soundtrackHint as SoundtrackCategory);
+      if (profile) {
+        const track = await selectTrack(profile);
+        if (track) {
+          musicTrackPath = resolveTrackPath(track);
+          logger.info(`[VideoProcessor] Selected music: "${track.name}" → ${musicTrackPath}`);
+        }
+      }
+    }
+
+    // 2c. Resolve narration audio path (Parte 62)
+    const narrationPath = bullJob.data.narrationAudioPath && existsSync(bullJob.data.narrationAudioPath)
+      ? bullJob.data.narrationAudioPath
+      : undefined;
+
+    // 3. Generate subtitles (Parte 64)
     const jobOutputDir = join(deps.outputDir, jobId);
     const jobTempDir = join(deps.tempDir, `video-${jobId}-${Date.now()}`);
 
+    let subtitleAssPath: string | undefined;
+    let subtitleDrawTextFilter: string | undefined;
+
+    const hasSubtitleCues = spec.subtitles && spec.subtitles.length > 0;
+    const hasSceneNarration = spec.scenes.some((s) => s.narration?.voiceover);
+
+    if (hasSubtitleCues || hasSceneNarration) {
+      try {
+        const { mkdir: mkdirAsync } = await import('node:fs/promises');
+        await mkdirAsync(jobOutputDir, { recursive: true });
+        await mkdirAsync(jobTempDir, { recursive: true });
+
+        const subtitleTrack = buildSubtitleTrackFromSpec(spec);
+
+        if (subtitleTrack.cues.length > 0) {
+          // Export sidecar files (SRT + VTT)
+          await exportSRT(subtitleTrack, jobOutputDir);
+          await exportVTT(subtitleTrack, jobOutputDir);
+
+          // Export ASS for burn-in
+          subtitleAssPath = await exportASS(subtitleTrack, jobTempDir);
+
+          // Generate drawtext filter as fallback
+          const [w, h] = spec.resolution;
+          subtitleDrawTextFilter = toFFmpegFilter(subtitleTrack, w, h);
+
+          logger.info(
+            `[VideoProcessor] Subtitles generated: ${subtitleTrack.cues.length} cues, ` +
+            `SRT+VTT exported, ASS ready for burn-in`,
+          );
+        }
+      } catch (err) {
+        logger.warn(`[VideoProcessor] Subtitle generation failed — proceeding without: ${err}`);
+      }
+    }
+
+    // 4. Render video
     const result = await renderFromSpec(spec, {
       outputDir: jobOutputDir,
       tempDir: jobTempDir,
       assetMap,
       globalTimeoutMs: 5 * 60_000,
       sceneTimeoutMs: 60_000,
+      musicTrackPath,
+      narrationPath,
+      subtitleAssPath,
+      subtitleDrawTextFilter: subtitleDrawTextFilter || undefined,
     });
 
     const durationMs = Date.now() - startTime;
 
-    // 4. Persist .mp4 as artifact
+    // 5. Persist .mp4 as artifact
     if (deps.supabase) {
       const artifactRow = {
         id: uuid(),
@@ -120,7 +191,7 @@ export async function processVideoRenderJob(
       }
     }
 
-    // 5. Update status to completed
+    // 6. Update status to completed
     await updateVideoStatus(deps.supabase, jobId, 'completed', {
       video_render_completed_at: new Date().toISOString(),
       video_render_output_path: result.outputPath,
@@ -129,7 +200,7 @@ export async function processVideoRenderJob(
       video_render_scene_count: result.sceneCount,
     });
 
-    // 6. Track metrics
+    // 7. Track metrics
     metrics.track('job_completed', {
       userId: 'system',
       planTier: 'basic',
@@ -144,7 +215,7 @@ export async function processVideoRenderJob(
       `${result.durationSeconds.toFixed(1)}s video, rendered in ${(durationMs / 1000).toFixed(1)}s)`
     );
 
-    // 7. Webhook — video-specific payload for n8n/WhatsApp integration
+    // 8. Webhook — video-specific payload for n8n/WhatsApp integration
     if (webhookUrl) {
       await sendVideoWebhook(webhookUrl, {
         jobId,

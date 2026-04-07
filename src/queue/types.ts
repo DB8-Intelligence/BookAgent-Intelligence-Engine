@@ -3,7 +3,17 @@
  *
  * BookAgentJobData é o payload armazenado em cada job da fila.
  * É serializado para Redis e recebido pelo worker.
+ *
+ * Parte 74: adicionado tenantContext para isolamento multi-tenant.
  */
+
+/** Tenant context leve para serialização na fila (Parte 74) */
+export interface QueueTenantContext {
+  tenantId: string;
+  userId: string;
+  planTier: string;
+  learningScope: string;
+}
 
 export interface BookAgentJobData {
   /** ID único do job (UUID gerado pela API antes de enfileirar) */
@@ -27,6 +37,9 @@ export interface BookAgentJobData {
 
   /** URL para notificação ao finalizar (POST com resultado) */
   webhookUrl?: string;
+
+  /** Tenant context para isolamento (Parte 74) */
+  tenantContext?: QueueTenantContext;
 }
 
 /**
@@ -50,6 +63,18 @@ export interface VideoRenderJobData {
 
   /** Webhook URL for notification on completion */
   webhookUrl?: string;
+
+  /** Path to narration audio file (Parte 62) */
+  narrationAudioPath?: string;
+
+  /** Soundtrack category hint from AudioPlan (Parte 62) */
+  soundtrackCategory?: string;
+
+  /** Variant spec IDs to render (Parte 65) — if set, renders multiple variants */
+  variantIds?: string[];
+
+  /** Tenant context for isolation (Parte 74) */
+  tenantContext?: QueueTenantContext;
 }
 
 /** Resultado do webhook POST */

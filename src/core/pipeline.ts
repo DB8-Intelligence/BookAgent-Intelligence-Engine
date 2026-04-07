@@ -18,8 +18,10 @@
  *  11. Blog                   → gera planos de artigos para blog
  *  12. Landing Page           → gera planos de landing pages
  *  13. Personalization        → aplica logo, CTA e dados do usuário
- *  14. Render/Export          → renderiza e exporta artefatos finais
- *  15. Delivery               → prepara entrega e notificação
+ *  14. Content Scoring        → avalia qualidade dos outputs (Parte 70)
+ *  15. Render/Export          → renderiza e exporta artefatos finais
+ *  16. Delivery               → prepara entrega e notificação
+ *  17. Performance Monitoring → métricas de custo e performance (Parte 71)
  */
 
 import type { ProcessingContext } from './context.js';
@@ -31,7 +33,7 @@ import { EMPTY_BRANDING } from '../domain/entities/branding.js';
 import { PipelineStage, ModuleStatus } from '../domain/value-objects/index.js';
 import { logger } from '../utils/logger.js';
 
-/** Ordem fixa de execução dos 15 estágios */
+/** Ordem fixa de execução dos 17 estágios */
 const STAGE_ORDER: PipelineStage[] = [
   PipelineStage.INGESTION,
   PipelineStage.BOOK_ANALYSIS,
@@ -46,8 +48,10 @@ const STAGE_ORDER: PipelineStage[] = [
   PipelineStage.BLOG,
   PipelineStage.LANDING_PAGE,
   PipelineStage.PERSONALIZATION,
+  PipelineStage.CONTENT_SCORING,
   PipelineStage.RENDER_EXPORT,
   PipelineStage.DELIVERY,
+  PipelineStage.PERFORMANCE_MONITORING,
 ];
 
 export class Pipeline {

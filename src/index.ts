@@ -43,6 +43,27 @@ import { setOrchestrator as setProcessOrch } from './api/controllers/processCont
 import { setOrchestrator as setJobsOrch, setJobRepository } from './api/controllers/jobsController.js';
 import { setOrchestrator as setArtifactsOrch } from './api/controllers/artifactsController.js';
 import { setSupabaseClientForApproval } from './api/controllers/approvalController.js';
+import { setSupabaseClientForExperiments } from './api/controllers/experimentController.js';
+import { setSupabaseClientForBilling } from './api/controllers/billingController.js';
+import { setSupabaseClientForAdmin } from './api/controllers/adminController.js';
+import { setSupabaseClientForCustomerDashboard } from './api/controllers/customerDashboardController.js';
+import { setSupabaseClientForAnalytics } from './api/controllers/analyticsController.js';
+import { setSupabaseClientForInsights } from './api/controllers/insightsController.js';
+import { setSupabaseClientForTemplates } from './api/controllers/templateMarketplaceController.js';
+import { setSupabaseClientForStrategy } from './api/controllers/strategyController.js';
+import { setSupabaseClientForCampaigns } from './api/controllers/campaignController.js';
+import { setSupabaseClientForScheduling } from './api/controllers/scheduleController.js';
+import { setSupabaseClientForExecution } from './api/controllers/executionController.js';
+import { setSupabaseClientForGovernance } from './api/controllers/governanceController.js';
+import { setSupabaseClientForOptimization } from './api/controllers/optimizationController.js';
+import { setSupabaseClientForGoals } from './api/controllers/goalOptimizationController.js';
+import { setSupabaseClientForMemory } from './api/controllers/memoryController.js';
+import { setSupabaseClientForRecovery } from './api/controllers/recoveryController.js';
+import { setSupabaseClientForKnowledgeGraph } from './api/controllers/knowledgeGraphController.js';
+import { setSupabaseClientForSimulation } from './api/controllers/simulationController.js';
+import { setSupabaseClientForDecisions } from './api/controllers/decisionController.js';
+import { setSupabaseClientForCoPilot } from './api/controllers/copilotController.js';
+import { setTenantGuardSupabaseClient, tenantGuard } from './api/middleware/tenant-guard.js';
 import { setVideoRenderSupabaseClient } from './api/controllers/videoRenderController.js';
 import { setPlanGuardSupabaseClient } from './api/middleware/plan-guard.js';
 import { setLeadsSupabaseClient } from './api/controllers/leadsController.js';
@@ -60,6 +81,26 @@ import jobsRoutes from './api/routes/jobs.js';
 import approvalRoutes from './api/routes/approval.js';
 import leadsRoutes from './api/routes/leads.js';
 import opsRoutes from './api/routes/ops.js';
+import experimentRoutes from './api/routes/experiments.js';
+import billingRoutes from './api/routes/billing.js';
+import adminRoutes from './api/routes/admin.js';
+import analyticsRoutes from './api/routes/analytics.js';
+import insightsRoutes from './api/routes/insights.js';
+import templateRoutes from './api/routes/templates.js';
+import strategyRoutes from './api/routes/strategy.js';
+import campaignRoutes from './api/routes/campaigns.js';
+import scheduleRoutes, { calendarRouter } from './api/routes/schedule.js';
+import executionRoutes from './api/routes/execution.js';
+import governanceRoutes from './api/routes/governance.js';
+import optimizationRoutes from './api/routes/optimization.js';
+import goalRoutes from './api/routes/goals.js';
+import memoryRoutes from './api/routes/memory.js';
+import recoveryRoutes from './api/routes/recovery.js';
+import knowledgeGraphRoutes from './api/routes/knowledge-graph.js';
+import simulationRoutes from './api/routes/simulation.js';
+import decisionRoutes from './api/routes/decisions.js';
+import copilotRoutes from './api/routes/copilot.js';
+import customerDashboardRoutes from './api/routes/customer-dashboard.js';
 
 // --- Middleware ---
 import { errorHandler } from './api/middleware/error-handler.js';
@@ -79,7 +120,9 @@ import { BlogModule } from './modules/blog/index.js';
 import { LandingPageModule } from './modules/landing-page/index.js';
 import { PersonalizationModule } from './modules/personalization/index.js';
 import { RenderExportModule } from './modules/render-export/index.js';
+import { ContentScoringModule } from './modules/scoring/index.js';
 import { DeliveryModule } from './modules/delivery/index.js';
+import { PerformanceMonitoringModule } from './modules/performance/index.js';
 
 // ============================================================================
 // Bootstrap
@@ -122,8 +165,10 @@ orchestrator.registerModule(new MediaGenerationModule());
 orchestrator.registerModule(new BlogModule());
 orchestrator.registerModule(new LandingPageModule());
 orchestrator.registerModule(new PersonalizationModule());
+orchestrator.registerModule(new ContentScoringModule());
 orchestrator.registerModule(new RenderExportModule());
 orchestrator.registerModule(new DeliveryModule());
+orchestrator.registerModule(new PerformanceMonitoringModule());
 
 // Compartilhar orchestrator com todos os controllers
 setProcessOrch(orchestrator);
@@ -134,6 +179,27 @@ setArtifactsOrch(orchestrator);
 if (supabaseClient) {
   setJobRepository(new JobRepository(supabaseClient));
   setSupabaseClientForApproval(supabaseClient);
+  setSupabaseClientForExperiments(supabaseClient);
+  setSupabaseClientForBilling(supabaseClient);
+  setSupabaseClientForAdmin(supabaseClient);
+  setSupabaseClientForCustomerDashboard(supabaseClient);
+  setSupabaseClientForAnalytics(supabaseClient);
+  setSupabaseClientForInsights(supabaseClient);
+  setSupabaseClientForTemplates(supabaseClient);
+  setSupabaseClientForStrategy(supabaseClient);
+  setSupabaseClientForCampaigns(supabaseClient);
+  setSupabaseClientForScheduling(supabaseClient);
+  setSupabaseClientForExecution(supabaseClient);
+  setSupabaseClientForGovernance(supabaseClient);
+  setSupabaseClientForOptimization(supabaseClient);
+  setSupabaseClientForGoals(supabaseClient);
+  setSupabaseClientForMemory(supabaseClient);
+  setSupabaseClientForRecovery(supabaseClient);
+  setSupabaseClientForKnowledgeGraph(supabaseClient);
+  setSupabaseClientForSimulation(supabaseClient);
+  setSupabaseClientForDecisions(supabaseClient);
+  setSupabaseClientForCoPilot(supabaseClient);
+  setTenantGuardSupabaseClient(supabaseClient);
   setVideoRenderSupabaseClient(supabaseClient);
   setPlanGuardSupabaseClient(supabaseClient);
   setLeadsSupabaseClient(supabaseClient);
@@ -161,6 +227,9 @@ if (queueMode) {
 const app = express();
 
 app.use(express.json({ limit: '10mb' }));
+
+// Tenant resolution — resolve TenantContext em cada request (Parte 74)
+app.use(tenantGuard);
 
 // Health check — inclui status de providers e persistence
 app.get('/health', (_req, res) => {
@@ -197,6 +266,27 @@ app.use(`${prefix}/jobs`, jobsRoutes);
 app.use(`${prefix}/jobs`, approvalRoutes);
 app.use(`${prefix}/leads`, leadsRoutes);
 app.use(`${prefix}/ops`, opsRoutes);
+app.use(`${prefix}/experiments`, experimentRoutes);
+app.use(`${prefix}/billing`, billingRoutes);
+app.use(`${prefix}/admin`, adminRoutes);
+app.use(`${prefix}/analytics`, analyticsRoutes);
+app.use(`${prefix}/insights`, insightsRoutes);
+app.use(`${prefix}/templates`, templateRoutes);
+app.use(`${prefix}/strategy`, strategyRoutes);
+app.use(`${prefix}/campaigns`, campaignRoutes);
+app.use(`${prefix}/campaigns`, scheduleRoutes);
+app.use(`${prefix}/calendar`, calendarRouter);
+app.use(`${prefix}/campaigns`, executionRoutes);
+app.use(`${prefix}/governance`, governanceRoutes);
+app.use(`${prefix}/campaigns`, optimizationRoutes);
+app.use(`${prefix}/goals`, goalRoutes);
+app.use(`${prefix}/memory`, memoryRoutes);
+app.use(`${prefix}/recovery`, recoveryRoutes);
+app.use(`${prefix}/knowledge-graph`, knowledgeGraphRoutes);
+app.use(`${prefix}/simulation`, simulationRoutes);
+app.use(`${prefix}/decisions`, decisionRoutes);
+app.use(`${prefix}/copilot`, copilotRoutes);
+app.use(`${prefix}/dashboard`, customerDashboardRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);
