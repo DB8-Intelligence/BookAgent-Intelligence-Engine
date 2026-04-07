@@ -81,6 +81,9 @@ import { setSupabaseClientForTenants } from './api/controllers/tenantController.
 import { setSupabaseClientForWhatsAppFunnel, setOrchestratorForWhatsAppFunnel } from './api/controllers/whatsappFunnelController.js';
 import { setSupabaseClientForPublicApi } from './api/controllers/publicApiController.js';
 import { setSupabaseClientForPartners } from './api/controllers/partnerController.js';
+import { setSupabaseClientForAcquisition } from './api/controllers/acquisitionController.js';
+import { setSupabaseClientForIntegrationHub } from './api/controllers/integrationHubController.js';
+import { setSupabaseClientForDistribution } from './api/controllers/distributionController.js';
 import { setTenantGuardSupabaseClient, tenantGuard } from './api/middleware/tenant-guard.js';
 import { setVideoRenderSupabaseClient } from './api/controllers/videoRenderController.js';
 import { setPlanGuardSupabaseClient } from './api/middleware/plan-guard.js';
@@ -126,6 +129,9 @@ import tenantRoutes, { planRouter as planRoutes } from './api/routes/tenants.js'
 import funnelRoutes from './api/routes/funnel.js';
 import publicApiRoutes from './api/routes/public-api.js';
 import partnerRoutes from './api/routes/partners.js';
+import acquisitionRoutes from './api/routes/acquisition.js';
+import integrationHubRoutes from './api/routes/integration-hub.js';
+import distributionRoutes from './api/routes/distribution.js';
 import customerDashboardRoutes from './api/routes/customer-dashboard.js';
 
 // --- Middleware ---
@@ -247,6 +253,9 @@ if (supabaseClient) {
   setSupabaseClientForWhatsAppFunnel(supabaseClient);
   setSupabaseClientForPublicApi(supabaseClient);
   setSupabaseClientForPartners(supabaseClient);
+  setSupabaseClientForAcquisition(supabaseClient);
+  setSupabaseClientForIntegrationHub(supabaseClient);
+  setSupabaseClientForDistribution(supabaseClient);
   setTenantGuardSupabaseClient(supabaseClient);
   setVideoRenderSupabaseClient(supabaseClient);
   setPlanGuardSupabaseClient(supabaseClient);
@@ -367,6 +376,9 @@ app.use(`${prefix}/funnel`, funnelRoutes);
 app.use(`${prefix}/dashboard`, customerDashboardRoutes);
 
 app.use(`${prefix}/partners`, partnerRoutes);
+app.use(`${prefix}/acquisition`, acquisitionRoutes);
+app.use(`${prefix}/integrations`, integrationHubRoutes);
+app.use(`${prefix}/distribution`, distributionRoutes);
 
 // Public API (separate prefix, API key auth)
 app.use('/api/public/v1', publicApiRoutes);

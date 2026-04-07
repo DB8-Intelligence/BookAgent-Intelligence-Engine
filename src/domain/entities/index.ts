@@ -654,3 +654,57 @@ export {
   WEBHOOK_EVENTS,
 } from './partner.js';
 export type { WebhookEvent } from './partner.js';
+export type {
+  AcquisitionCampaign,
+  AcquisitionMetrics,
+  ContentSchedule,
+  NurturingSequence,
+  NurturingStep,
+  ConversionEvent,
+} from './acquisition.js';
+export {
+  AcquisitionChannel,
+  CampaignGoalType,
+  ContentScheduleStatus,
+  NurturingStepType,
+  SequenceStatus,
+  ConversionType,
+  CHANNEL_LABELS,
+  GOAL_LABELS,
+  DEFAULT_NURTURING_SEQUENCE,
+  EMPTY_METRICS,
+} from './acquisition.js';
+export type {
+  ExternalConnection,
+  ConnectorConfig,
+  SyncLog,
+  IntegrationDefinition as HubIntegrationDefinition,
+} from './integration-hub.js';
+export {
+  ExternalSystemType,
+  ConnectionStatus,
+  SyncDirection,
+  SyncEventType,
+  SyncLogStatus,
+  INTEGRATION_CATALOG as HUB_INTEGRATION_CATALOG,
+  SYSTEM_LABELS,
+} from './integration-hub.js';
+export type {
+  DistributionChannel as DistChannel,
+  AffiliatePayout,
+  WhiteLabelConfig,
+  WhiteLabelBranding,
+  ApiInvoice,
+  ApiUsageBreakdown,
+  ApiPricingTier,
+} from './distribution.js';
+export {
+  DistributionChannelType,
+  MonetizationModel,
+  PayoutStatus,
+  WhiteLabelStatus,
+  ApiUsageTier,
+  API_PRICING,
+  CHANNEL_TYPE_LABELS,
+  MONETIZATION_LABELS,
+} from './distribution.js';
