@@ -69,6 +69,15 @@ export interface SocialContent {
    */
   imageUrl?: string;
   /**
+   * URL pública acessível do vídeo.
+   * Usado para Reels no Instagram e vídeos no Facebook.
+   */
+  videoUrl?: string;
+  /**
+   * URL do thumbnail/cover para vídeos.
+   */
+  coverUrl?: string;
+  /**
    * Link opcional para incluir no post do Facebook.
    * Geralmente o link do dashboard ou landing page do job.
    */

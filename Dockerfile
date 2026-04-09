@@ -18,13 +18,18 @@ RUN npm run build
 # --- Stage 2: Runtime ---
 FROM node:20-alpine
 
-RUN apk add --no-cache ffmpeg
+RUN apk add --no-cache ffmpeg python3 py3-pip \
+    && mkdir -p /tmp/videos
 
 WORKDIR /app
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json .
+
+# Video generation: Python modules + music files
+COPY video/ ./video/
+COPY musics/ ./musics/
 
 # Storage directories (created at runtime by StorageManager)
 RUN mkdir -p storage/assets storage/outputs storage/temp

@@ -133,6 +133,7 @@ import acquisitionRoutes from './api/routes/acquisition.js';
 import integrationHubRoutes from './api/routes/integration-hub.js';
 import distributionRoutes from './api/routes/distribution.js';
 import customerDashboardRoutes from './api/routes/customer-dashboard.js';
+import videoRoutes from './api/routes/video.js';
 
 // --- Middleware ---
 import { errorHandler } from './api/middleware/error-handler.js';
@@ -318,6 +319,11 @@ app.get('/health', (_req, res) => {
       ai: providers.ai,
       tts: providers.tts,
     },
+    socialPublish: {
+      metaCredentials: !!process.env.META_ACCESS_TOKEN,
+      instagram: !!(process.env.META_ACCESS_TOKEN && process.env.META_INSTAGRAM_ACCOUNT_ID),
+      facebook: !!(process.env.META_ACCESS_TOKEN && process.env.META_FACEBOOK_PAGE_ID),
+    },
     plans: {
       available: ['basic', 'pro', 'business'],
       enforcement: 'active',
@@ -379,6 +385,9 @@ app.use(`${prefix}/partners`, partnerRoutes);
 app.use(`${prefix}/acquisition`, acquisitionRoutes);
 app.use(`${prefix}/integrations`, integrationHubRoutes);
 app.use(`${prefix}/distribution`, distributionRoutes);
+
+// Video Generation
+app.use('/generate-video', videoRoutes);
 
 // Public API (separate prefix, API key auth)
 app.use('/api/public/v1', publicApiRoutes);
