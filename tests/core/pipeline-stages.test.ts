@@ -12,10 +12,10 @@ import { createMockJobInput } from '../fixtures.js';
 import type { IModule } from '../../src/domain/interfaces/module.js';
 import { PipelineStage } from '../../src/domain/value-objects/index.js';
 
-describe('Pipeline Stage Order (15 stages)', () => {
-  it('PipelineStage enum has all 15 stages', () => {
+describe('Pipeline Stage Order (17 stages)', () => {
+  it('PipelineStage enum has all 17 stages', () => {
     const stages = Object.values(PipelineStage);
-    expect(stages).toHaveLength(15);
+    expect(stages).toHaveLength(17);
     expect(stages).toContain('ingestion');
     expect(stages).toContain('book_analysis');
     expect(stages).toContain('reverse_engineering');
@@ -29,8 +29,10 @@ describe('Pipeline Stage Order (15 stages)', () => {
     expect(stages).toContain('blog');
     expect(stages).toContain('landing_page');
     expect(stages).toContain('personalization');
+    expect(stages).toContain('content_scoring');
     expect(stages).toContain('render_export');
     expect(stages).toContain('delivery');
+    expect(stages).toContain('performance_monitoring');
   });
 
   it('executes branding BEFORE correlation', async () => {
@@ -96,7 +98,7 @@ describe('Pipeline Stage Order (15 stages)', () => {
     expect(order[0]).toBe('ingestion');
   });
 
-  it('executes all 15 stages in correct order when all registered', async () => {
+  it('executes all 17 stages in correct order when all registered', async () => {
     const pipeline = new Pipeline();
     const order: string[] = [];
 
@@ -114,8 +116,10 @@ describe('Pipeline Stage Order (15 stages)', () => {
       PipelineStage.BLOG,
       PipelineStage.LANDING_PAGE,
       PipelineStage.PERSONALIZATION,
+      PipelineStage.CONTENT_SCORING,
       PipelineStage.RENDER_EXPORT,
       PipelineStage.DELIVERY,
+      PipelineStage.PERFORMANCE_MONITORING,
     ];
 
     // Register in reverse to prove ordering
