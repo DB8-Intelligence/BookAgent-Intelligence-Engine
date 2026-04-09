@@ -13,4 +13,12 @@ export {
   getUsageView,
   getBillingView,
   getInsightsView,
+  getPublicationsOverview,
+  getCampaignsOverview,
+} from './dashboard-service.js';
+
+export type {
+  CustomerPublicationsOverview,
+  CustomerCampaignView,
+  CustomerCampaignsOverview,
 } from './dashboard-service.js';

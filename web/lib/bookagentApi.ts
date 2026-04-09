@@ -217,6 +217,158 @@ export interface CoPilotOverview {
 }
 
 // ============================================================================
+// DTOs — Dashboard
+// ============================================================================
+
+export interface DashboardOverview {
+  tenantName: string;
+  planTier: string;
+  subscriptionStatus: string;
+  stats: { jobsThisMonth: number; jobsTotal: number; artifactsGenerated: number; publicationsSucceeded: number; pendingReviews: number; activeRevisions: number };
+  usage: { jobsUsed: number; jobsLimit: number; jobsPercent: number; rendersUsed: number; rendersLimit: number; rendersPercent: number };
+  alerts: Array<{ type: "error" | "warning" | "info"; title: string; message: string; actionLabel?: string }>;
+  lockedFeatures: Array<{ feature: string; label: string; description: string; availableFrom: string }>;
+  recentJobs: DashboardJob[];
+  generatedAt: string;
+}
+
+export interface DashboardJob {
+  jobId: string;
+  status: string;
+  statusLabel: string;
+  statusBadge: string;
+  inputType: string;
+  artifactsCount: number;
+  publicationsCount: number;
+  hasPendingReview: boolean;
+  qualityScore: number | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface DashboardArtifact {
+  id: string;
+  jobId: string;
+  type: string;
+  format: string;
+  title: string;
+  sizeBytes: number | null;
+  downloadUrl: string | null;
+  previewUrl: string | null;
+  status: string;
+  createdAt: string;
+}
+
+export interface DashboardReview {
+  id: string;
+  jobId: string;
+  targetType: string;
+  decision: string;
+  comment: string;
+  channel: string;
+  status: string;
+  hasRevision: boolean;
+  revisionId: string | null;
+  createdAt: string;
+}
+
+export interface DashboardPublication {
+  id: string;
+  jobId: string;
+  platform: string;
+  status: string;
+  platformPostId: string | null;
+  postUrl: string | null;
+  error: string | null;
+  attempts: number;
+  publishedAt: string | null;
+  createdAt: string;
+}
+
+export interface DashboardJobDetail {
+  jobId: string;
+  status: string;
+  statusLabel: string;
+  statusBadge: string;
+  inputType: string;
+  pipeline: { startedAt: string; completedAt: string | null; durationMs: number | null; currentStage: string | null };
+  artifacts: DashboardArtifact[];
+  reviews: DashboardReview[];
+  publications: DashboardPublication[];
+  qualityScore: number | null;
+  qualityLevel: string | null;
+  approval: { status: string | null; round: number; latestComment: string | null; latestDecisionAt: string | null };
+  createdAt: string;
+}
+
+export interface DashboardUsage {
+  planTier: string;
+  period: string;
+  features: Array<{ label: string; used: number; limit: number; remaining: number; percent: number; status: "ok" | "warning" | "blocked" | "disabled" }>;
+  estimatedCostUsd: number | null;
+  alerts: string[];
+  generatedAt: string;
+}
+
+export interface DashboardBilling {
+  planTier: string;
+  planName: string;
+  subscriptionStatus: string;
+  priceMonthlyBRL: number;
+  nextBillingAt: string | null;
+  lastPaymentAt: string | null;
+  trial: { active: boolean; endsAt: string | null; daysRemaining: number | null };
+  upgradeOptions: Array<{ planTier: string; planName: string; priceMonthlyBRL: number; highlights: string[] }>;
+}
+
+export interface DashboardInsights {
+  available: boolean;
+  averageQualityScore: number | null;
+  qualityTrend: string | null;
+  recommendations: string[];
+  bestPerformingFormat: string | null;
+  jobsProcessed: number;
+  generatedAt: string;
+}
+
+export interface DashboardAnalytics {
+  period: { from: string; to: string };
+  granularity: string;
+  jobs: { total: number; successRate: number; throughput: Array<{ date: string; count: number }> };
+  publications: { total: number; successRate: number; byPlatform: Record<string, number> };
+}
+
+export interface DashboardPublications {
+  total: number;
+  published: number;
+  failed: number;
+  pending: number;
+  publications: DashboardPublication[];
+  generatedAt: string;
+}
+
+export interface DashboardCampaigns {
+  total: number;
+  active: number;
+  campaigns: Array<{ id: string; name: string; status: string; goal: string; itemsCount: number; publishedCount: number; createdAt: string }>;
+  generatedAt: string;
+}
+
+/** Dashboard job status badge colors */
+export const DASHBOARD_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  QUEUED: { label: "Na fila", color: "text-slate-500", bg: "bg-slate-100 text-slate-600 border-slate-200" },
+  PROCESSING: { label: "Processando", color: "text-amber-500", bg: "bg-amber-50 text-amber-600 border-amber-200" },
+  AWAITING_REVIEW: { label: "Aguardando revisao", color: "text-blue-500", bg: "bg-blue-50 text-blue-600 border-blue-200" },
+  REVISION_IN_PROGRESS: { label: "Em revisao", color: "text-purple-500", bg: "bg-purple-50 text-purple-600 border-purple-200" },
+  APPROVED: { label: "Aprovado", color: "text-emerald-500", bg: "bg-emerald-50 text-emerald-600 border-emerald-200" },
+  PUBLISHED: { label: "Publicado", color: "text-green-600", bg: "bg-green-50 text-green-700 border-green-200" },
+  FAILED: { label: "Falhou", color: "text-red-500", bg: "bg-red-50 text-red-600 border-red-200" },
+  BLOCKED_BY_LIMIT: { label: "Limite atingido", color: "text-orange-500", bg: "bg-orange-50 text-orange-600 border-orange-200" },
+  BILLING_ISSUE: { label: "Problema billing", color: "text-red-500", bg: "bg-red-50 text-red-600 border-red-200" },
+  PUBLISH_FAILED: { label: "Publicacao falhou", color: "text-red-500", bg: "bg-red-50 text-red-600 border-red-200" },
+};
+
+// ============================================================================
 // Fetch Core
 // ============================================================================
 
@@ -294,6 +446,36 @@ export const bookagent = {
 
     downloadUrl: (jobId: string, artifactId: string) =>
       `${BASE_URL}${API_PREFIX}/jobs/${jobId}/artifacts/${artifactId}/download`,
+  },
+
+  // ---------- Dashboard ----------
+  dashboard: {
+    overview: () => request<DashboardOverview>("/dashboard/overview"),
+    jobs: (limit?: number) => request<{ jobs: DashboardJob[]; total: number }>(`/dashboard/jobs${limit ? `?limit=${limit}` : ""}`),
+    jobDetail: (jobId: string) => request<DashboardJobDetail>(`/dashboard/jobs/${jobId}`),
+    usage: () => request<DashboardUsage>("/dashboard/usage"),
+    billing: () => request<DashboardBilling>("/dashboard/billing"),
+    insights: () => request<DashboardInsights>("/dashboard/insights"),
+    analytics: (from?: string, to?: string) => {
+      const p = new URLSearchParams();
+      if (from) p.set("from", from);
+      if (to) p.set("to", to);
+      const qs = p.toString();
+      return request<DashboardAnalytics>(`/dashboard/analytics${qs ? `?${qs}` : ""}`);
+    },
+    publications: (limit?: number) => request<DashboardPublications>(`/dashboard/publications${limit ? `?limit=${limit}` : ""}`),
+    campaigns: () => request<DashboardCampaigns>("/dashboard/campaigns"),
+    jobPublications: (jobId: string) => request<{ jobId: string; publications: DashboardPublication[]; published_count: number; failed_count: number }>(`/dashboard/jobs/${jobId}/publications`),
+    approve: (jobId: string, data: { userId: string; comment?: string; approvalType?: "intermediate" | "final" }) =>
+      request<{ jobId: string; decision: string; status: string; message: string; n8nTriggered: boolean }>(`/dashboard/jobs/${jobId}/approve`, { method: "POST", body: JSON.stringify(data) }),
+    reject: (jobId: string, data: { userId: string; comment: string; approvalType?: "intermediate" | "final" }) =>
+      request<{ jobId: string; decision: string; status: string; message: string; n8nTriggered: boolean }>(`/dashboard/jobs/${jobId}/reject`, { method: "POST", body: JSON.stringify(data) }),
+    comment: (jobId: string, data: { userId: string; comment: string }) =>
+      request<{ jobId: string; decision: string; status: string; message: string }>(`/dashboard/jobs/${jobId}/comment`, { method: "POST", body: JSON.stringify(data) }),
+    publish: (jobId: string, data: { userId: string; platforms?: string[] }) =>
+      request<{ jobId: string; decision: string; status: string; message: string; n8nTriggered: boolean }>(`/dashboard/jobs/${jobId}/publish`, { method: "POST", body: JSON.stringify(data) }),
+    socialPublish: (jobId: string, data: { userId: string; platforms?: string[]; caption?: string; hashtags?: string[]; imageUrl?: string }) =>
+      request<{ jobId: string; results: DashboardPublication[]; successCount: number; failureCount: number; finalStatus: string }>(`/dashboard/jobs/${jobId}/social-publish`, { method: "POST", body: JSON.stringify(data) }),
   },
 
   // ---------- Co-Pilot ----------

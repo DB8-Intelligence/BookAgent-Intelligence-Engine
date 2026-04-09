@@ -157,6 +157,35 @@ export async function getJobList(
       limit,
     });
 
+    // Fetch artifact and publication counts per job
+    const jobIds = rows.map((r) => r.job_id);
+
+    let artifactCounts: Record<string, number> = {};
+    let publicationCounts: Record<string, number> = {};
+
+    if (jobIds.length > 0) {
+      try {
+        const [artRows, pubRows] = await Promise.all([
+          supabase.select<{ job_id: string }>('bookagent_job_artifacts', {
+            filters: [{ column: 'job_id', operator: 'in', value: `(${jobIds.join(',')})` }],
+            select: 'job_id',
+          }),
+          supabase.select<{ job_id: string }>('bookagent_publications', {
+            filters: [{ column: 'job_id', operator: 'in', value: `(${jobIds.join(',')})` }],
+            select: 'job_id',
+          }),
+        ]);
+        for (const r of artRows) {
+          artifactCounts[r.job_id] = (artifactCounts[r.job_id] ?? 0) + 1;
+        }
+        for (const r of pubRows) {
+          publicationCounts[r.job_id] = (publicationCounts[r.job_id] ?? 0) + 1;
+        }
+      } catch {
+        // Counts are best-effort
+      }
+    }
+
     return rows.map((row) => {
       const status = mapToCustomerStatus(row.approval_status);
       return {
@@ -165,8 +194,8 @@ export async function getJobList(
         statusLabel: CUSTOMER_STATUS_LABELS[status],
         statusBadge: CUSTOMER_STATUS_BADGE[status],
         inputType: '',
-        artifactsCount: 0,
-        publicationsCount: 0,
+        artifactsCount: artifactCounts[row.job_id] ?? 0,
+        publicationsCount: publicationCounts[row.job_id] ?? 0,
         hasPendingReview: status === CustomerJobStatus.AWAITING_REVIEW,
         qualityScore: null,
         createdAt: row.created_at,
@@ -349,6 +378,7 @@ async function getPublications(
       job_id: string;
       platform: string;
       status: string;
+      platform_post_id: string | null;
       platform_url: string | null;
       error: string | null;
       attempt_count: number | null;
@@ -365,6 +395,7 @@ async function getPublications(
       jobId: row.job_id,
       platform: row.platform,
       status: row.status,
+      platformPostId: row.platform_post_id,
       postUrl: row.platform_url,
       error: row.error,
       attempts: row.attempt_count ?? 1,
@@ -467,6 +498,156 @@ export async function getInsightsView(
     jobsProcessed: 0,
     generatedAt: new Date().toISOString(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Publications Overview
+// ---------------------------------------------------------------------------
+
+export interface CustomerPublicationsOverview {
+  total: number;
+  published: number;
+  failed: number;
+  pending: number;
+  publications: CustomerPublicationView[];
+  generatedAt: string;
+}
+
+/**
+ * Visão consolidada de todas as publicações do tenant.
+ */
+export async function getPublicationsOverview(
+  tenantCtx: TenantContext,
+  supabase: SupabaseClient | null,
+  limit: number = 50,
+): Promise<CustomerPublicationsOverview> {
+  const empty: CustomerPublicationsOverview = {
+    total: 0, published: 0, failed: 0, pending: 0, publications: [], generatedAt: new Date().toISOString(),
+  };
+  if (!supabase) return empty;
+
+  try {
+    // Get all job IDs for this tenant first
+    const jobRows = await supabase.select<{ job_id: string }>('bookagent_job_meta', {
+      filters: [{ column: 'tenant_id', operator: 'eq', value: tenantCtx.tenantId }],
+      select: 'job_id',
+    });
+
+    if (jobRows.length === 0) return empty;
+
+    const jobIds = jobRows.map((r) => r.job_id);
+
+    const rows = await supabase.select<{
+      id: string;
+      job_id: string;
+      platform: string;
+      status: string;
+      platform_post_id: string | null;
+      platform_url: string | null;
+      error: string | null;
+      attempt_count: number | null;
+      published_at: string | null;
+      created_at: string;
+    }>('bookagent_publications', {
+      filters: [{ column: 'job_id', operator: 'in', value: `(${jobIds.join(',')})` }],
+      orderBy: 'created_at',
+      orderDesc: true,
+      limit,
+    });
+
+    const publications: CustomerPublicationView[] = rows.map((row) => ({
+      id: row.id,
+      jobId: row.job_id,
+      platform: row.platform,
+      status: row.status,
+      platformPostId: row.platform_post_id,
+      postUrl: row.platform_url,
+      error: row.error,
+      attempts: row.attempt_count ?? 1,
+      publishedAt: row.published_at,
+      createdAt: row.created_at,
+    }));
+
+    return {
+      total: rows.length,
+      published: rows.filter((r) => r.status === 'published').length,
+      failed: rows.filter((r) => r.status === 'failed').length,
+      pending: rows.filter((r) => r.status === 'pending' || r.status === 'publishing' || r.status === 'queued').length,
+      publications,
+      generatedAt: new Date().toISOString(),
+    };
+  } catch (err) {
+    logger.warn(`[DashboardService] Failed to get publications overview: ${err}`);
+    return empty;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Campaigns
+// ---------------------------------------------------------------------------
+
+export interface CustomerCampaignView {
+  id: string;
+  name: string;
+  status: string;
+  goal: string;
+  itemsCount: number;
+  publishedCount: number;
+  createdAt: string;
+}
+
+export interface CustomerCampaignsOverview {
+  total: number;
+  active: number;
+  campaigns: CustomerCampaignView[];
+  generatedAt: string;
+}
+
+/**
+ * Visão de campanhas do tenant para o dashboard.
+ */
+export async function getCampaignsOverview(
+  tenantCtx: TenantContext,
+  supabase: SupabaseClient | null,
+): Promise<CustomerCampaignsOverview> {
+  const empty: CustomerCampaignsOverview = {
+    total: 0, active: 0, campaigns: [], generatedAt: new Date().toISOString(),
+  };
+  if (!supabase) return empty;
+
+  try {
+    const rows = await supabase.select<{
+      id: string;
+      name: string;
+      status: string;
+      goal: string;
+      created_at: string;
+    }>('bookagent_campaigns', {
+      filters: [{ column: 'tenant_id', operator: 'eq', value: tenantCtx.tenantId }],
+      orderBy: 'created_at',
+      orderDesc: true,
+    });
+
+    const campaigns: CustomerCampaignView[] = rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      status: row.status,
+      goal: row.goal ?? '',
+      itemsCount: 0,
+      publishedCount: 0,
+      createdAt: row.created_at,
+    }));
+
+    return {
+      total: rows.length,
+      active: rows.filter((r) => r.status === 'active' || r.status === 'in_progress').length,
+      campaigns,
+      generatedAt: new Date().toISOString(),
+    };
+  } catch (err) {
+    logger.warn(`[DashboardService] Failed to get campaigns overview: ${err}`);
+    return empty;
+  }
 }
 
 // ---------------------------------------------------------------------------
