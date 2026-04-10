@@ -68,6 +68,7 @@ import { setVideoRenderSupabaseClient } from './api/controllers/videoRenderContr
 import { setPlanGuardSupabaseClient } from './api/middleware/plan-guard.js';
 import { setLeadsSupabaseClient } from './api/controllers/leadsController.js';
 import { setOpsSupabaseClient } from './api/controllers/opsController.js';
+import { setKiwifyWebhookClient } from './api/controllers/kiwifyWebhookController.js';
 import { metrics } from './observability/metrics.js';
 
 // --- Queue ---
@@ -206,6 +207,7 @@ if (supabaseClient) {
   setPlanGuardSupabaseClient(supabaseClient);
   setLeadsSupabaseClient(supabaseClient);
   setOpsSupabaseClient(supabaseClient);
+  setKiwifyWebhookClient(supabaseClient);
   metrics.setSupabaseClient(supabaseClient);
 }
 
@@ -289,6 +291,9 @@ app.use(`${prefix}/simulation`, simulationRoutes);
 app.use(`${prefix}/decisions`, decisionRoutes);
 app.use(`${prefix}/copilot`, copilotRoutes);
 app.use(`${prefix}/dashboard`, customerDashboardRoutes);
+
+// Webhooks externos (Kiwify, Hotmart) — sem tenant guard
+app.use('/webhooks', webhooksRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);
