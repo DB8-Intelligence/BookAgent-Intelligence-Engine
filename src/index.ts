@@ -39,7 +39,7 @@ import { StorageManager } from './persistence/storage-manager.js';
 import { checkProviderStatus } from './adapters/provider-factory.js';
 
 // --- Controllers (dependency injection) ---
-import { setOrchestrator as setProcessOrch } from './api/controllers/processController.js';
+import { setOrchestrator as setProcessOrch, setProcessJobRepository } from './api/controllers/processController.js';
 import { setOrchestrator as setJobsOrch, setJobRepository } from './api/controllers/jobsController.js';
 import { setOrchestrator as setArtifactsOrch } from './api/controllers/artifactsController.js';
 import { setSupabaseClientForApproval } from './api/controllers/approvalController.js';
@@ -179,6 +179,7 @@ setArtifactsOrch(orchestrator);
 // Injetar JobRepository no jobsController (fallback para leitura no Supabase)
 if (supabaseClient) {
   setJobRepository(new JobRepository(supabaseClient));
+  setProcessJobRepository(new JobRepository(supabaseClient));
   setSupabaseClientForApproval(supabaseClient);
   setSupabaseClientForExperiments(supabaseClient);
   setSupabaseClientForBilling(supabaseClient);

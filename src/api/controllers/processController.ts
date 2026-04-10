@@ -23,12 +23,21 @@
 
 import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
-import { InputType } from '../../domain/value-objects/index.js';
+import { InputType, JobStatus } from '../../domain/value-objects/index.js';
 import type { IOrchestratorLike } from '../types/orchestrator.js';
 import { ProcessRequestSchema } from '../schemas/process.js';
 import { sendSuccess, sendError } from '../helpers/response.js';
 import type { ProcessResponse } from '../types/responses.js';
 import { getQueue, enqueueJob } from '../../queue/queue.js';
+import type { JobRepository } from '../../persistence/job-repository.js';
+import type { Job } from '../../domain/entities/job.js';
+
+/** JobRepository injetado pelo bootstrap para persistência antes do enqueue */
+let jobRepository: JobRepository | null = null;
+
+export function setProcessJobRepository(repo: JobRepository): void {
+  jobRepository = repo;
+}
 
 const INPUT_TYPE_MAP: Record<string, InputType> = {
   pdf:      InputType.PDF,
@@ -93,6 +102,35 @@ async function handleQueueMode(
   const jobId = randomUUID();
 
   try {
+    // Persiste o job no Supabase ANTES de enfileirar
+    // Isso garante que GET /jobs/:id funcione imediatamente
+    if (jobRepository) {
+      try {
+        const jobRecord: Job = {
+          id:        jobId,
+          status:    JobStatus.PENDING,
+          input: {
+            fileUrl:     file_url,
+            type:        INPUT_TYPE_MAP[type] ?? InputType.PDF,
+            userContext: {
+              name:      user_context.name ?? '',
+              whatsapp:  user_context.whatsapp,
+              instagram: user_context.instagram,
+              site:      user_context.site,
+              region:    user_context.region,
+              logoUrl:   user_context.logo_url,
+            },
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        await jobRepository.createJob(jobRecord);
+      } catch (persistErr) {
+        // Log mas não bloqueia — job ainda vai para a fila
+        console.error('[ProcessController] Falha ao persistir job no Supabase:', persistErr);
+      }
+    }
+
     await enqueueJob({
       jobId,
       fileUrl:    file_url,
