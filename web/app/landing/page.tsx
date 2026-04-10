@@ -328,7 +328,7 @@ export default function LandingPage() {
           </div>
           <div className="flex flex-col gap-6">
             {[
-              { q: "Como envio o PDF?", a: "Pelo dashboard em app.bookreel.ai ou enviando o arquivo diretamente via WhatsApp para o número do BookReel. O sistema detecta automaticamente." },
+              { q: "Como envio o PDF?", a: "Pelo dashboard em app.bookreel.app ou enviando o arquivo diretamente via WhatsApp para o número do BookReel. O sistema detecta automaticamente." },
               { q: "O que é o podcast estilo NotebookLM?", a: "Um áudio de até 60 segundos com dois apresentadores discutindo os diferenciais do lançamento — gerado automaticamente a partir do conteúdo do book. Pronto para stories e reels." },
               { q: "Os reels ficam prontos para publicar?", a: "Sim. Você recebe os arquivos de vídeo em 9:16, com narração, trilha e legendas. Nos planos Pro e Agência, podemos publicar direto no Instagram e Facebook após sua aprovação." },
               { q: "Quanto tempo leva o processamento?", a: "Em média 3 a 5 minutos por book. Você recebe uma notificação via WhatsApp (planos Pro e Agência) ou pode acompanhar no dashboard." },
