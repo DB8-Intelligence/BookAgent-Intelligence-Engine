@@ -88,7 +88,7 @@ const OUTPUTS_PER_BOOK = [
 
 const BENCHMARK = [
   { tool: "Lano.com.br", price: "R$ 147/mês", what: "Posts de texto + captions", video: false, tts: false, pdf: false },
-  { tool: "BookAgent Starter", price: "R$ 47/mês", what: "Vídeo + podcast + carrossel + story", video: true, tts: true, pdf: true },
+  { tool: "BookReel Starter", price: "R$ 47/mês", what: "Vídeo + podcast + carrossel + story", video: true, tts: true, pdf: true },
 ];
 
 // ── component ────────────────────────────────────────────────────────────────
@@ -100,14 +100,14 @@ export default function PlanosPage() {
       {/* Hero */}
       <section className="max-w-4xl mx-auto px-4 pt-20 pb-12 text-center">
         <div className="inline-block text-xs font-semibold tracking-widest uppercase px-3 py-1 rounded-full border border-border text-muted-foreground mb-6">
-          Planos BookAgent
+          Planos BookReel
         </div>
         <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-foreground mb-4">
           Do PDF ao conteúdo completo.<br />
           <span className="text-muted-foreground font-normal">Em minutos.</span>
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-3">
-          Envie o PDF do lançamento. O BookAgent gera reels, podcast, carrosséis, stories e landing page — automaticamente.
+          Envie o PDF do lançamento. O BookReel gera reels, podcast, carrosséis, stories e landing page — automaticamente.
         </p>
         <p className="text-sm text-muted-foreground">
           Sem digitação. Sem design. Sem edição de vídeo.
@@ -224,7 +224,7 @@ export default function PlanosPage() {
             <tbody>
               {BENCHMARK.map((b, i) => (
                 <tr key={b.tool} className={i < BENCHMARK.length - 1 ? "border-b border-border" : ""}>
-                  <td className={`px-4 py-3 font-semibold ${b.tool.includes("BookAgent") ? "text-foreground" : "text-muted-foreground"}`}>
+                  <td className={`px-4 py-3 font-semibold ${b.tool.includes("BookReel") ? "text-foreground" : "text-muted-foreground"}`}>
                     {b.tool}
                   </td>
                   <td className="px-4 py-3 text-foreground">{b.price}</td>
@@ -244,7 +244,7 @@ export default function PlanosPage() {
           </table>
         </div>
         <p className="text-xs text-muted-foreground text-center mt-3">
-          Lano.com.br gera posts de texto a partir de dados inseridos manualmente. BookAgent processa o PDF e gera vídeo, podcast e imagens sem digitação.
+          Lano.com.br gera posts de texto a partir de dados inseridos manualmente. BookReel processa o PDF e gera vídeo, podcast e imagens sem digitação.
         </p>
       </section>
 
@@ -257,7 +257,7 @@ export default function PlanosPage() {
           {[
             {
               q: "Como envio o PDF?",
-              a: "Pelo dashboard (upload direto) ou enviando o arquivo via WhatsApp para o número do BookAgent. O pipeline processa automaticamente.",
+              a: "Pelo dashboard (upload direto) ou enviando o arquivo via WhatsApp para o número do BookReel. O pipeline processa automaticamente.",
             },
             {
               q: "O que é o podcast estilo NotebookLM?",

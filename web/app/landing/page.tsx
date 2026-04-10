@@ -32,7 +32,7 @@ const PLANS = [
     price: 247,
     books: 10,
     cta: "Falar com vendas",
-    href: "https://wa.me/5571999733883?text=Quero+o+plano+Agência+do+BookAgent",
+    href: "https://wa.me/5571999733883?text=Quero+o+plano+Agência+do+BookReel",
     featured: false,
     outputs: ["3 reels com narração", "1 podcast 2 vozes", "3 carrosséis 10 imgs", "3 stories com CTA", "1 landing page", "1 blog post SEO"],
     extras: ["Aprovação via WhatsApp", "Publicação automática IG/FB", "API programática", "Máxima prioridade"],
@@ -161,13 +161,13 @@ export default function LandingPage() {
             <em style={{ color: '#C9A84C', fontStyle: 'italic' }}>Em 5 minutos.</em>
           </h1>
           <p className={`font-body text-white/60 max-w-2xl mx-auto mb-10 fade-up ${visible ? 'visible' : ''}`} style={{ fontSize: '18px', lineHeight: '1.6', transitionDelay: '0.3s' }}>
-            Envie o PDF do book. O BookAgent gera reels, podcast, carrosséis, stories e landing page — tudo com narração, imagens e texto prontos para publicar.
+            Envie o PDF do book. O BookReel gera reels, podcast, carrosséis, stories e landing page — tudo com narração, imagens e texto prontos para publicar.
           </p>
           <div className={`flex flex-col sm:flex-row items-center justify-center gap-4 fade-up ${visible ? 'visible' : ''}`} style={{ transitionDelay: '0.4s' }}>
             <a href="#planos" className="font-body px-8 py-4 rounded-xl font-medium text-base transition-all hover:scale-105 active:scale-95" style={{ background: '#C9A84C', color: '#0A0A0A' }}>
               Ver planos →
             </a>
-            <a href="https://wa.me/5571999733883?text=Quero+testar+o+BookAgent" className="font-body px-8 py-4 rounded-xl font-medium text-base transition-all hover:bg-white/5" style={{ border: '1px solid rgba(255,255,255,0.12)', color: 'white' }}>
+            <a href="https://wa.me/5571999733883?text=Quero+testar+o+BookReel" className="font-body px-8 py-4 rounded-xl font-medium text-base transition-all hover:bg-white/5" style={{ border: '1px solid rgba(255,255,255,0.12)', color: 'white' }}>
               Falar no WhatsApp
             </a>
           </div>
@@ -232,7 +232,7 @@ export default function LandingPage() {
           <div className="text-center mb-12">
             <span className="tag">Comparativo</span>
             <h2 className="font-display mt-4" style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 700 }}>
-              Por que BookAgent?
+              Por que BookReel?
             </h2>
           </div>
           <div className="card-border rounded-2xl overflow-hidden">
@@ -248,7 +248,7 @@ export default function LandingPage() {
               <tbody>
                 {[
                   { name: 'Lano.com.br', price: 'R$ 147/mês', pdf: false, video: false },
-                  { name: 'BookAgent Starter', price: 'R$ 47/mês', pdf: true, video: true, highlight: true },
+                  { name: 'BookReel Starter', price: 'R$ 47/mês', pdf: true, video: true, highlight: true },
                 ].map((r) => (
                   <tr key={r.name} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: r.highlight ? 'rgba(201,168,76,0.04)' : 'transparent' }}>
                     <td style={{ padding: '14px 20px', fontWeight: r.highlight ? 600 : 400, color: r.highlight ? '#C9A84C' : 'white' }}>{r.name}</td>
@@ -328,12 +328,12 @@ export default function LandingPage() {
           </div>
           <div className="flex flex-col gap-6">
             {[
-              { q: "Como envio o PDF?", a: "Pelo dashboard em bookagent.db8intelligence.com.br ou enviando o arquivo diretamente via WhatsApp para o número do BookAgent. O sistema detecta automaticamente." },
+              { q: "Como envio o PDF?", a: "Pelo dashboard em app.bookreel.ai ou enviando o arquivo diretamente via WhatsApp para o número do BookReel. O sistema detecta automaticamente." },
               { q: "O que é o podcast estilo NotebookLM?", a: "Um áudio de até 60 segundos com dois apresentadores discutindo os diferenciais do lançamento — gerado automaticamente a partir do conteúdo do book. Pronto para stories e reels." },
               { q: "Os reels ficam prontos para publicar?", a: "Sim. Você recebe os arquivos de vídeo em 9:16, com narração, trilha e legendas. Nos planos Pro e Agência, podemos publicar direto no Instagram e Facebook após sua aprovação." },
               { q: "Quanto tempo leva o processamento?", a: "Em média 3 a 5 minutos por book. Você recebe uma notificação via WhatsApp (planos Pro e Agência) ou pode acompanhar no dashboard." },
               { q: "Posso mudar de plano?", a: "Sim, a qualquer momento, sem fidelidade. O upgrade vale imediatamente. O downgrade entra no próximo ciclo." },
-              { q: "Funciona para qualquer tipo de lançamento?", a: "Sim. Casas, apartamentos, terrenos, empreendimentos comerciais. O BookAgent extrai as informações específicas de cada book e gera conteúdo personalizado." },
+              { q: "Funciona para qualquer tipo de lançamento?", a: "Sim. Casas, apartamentos, terrenos, empreendimentos comerciais. O BookReel extrai as informações específicas de cada book e gera conteúdo personalizado." },
             ].map((f) => (
               <div key={f.q} className="card-border rounded-xl p-6">
                 <div className="font-display text-lg font-bold mb-2">{f.q}</div>
@@ -358,7 +358,7 @@ export default function LandingPage() {
             <a href={PLANS[1].href} className="font-body px-10 py-4 rounded-xl font-medium text-base transition-all hover:scale-105" style={{ background: '#C9A84C', color: '#0A0A0A' }}>
               Testar 7 dias grátis
             </a>
-            <a href="https://wa.me/5571999733883?text=Quero+saber+mais+sobre+o+BookAgent" className="font-body px-10 py-4 rounded-xl font-medium text-base transition-all hover:bg-white/5" style={{ border: '1px solid rgba(255,255,255,0.12)' }}>
+            <a href="https://wa.me/5571999733883?text=Quero+saber+mais+sobre+o+BookReel" className="font-body px-10 py-4 rounded-xl font-medium text-base transition-all hover:bg-white/5" style={{ border: '1px solid rgba(255,255,255,0.12)' }}>
               Falar no WhatsApp
             </a>
           </div>

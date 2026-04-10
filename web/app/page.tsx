@@ -5,7 +5,7 @@ export default function HomePage() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-24 text-center">
       <h1 className="text-4xl font-bold tracking-tight text-foreground mb-4">
-        BookAgent Intelligence Engine
+        BookReel Intelligence Engine
       </h1>
       <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
         Transforme materiais imobiliarios (PDF, video, audio) em conteudo multicanal:
