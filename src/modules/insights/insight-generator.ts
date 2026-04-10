@@ -292,7 +292,7 @@ async function generateUsageInsights(
 
   // Inefficient usage: low utilization on paid plan
   const jobsFeat = usage.features.find((f) => f.label === 'Jobs criados');
-  if (jobsFeat && jobsFeat.limit > 0 && jobsFeat.usedPercent < 20 && tenantCtx.planTier !== 'basic') {
+  if (jobsFeat && jobsFeat.limit > 0 && jobsFeat.usedPercent < 20 && tenantCtx.planTier !== 'starter') {
     insights.push(createInsight(tid, {
       category: InsightCategory.USAGE,
       type: InsightType.INEFFICIENT_USAGE,
@@ -409,7 +409,7 @@ async function generatePlanInsights(
   }
 
   // Upgrade recommendation (basic hitting limits)
-  if (tenantCtx.planTier === 'basic') {
+  if (tenantCtx.planTier === 'starter') {
     const usage = await getUsageSummary(tenantCtx, supabase);
     const highUsageFeatures = usage.features.filter((f) => f.usedPercent >= 70 && f.limit > 0);
 

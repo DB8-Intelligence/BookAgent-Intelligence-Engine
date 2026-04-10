@@ -97,7 +97,7 @@ export const STATUS_BADGE: Record<DashboardJobStatus, 'gray' | 'blue' | 'yellow'
 // Planos
 // ============================================================================
 
-export type PlanType = 'basic' | 'pro';
+export type PlanType = 'starter' | 'pro';
 export type SourceChannel = 'whatsapp' | 'dashboard' | 'api';
 export type ApprovalType = 'intermediate' | 'final';
 export type ApprovalDecision = 'approved' | 'rejected' | 'comment';

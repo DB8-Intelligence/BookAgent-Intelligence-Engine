@@ -281,7 +281,7 @@ export async function getTenantAnalytics(
     const tenantMap = new Map<string, { count: number; plan: string }>();
     for (const r of rows) {
       const tid = r.tenant_id ?? r.user_id ?? 'unknown';
-      const entry = tenantMap.get(tid) ?? { count: 0, plan: r.plan_type ?? 'basic' };
+      const entry = tenantMap.get(tid) ?? { count: 0, plan: r.plan_type ?? 'starter' };
       entry.count++;
       tenantMap.set(tid, entry);
     }

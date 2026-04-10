@@ -28,7 +28,7 @@ export class PerformanceMonitoringModule implements IModule {
 
   async run(context: ProcessingContext): Promise<ProcessingContext> {
     const userCtx = context.input.userContext as Record<string, unknown> | undefined;
-    const planType = (typeof userCtx?.plan === 'string' ? userCtx.plan : 'basic');
+    const planType = (typeof userCtx?.plan === 'string' ? userCtx.plan : 'starter');
 
     const jobCost = estimateJobCost({
       jobId: context.jobId,

@@ -558,7 +558,7 @@ function getLockedFeatures(features: TenantFeatureFlags, currentPlan: PlanTier):
   for (const f of featureMap) {
     if (!features[f.key]) {
       // Find which plan enables it
-      let availableFrom: PlanTier = 'business';
+      let availableFrom: PlanTier = 'agency';
       if (PLAN_FEATURES['pro'][f.key]) availableFrom = 'pro';
 
       locked.push({
@@ -575,7 +575,7 @@ function getLockedFeatures(features: TenantFeatureFlags, currentPlan: PlanTier):
 
 function getUpgradeOptions(currentPlan: PlanTier): UpgradeOption[] {
   const options: UpgradeOption[] = [];
-  const planOrder: PlanTier[] = ['basic', 'pro', 'business'];
+  const planOrder: PlanTier[] = ['starter', 'pro', 'agency'];
   const currentIdx = planOrder.indexOf(currentPlan);
 
   for (let i = currentIdx + 1; i < planOrder.length; i++) {
@@ -585,7 +585,7 @@ function getUpgradeOptions(currentPlan: PlanTier): UpgradeOption[] {
 
     if (tier === 'pro') {
       highlights.push('Publicação automática', '50 jobs/mês', 'Testes A/B', 'Insights inteligentes');
-    } else if (tier === 'business') {
+    } else if (tier === 'agency') {
       highlights.push('500 jobs/mês', 'API programática', '50 seats', 'SLA dedicado');
     }
 

@@ -54,7 +54,7 @@ export async function resolveVisualConfig(
   supabase: SupabaseClient | null,
   hints?: { tone?: string; presetId?: string; styleId?: string; templateId?: string },
 ): Promise<ResolvedVisualConfig> {
-  const planTier = tenantCtx?.planTier ?? 'basic';
+  const planTier = tenantCtx?.planTier ?? 'starter';
 
   // Load tenant preferences
   const prefs = tenantCtx

@@ -25,6 +25,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Link href="/upload" className="text-muted-foreground hover:text-foreground transition-colors">
                   Novo Job
                 </Link>
+                <Link href="/planos" className="text-muted-foreground hover:text-foreground transition-colors">
+                  Planos
+                </Link>
               </nav>
             </div>
           </header>

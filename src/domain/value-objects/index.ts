@@ -130,7 +130,7 @@ export enum VisualIntensity {
 export enum SophisticationLevel {
   PREMIUM = 'premium',
   STANDARD = 'standard',
-  BASIC = 'basic',
+  BASIC = 'starter',
 }
 
 // ---------------------------------------------------------------------------

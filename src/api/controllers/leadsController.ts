@@ -93,7 +93,7 @@ const UpdateStageSchema = z.object({
   stage: z.enum(['new', 'demo_sent', 'demo_processing', 'demo_delivered', 'offer_sent', 'converted', 'lost', 'reactivated']),
   notes: z.string().optional(),
   job_id: z.string().uuid().optional(),
-  plan_tier: z.enum(['basic', 'pro', 'business']).optional(),
+  plan_tier: z.enum(['starter', 'pro', 'agency']).optional(),
   force: z.boolean().optional().default(false), // Pular validação de máquina de estados
 });
 
@@ -142,7 +142,7 @@ async function activateTrial(phone: string): Promise<void> {
   try {
     await supabase.insert('bookagent_plan_overrides', {
       user_id:     phone,
-      plan_tier:   'basic',
+      plan_tier:   'starter',
       valid_until: validUntil.toISOString(),
       reason:      'trial',
     });

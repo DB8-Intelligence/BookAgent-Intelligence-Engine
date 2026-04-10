@@ -72,7 +72,7 @@ export class PersistentOrchestrator {
    */
   async process(input: JobInput): Promise<Job> {
     const startTime = Date.now();
-    const tier = (input.userContext as any)?.planTier as PlanTier ?? 'basic';
+    const tier = (input.userContext as any)?.planTier as PlanTier ?? 'starter';
     const plan = getPlan(tier);
 
     let previewJob: Job | undefined;

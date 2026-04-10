@@ -53,7 +53,7 @@ export enum CatalogItemStatus {
 export enum CatalogTier {
   FREE = 'free',
   PRO = 'pro',
-  BUSINESS = 'business',
+  BUSINESS = 'agency',
   PREMIUM = 'premium',
 }
 

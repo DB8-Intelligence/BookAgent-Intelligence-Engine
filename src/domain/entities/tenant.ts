@@ -234,7 +234,7 @@ export interface TenantContext {
 // ---------------------------------------------------------------------------
 
 export const PLAN_FEATURES: Record<PlanTier, TenantFeatureFlags> = {
-  basic: {
+  starter: {
     autoPublish: false,
     intermediateApproval: false,
     apiAccess: false,
@@ -264,7 +264,7 @@ export const PLAN_FEATURES: Record<PlanTier, TenantFeatureFlags> = {
     blogGeneration: true,
     landingPageGeneration: true,
   },
-  business: {
+  agency: {
     autoPublish: true,
     intermediateApproval: true,
     apiAccess: true,
@@ -282,7 +282,7 @@ export const PLAN_FEATURES: Record<PlanTier, TenantFeatureFlags> = {
 };
 
 export const PLAN_TENANT_LIMITS: Record<PlanTier, TenantLimits> = {
-  basic: {
+  starter: {
     jobsPerMonth: 10,
     concurrentJobs: 1,
     queuePriority: 10,
@@ -310,7 +310,7 @@ export const PLAN_TENANT_LIMITS: Record<PlanTier, TenantLimits> = {
     maxCostPerJobUsd: 2.00,
     learningScope: LearningScope.HYBRID,
   },
-  business: {
+  agency: {
     jobsPerMonth: 500,
     concurrentJobs: 10,
     queuePriority: 1,

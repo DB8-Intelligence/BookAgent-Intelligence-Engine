@@ -100,7 +100,7 @@ export async function checkUsageLimit(
 
   // 2. Get plan limits
   const planLimits = BILLING_PLAN_LIMITS[tenantContext.planTier]
-    ?? BILLING_PLAN_LIMITS['basic'];
+    ?? BILLING_PLAN_LIMITS['starter'];
   const limitField = EVENT_TO_LIMIT_FIELD[eventType];
 
   if (!limitField) {
@@ -241,7 +241,7 @@ export async function getRemainingQuota(
   supabase: SupabaseClient | null,
 ): Promise<{ remaining: number; limit: number; used: number }> {
   const planLimits = BILLING_PLAN_LIMITS[tenantContext.planTier]
-    ?? BILLING_PLAN_LIMITS['basic'];
+    ?? BILLING_PLAN_LIMITS['starter'];
   const limitField = EVENT_TO_LIMIT_FIELD[eventType];
   const limit = limitField ? planLimits[limitField] : 0;
 
@@ -266,7 +266,7 @@ export async function getUsageSummary(
   supabase: SupabaseClient | null,
 ): Promise<UsageSummary> {
   const planLimits = BILLING_PLAN_LIMITS[tenantContext.planTier]
-    ?? BILLING_PLAN_LIMITS['basic'];
+    ?? BILLING_PLAN_LIMITS['starter'];
 
   const counters = await getAllUsageCounts(tenantContext.tenantId, supabase);
   const features: FeatureUsage[] = [];
@@ -340,12 +340,12 @@ function buildUpgradeHint(
   eventType: UsageEventType,
   currentLimit: number,
 ): string {
-  if (currentTier === 'basic') {
+  if (currentTier === 'starter') {
     const proLimit = BILLING_PLAN_LIMITS['pro'][EVENT_TO_LIMIT_FIELD[eventType] ?? 'jobsPerMonth'];
     return `Upgrade para Pro: limite de ${proLimit} ${EVENT_LABELS[eventType]}/mês.`;
   }
   if (currentTier === 'pro') {
-    const bizLimit = BILLING_PLAN_LIMITS['business'][EVENT_TO_LIMIT_FIELD[eventType] ?? 'jobsPerMonth'];
+    const bizLimit = BILLING_PLAN_LIMITS['agency'][EVENT_TO_LIMIT_FIELD[eventType] ?? 'jobsPerMonth'];
     return `Upgrade para Business: limite de ${bizLimit} ${EVENT_LABELS[eventType]}/mês.`;
   }
   return 'Entre em contato para limites customizados.';

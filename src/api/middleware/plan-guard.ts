@@ -84,11 +84,11 @@ async function countJobsThisMonth(userId: string): Promise<number> {
   }
 }
 
-/** Obtém o plano do usuário do Supabase (último registro). Fallback: 'basic'. */
+/** Obtém o plano do usuário do Supabase (último registro). Fallback: 'starter'. */
 async function resolveUserPlan(userId: string): Promise<PlanTier> {
   // Header explícito tem precedência (n8n, API interna)
   // O header é lido pelo chamador — aqui apenas fallback de DB
-  if (!supabase) return 'basic';
+  if (!supabase) return 'starter';
   try {
     const rows = await supabase.select<{ plan_type: string }>(
       'bookagent_job_meta',
@@ -101,9 +101,9 @@ async function resolveUserPlan(userId: string): Promise<PlanTier> {
       },
     );
     const tier = rows[0]?.plan_type as PlanTier | undefined;
-    return tier === 'pro' || tier === 'business' ? tier : 'basic';
+    return tier === 'pro' || tier === 'agency' ? tier : 'starter';
   } catch {
-    return 'basic';
+    return 'starter';
   }
 }
 
@@ -131,14 +131,14 @@ export async function planGuard(
     return;
   }
 
-  // Resolve plano: header X-Plan-Type → DB → 'basic'
+  // Resolve plano: header X-Plan-Type → DB → 'starter'
   const headerPlan = req.headers['x-plan-type'];
   let tier: PlanTier = typeof headerPlan === 'string'
     ? (headerPlan as PlanTier)
     : await resolveUserPlan(userId);
 
   // Garante que tier é válido
-  if (tier !== 'pro' && tier !== 'business') tier = 'basic';
+  if (tier !== 'pro' && tier !== 'agency') tier = 'starter';
 
   const plan = getPlan(tier);
 

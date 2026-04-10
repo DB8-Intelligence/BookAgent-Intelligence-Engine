@@ -42,7 +42,7 @@ export function createDefaultTenantContext(
   userId?: string,
   planTier?: PlanTier,
 ): TenantContext {
-  const tier = planTier ?? 'basic';
+  const tier = planTier ?? 'starter';
 
   return {
     tenantId: DEFAULT_TENANT_ID,
@@ -238,8 +238,8 @@ async function resolvePlanTier(
   supabase: SupabaseClient | null,
 ): Promise<PlanTier> {
   // Header override
-  if (headerTier === 'pro' || headerTier === 'business') return headerTier;
-  if (headerTier === 'basic') return 'basic';
+  if (headerTier === 'pro' || headerTier === 'agency') return headerTier;
+  if (headerTier === 'starter') return 'starter';
 
   // DB lookup (fallback)
   if (tenantId && supabase) {
@@ -255,11 +255,11 @@ async function resolvePlanTier(
         },
       );
       const tier = rows[0]?.plan_type;
-      if (tier === 'pro' || tier === 'business') return tier;
+      if (tier === 'pro' || tier === 'agency') return tier;
     } catch {
       // fallback
     }
   }
 
-  return 'basic';
+  return 'starter';
 }

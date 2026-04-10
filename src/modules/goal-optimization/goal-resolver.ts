@@ -160,7 +160,7 @@ export function deriveParams(
   const minIntervalHours = suggestedIntensity === 'high' ? 3 : suggestedIntensity === 'medium' ? 4 : 6;
 
   // Premium templates and variants
-  const usePremiumTemplates = p.quality >= 70 && tenantCtx.planTier !== 'basic';
+  const usePremiumTemplates = p.quality >= 70 && tenantCtx.planTier !== 'starter';
   const prioritizeVariants = p.awareness >= 60 && tenantCtx.features.autoVariants;
 
   return {

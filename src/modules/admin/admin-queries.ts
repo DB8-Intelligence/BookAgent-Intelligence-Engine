@@ -57,7 +57,7 @@ export async function listTenants(
           tenantId: tid,
           name: tid,
           status: 'active',
-          planTier: (row.plan_type as AdminTenantView['planTier']) ?? 'basic',
+          planTier: (row.plan_type as AdminTenantView['planTier']) ?? 'starter',
           subscriptionStatus: 'active',
           ownerId: row.user_id ?? '',
           memberCount: 1,

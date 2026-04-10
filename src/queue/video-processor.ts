@@ -203,7 +203,7 @@ export async function processVideoRenderJob(
     // 7. Track metrics
     metrics.track('job_completed', {
       userId: 'system',
-      planTier: 'basic',
+      planTier: 'starter',
       jobId,
       durationMs,
       metadata: { type: 'video_render', scenes: result.sceneCount },
@@ -242,7 +242,7 @@ export async function processVideoRenderJob(
     // Track failure metric
     metrics.track('job_failed', {
       userId: 'system',
-      planTier: 'basic',
+      planTier: 'starter',
       jobId,
       errorCode: 'VIDEO_RENDER_FAILED',
       metadata: { attempt, message },

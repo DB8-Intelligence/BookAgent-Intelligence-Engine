@@ -35,6 +35,7 @@ export enum SubscriptionStatus {
 export enum BillingProvider {
   STRIPE = 'stripe',
   ASAAS = 'asaas',
+  HOTMART = 'hotmart',
   MANUAL = 'manual',
   NONE = 'none',
 }

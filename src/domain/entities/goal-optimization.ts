@@ -410,9 +410,9 @@ export const PRESET_PROFILES: Record<OptimizationObjective, OptimizationProfile>
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_OBJECTIVE_BY_PLAN: Record<PlanTier, OptimizationObjective> = {
-  basic: OptimizationObjective.LOW_COST,
+  starter: OptimizationObjective.LOW_COST,
   pro: OptimizationObjective.BALANCED,
-  business: OptimizationObjective.HIGH_QUALITY,
+  agency: OptimizationObjective.HIGH_QUALITY,
 };
 
 // ---------------------------------------------------------------------------

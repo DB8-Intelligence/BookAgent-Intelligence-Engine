@@ -342,9 +342,9 @@ export interface GovernanceEvaluation {
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_AUTONOMY_BY_PLAN: Record<PlanTier, AutonomyLevel> = {
-  basic: AutonomyLevel.ASSISTED,
+  starter: AutonomyLevel.ASSISTED,
   pro: AutonomyLevel.SEMI_AUTONOMOUS,
-  business: AutonomyLevel.SUPERVISED_AUTONOMOUS,
+  agency: AutonomyLevel.SUPERVISED_AUTONOMOUS,
 };
 
 export const DEFAULT_QUALITY_THRESHOLD = 50;

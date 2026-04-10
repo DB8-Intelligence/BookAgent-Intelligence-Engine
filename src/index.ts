@@ -83,6 +83,7 @@ import leadsRoutes from './api/routes/leads.js';
 import opsRoutes from './api/routes/ops.js';
 import experimentRoutes from './api/routes/experiments.js';
 import billingRoutes from './api/routes/billing.js';
+import webhooksRoutes from './api/routes/webhooks.js';
 import adminRoutes from './api/routes/admin.js';
 import analyticsRoutes from './api/routes/analytics.js';
 import insightsRoutes from './api/routes/insights.js';
@@ -253,7 +254,7 @@ app.get('/health', (_req, res) => {
       tts: providers.tts,
     },
     plans: {
-      available: ['basic', 'pro', 'business'],
+      available: ['starter', 'pro', 'agency'],
       enforcement: 'active',
     },
   });

@@ -92,6 +92,9 @@ export interface PublishPayload {
 
   /** Metadados adicionais específicos da plataforma */
   platformMeta?: Record<string, unknown>;
+
+  /** Telefone do destinatário (WhatsApp) — formato: 5571999733883 */
+  recipientPhone?: string;
 }
 
 /**
