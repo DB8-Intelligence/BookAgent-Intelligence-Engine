@@ -5,6 +5,34 @@
   "installCommand": "npm install",
   "outputDirectory": ".next",
   "env": {
-    "NEXT_PUBLIC_API_URL": "https://api-bookagent.db8intelligence.com.br"
-  }
+    "NEXT_PUBLIC_API_URL": "https://api.bookreel.ai"
+  },
+  "redirects": [
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "bookreel.ai" }],
+      "destination": "/landing",
+      "permanent": false
+    },
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "www.bookreel.ai" }],
+      "destination": "https://bookreel.ai",
+      "permanent": true
+    },
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "www.bookreel.app" }],
+      "destination": "https://bookreel.app",
+      "permanent": true
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "bookreel.app" }],
+      "destination": "/$1"
+    }
+  ]
 }
+
