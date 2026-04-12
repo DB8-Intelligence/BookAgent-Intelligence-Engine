@@ -1,0 +1,3042 @@
+From 6aa80e7c56fe12c59545b14598ddfb54bc9a5d7a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Douglas=20Bon=C3=A2nzza?= <douglas@db8intelligence.com.br>
+Date: Thu, 9 Apr 2026 02:56:01 +0000
+Subject: [PATCH 1/7] fix: update pipeline stage test to 17 stages + fix
+ Next.js font build
+
+---
+ tests/core/pipeline-stages.test.ts | 12 ++++++++----
+ web/app/layout.tsx                 |  5 +----
+ web/next-env.d.ts                  |  5 +++++
+ 3 files changed, 14 insertions(+), 8 deletions(-)
+ create mode 100644 web/next-env.d.ts
+
+diff --git a/tests/core/pipeline-stages.test.ts b/tests/core/pipeline-stages.test.ts
+index 7b9f858..0650641 100644
+--- a/tests/core/pipeline-stages.test.ts
++++ b/tests/core/pipeline-stages.test.ts
+@@ -12,10 +12,10 @@ import { createMockJobInput } from '../fixtures.js';
+ import type { IModule } from '../../src/domain/interfaces/module.js';
+ import { PipelineStage } from '../../src/domain/value-objects/index.js';
+
+-describe('Pipeline Stage Order (15 stages)', () => {
+-  it('PipelineStage enum has all 15 stages', () => {
++describe('Pipeline Stage Order (17 stages)', () => {
++  it('PipelineStage enum has all 17 stages', () => {
+     const stages = Object.values(PipelineStage);
+-    expect(stages).toHaveLength(15);
++    expect(stages).toHaveLength(17);
+     expect(stages).toContain('ingestion');
+     expect(stages).toContain('book_analysis');
+     expect(stages).toContain('reverse_engineering');
+@@ -29,8 +29,10 @@ describe('Pipeline Stage Order (15 stages)', () => {
+     expect(stages).toContain('blog');
+     expect(stages).toContain('landing_page');
+     expect(stages).toContain('personalization');
++    expect(stages).toContain('content_scoring');
+     expect(stages).toContain('render_export');
+     expect(stages).toContain('delivery');
++    expect(stages).toContain('performance_monitoring');
+   });
+
+   it('executes branding BEFORE correlation', async () => {
+@@ -96,7 +98,7 @@ describe('Pipeline Stage Order (15 stages)', () => {
+     expect(order[0]).toBe('ingestion');
+   });
+
+-  it('executes all 15 stages in correct order when all registered', async () => {
++  it('executes all 17 stages in correct order when all registered', async () => {
+     const pipeline = new Pipeline();
+     const order: string[] = [];
+
+@@ -114,8 +116,10 @@ describe('Pipeline Stage Order (15 stages)', () => {
+       PipelineStage.BLOG,
+       PipelineStage.LANDING_PAGE,
+       PipelineStage.PERSONALIZATION,
++      PipelineStage.CONTENT_SCORING,
+       PipelineStage.RENDER_EXPORT,
+       PipelineStage.DELIVERY,
++      PipelineStage.PERFORMANCE_MONITORING,
+     ];
+
+     // Register in reverse to prove ordering
+diff --git a/web/app/layout.tsx b/web/app/layout.tsx
+index ab2a5f4..b0fa331 100644
+--- a/web/app/layout.tsx
++++ b/web/app/layout.tsx
+@@ -1,10 +1,7 @@
+ import type { Metadata } from "next";
+-import { Inter } from "next/font/google";
+ import Link from "next/link";
+ import "./globals.css";
+
+-const inter = Inter({ subsets: ["latin"] });
+-
+ export const metadata: Metadata = {
+   title: "BookAgent Intelligence Engine",
+   description: "Transform real estate materials into multi-format content",
+@@ -13,7 +10,7 @@ export const metadata: Metadata = {
+ export default function RootLayout({ children }: { children: React.ReactNode }) {
+   return (
+     <html lang="pt-BR">
+-      <body className={inter.className}>
++      <body className="font-sans antialiased">
+         <div className="min-h-screen flex flex-col">
+           <header className="border-b bg-card">
+             <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+diff --git a/web/next-env.d.ts b/web/next-env.d.ts
+new file mode 100644
+index 0000000..40c3d68
+--- /dev/null
++++ b/web/next-env.d.ts
+@@ -0,0 +1,5 @@
++/// <reference types="next" />
++/// <reference types="next/image-types/global" />
++
++// NOTE: This file should not be edited
++// see https://nextjs.org/docs/app/building-your-application/configuring/typescript for more information.
+--
+2.43.0
+
+
+From d0c2b92202d74e1f0dd8bc0945b32f63c4c40ad7 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Fri, 10 Apr 2026 01:17:45 +0000
+Subject: [PATCH 2/7] =?UTF-8?q?feat:=20planos=20starter/pro/agency=20+=20p?=
+ =?UTF-8?q?=C3=A1gina=20/planos=20+=20migration=20009?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Novos planos:
+- starter  R$47/mês · 1 book/mês
+- pro      R$97/mês · 3 books/mês · WhatsApp + auto-publish
+- agency   R$247/mês · 10 books/mês · API programática
+
+Output por book (todos os planos):
+- 3 reels com narração TTS (30-60s)
+- 1 podcast estilo NotebookLM (2 vozes)
+- 3 carrosséis com 10 imagens cada
+- 3 stories com texto e CTA
+- 1 landing page + 1 blog post
+
+Arquivos:
+- src/plans/plan-config.ts - PlanTier starter|pro|agency
+- src/domain/entities/billing.ts - BILLING_PLAN_LIMITS atualizado
+- src/api/controllers/hotmartWebhookController.ts - reescrito sem .client
+- supabase/migrations/009_* - constraints e bookagent_plan_definitions
+- web/app/planos/page.tsx - página de planos com benchmark e FAQ
+- web/app/layout.tsx - link Planos no nav
+
+TS: 0 erros | Tests: 89/89 | Build: 7 rotas OK
+---
+ .github/workflows/deploy-web.yml              | 166 +++++++++
+ scripts/deploy.sh                             |  82 +++++
+ src/api/controllers/billingController.ts      |   6 +-
+ .../controllers/hotmartWebhookController.ts   | 195 ++++++++++
+ src/api/controllers/leadsController.ts        |   4 +-
+ src/api/controllers/opsController.ts          |   2 +-
+ src/api/controllers/videoRenderController.ts  |   2 +-
+ src/api/middleware/plan-guard.ts              |  12 +-
+ src/api/middleware/rate-limiter.ts            |   4 +-
+ src/api/routes/webhooks.ts                    |  14 +
+ src/core/tenant-resolver.ts                   |  10 +-
+ src/domain/entities/billing.ts                |  74 ++--
+ src/domain/entities/goal-optimization.ts      |   4 +-
+ src/domain/entities/governance.ts             |   4 +-
+ src/domain/entities/publication.ts            |   3 +
+ src/domain/entities/subscription.ts           |   1 +
+ src/domain/entities/template-marketplace.ts   |   2 +-
+ src/domain/entities/tenant.ts                 |   8 +-
+ src/domain/value-objects/index.ts             |   2 +-
+ src/index.ts                                  |   3 +-
+ src/modules/admin/admin-queries.ts            |   2 +-
+ src/modules/analytics/analytics-service.ts    |   2 +-
+ src/modules/billing/limit-checker.ts          |  10 +-
+ src/modules/billing/provider-factory.ts       |   2 +
+ .../billing/providers/hotmart-provider.ts     | 346 ++++++++++++++++++
+ src/modules/billing/subscription-manager.ts   |   2 +-
+ .../customer-dashboard/dashboard-service.ts   |   6 +-
+ .../goal-optimization/goal-resolver.ts        |   2 +-
+ src/modules/insights/insight-generator.ts     |   4 +-
+ src/modules/performance/cost-estimator.ts     |   2 +-
+ src/modules/performance/index.ts              |   2 +-
+ .../publishing/adapters/facebook-adapter.ts   | 234 ++++++++++--
+ .../publishing/adapters/whatsapp-adapter.ts   | 291 ++++++++++++---
+ .../template-marketplace/style-resolver.ts    |   2 +-
+ src/persistence/persistent-orchestrator.ts    |   2 +-
+ src/plans/plan-config.ts                      | 141 ++++---
+ src/queue/video-processor.ts                  |   4 +-
+ src/types/dashboard.ts                        |   2 +-
+ .../008_webhook_events_and_user_plans.sql     |  76 ++++
+ ...9_update_plan_names_starter_pro_agency.sql |  83 +++++
+ web/app/layout.tsx                            |   3 +
+ web/app/planos/page.tsx                       | 285 +++++++++++++++
+ web/vercel.json                               |  10 +
+ 43 files changed, 1908 insertions(+), 203 deletions(-)
+ create mode 100644 .github/workflows/deploy-web.yml
+ create mode 100644 scripts/deploy.sh
+ create mode 100644 src/api/controllers/hotmartWebhookController.ts
+ create mode 100644 src/api/routes/webhooks.ts
+ create mode 100644 src/modules/billing/providers/hotmart-provider.ts
+ create mode 100644 supabase/migrations/008_webhook_events_and_user_plans.sql
+ create mode 100644 supabase/migrations/009_update_plan_names_starter_pro_agency.sql
+ create mode 100644 web/app/planos/page.tsx
+ create mode 100644 web/vercel.json
+
+diff --git a/.github/workflows/deploy-web.yml b/.github/workflows/deploy-web.yml
+new file mode 100644
+index 0000000..6cb1e41
+--- /dev/null
++++ b/.github/workflows/deploy-web.yml
+@@ -0,0 +1,166 @@
++name: Deploy Frontend — BookAgent Web
++
++on:
++  push:
++    branches:
++      - main
++      - claude/bookagent-product-vision-e5FVg
++    paths:
++      - 'web/**'
++      - '.github/workflows/deploy-web.yml'
++
++  workflow_dispatch:
++    inputs:
++      environment:
++        description: 'Target environment'
++        required: true
++        default: 'preview'
++        type: choice
++        options:
++          - preview
++          - production
++
++jobs:
++  # ────────────────────────────────────────────────────────────────────────
++  # Job 1: Build & Test
++  # ────────────────────────────────────────────────────────────────────────
++  build:
++    name: Build Next.js
++    runs-on: ubuntu-latest
++
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++
++      - name: Setup Node.js 20
++        uses: actions/setup-node@v4
++        with:
++          node-version: '20'
++          cache: 'npm'
++          cache-dependency-path: web/package-lock.json
++
++      - name: Install dependencies
++        working-directory: web
++        run: npm ci
++
++      - name: Build
++        working-directory: web
++        run: npm run build
++        env:
++          NEXT_PUBLIC_API_URL: https://api-bookagent.db8intelligence.com.br
++
++      - name: Upload build artifact
++        uses: actions/upload-artifact@v4
++        with:
++          name: nextjs-build
++          path: web/.next
++          retention-days: 1
++
++  # ────────────────────────────────────────────────────────────────────────
++  # Job 2: Backend Tests (TypeScript + Vitest)
++  # ────────────────────────────────────────────────────────────────────────
++  test-backend:
++    name: Backend Tests (89 tests)
++    runs-on: ubuntu-latest
++
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++
++      - name: Setup Node.js 20
++        uses: actions/setup-node@v4
++        with:
++          node-version: '20'
++          cache: 'npm'
++          cache-dependency-path: package-lock.json
++
++      - name: Install dependencies
++        run: npm ci
++
++      - name: TypeScript check
++        run: npx tsc --noEmit
++
++      - name: Run tests
++        run: npm test
++
++  # ────────────────────────────────────────────────────────────────────────
++  # Job 3: Deploy to Vercel (preview)
++  # ────────────────────────────────────────────────────────────────────────
++  deploy-preview:
++    name: Deploy Preview
++    runs-on: ubuntu-latest
++    needs: [build, test-backend]
++    if: github.ref != 'refs/heads/main' || github.event.inputs.environment == 'preview'
++    environment:
++      name: preview
++      url: ${{ steps.vercel-deploy.outputs.url }}
++
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++
++      - name: Setup Node.js 20
++        uses: actions/setup-node@v4
++        with:
++          node-version: '20'
++          cache: 'npm'
++          cache-dependency-path: web/package-lock.json
++
++      - name: Install Vercel CLI
++        run: npm install -g vercel@latest
++
++      - name: Pull Vercel environment
++        working-directory: web
++        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_TEAM_ID }}
++
++      - name: Build for Vercel
++        working-directory: web
++        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
++
++      - name: Deploy to Vercel (preview)
++        id: vercel-deploy
++        working-directory: web
++        run: |
++          URL=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_TEAM_ID }})
++          echo "url=$URL" >> $GITHUB_OUTPUT
++          echo "✅ Preview: $URL"
++
++  # ────────────────────────────────────────────────────────────────────────
++  # Job 4: Deploy to Production
++  # ────────────────────────────────────────────────────────────────────────
++  deploy-production:
++    name: Deploy Production
++    runs-on: ubuntu-latest
++    needs: [build, test-backend]
++    if: github.ref == 'refs/heads/main' && github.event.inputs.environment != 'preview'
++    environment:
++      name: production
++      url: https://bookagent.db8intelligence.com.br
++
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++
++      - name: Setup Node.js 20
++        uses: actions/setup-node@v4
++        with:
++          node-version: '20'
++          cache: 'npm'
++          cache-dependency-path: web/package-lock.json
++
++      - name: Install Vercel CLI
++        run: npm install -g vercel@latest
++
++      - name: Pull Vercel environment
++        working-directory: web
++        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_TEAM_ID }}
++
++      - name: Build for Vercel
++        working-directory: web
++        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
++
++      - name: Deploy to Vercel (production)
++        working-directory: web
++        run: |
++          URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_TEAM_ID }})
++          echo "✅ Production: $URL"
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+new file mode 100644
+index 0000000..5fcb705
+--- /dev/null
++++ b/scripts/deploy.sh
+@@ -0,0 +1,82 @@
++#!/usr/bin/env bash
++# ============================================================================
++# BookAgent Intelligence Engine — Deploy Script
++# Executa no seu terminal local (não no container Claude)
++#
++# Pré-requisitos:
++#   - Node.js 20+
++#   - npm install -g vercel
++#   - git configurado com acesso ao repositório
++#
++# Uso:
++#   chmod +x scripts/deploy.sh
++#   ./scripts/deploy.sh
++# ============================================================================
++
++set -e
++
++TEAM_ID="team_T2S42j3Uj2hWvjnw6b1OVrKK"
++API_URL="https://api-bookagent.db8intelligence.com.br"
++REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
++WEB_DIR="$REPO_ROOT/web"
++
++echo ""
++echo "╔══════════════════════════════════════════════════════════╗"
++echo "║     BookAgent Intelligence Engine — Deploy Vercel        ║"
++echo "╚══════════════════════════════════════════════════════════╝"
++echo ""
++
++# ── 1. Push do commit de fix para o GitHub ────────────────────────────────
++echo "▶ [1/4] Push para GitHub..."
++cd "$REPO_ROOT"
++git push origin claude/bookagent-product-vision-e5FVg
++echo "  ✅ Push OK"
++
++# ── 2. Build local de verificação ────────────────────────────────────────
++echo ""
++echo "▶ [2/4] Build de verificação (Next.js)..."
++cd "$WEB_DIR"
++npm install --silent
++npm run build
++echo "  ✅ Build OK"
++
++# ── 3. Deploy no Vercel ──────────────────────────────────────────────────
++echo ""
++echo "▶ [3/4] Deploy no Vercel..."
++cd "$WEB_DIR"
++
++# Verifica se já está linkado
++if [ ! -f ".vercel/project.json" ]; then
++  echo "  Projeto não linkado — criando novo projeto Vercel..."
++  vercel --yes \
++    --scope "$TEAM_ID" \
++    --name "bookagent-web" \
++    -e NEXT_PUBLIC_API_URL="$API_URL"
++else
++  echo "  Projeto já linkado — fazendo deploy..."
++  vercel --yes \
++    --scope "$TEAM_ID" \
++    -e NEXT_PUBLIC_API_URL="$API_URL"
++fi
++
++# ── 4. Promove para produção ─────────────────────────────────────────────
++echo ""
++echo "▶ [4/4] Promovendo para produção..."
++cd "$WEB_DIR"
++vercel --prod \
++  --scope "$TEAM_ID" \
++  -e NEXT_PUBLIC_API_URL="$API_URL"
++
++echo ""
++echo "╔══════════════════════════════════════════════════════════╗"
++echo "║  ✅  Deploy concluído!                                    ║"
++echo "║                                                           ║"
++echo "║  Frontend: https://bookagent-web.vercel.app               ║"
++echo "║  API:      https://api-bookagent.db8intelligence.com.br   ║"
++echo "╚══════════════════════════════════════════════════════════╝"
++echo ""
++echo "Próximos passos:"
++echo "  1. Adicionar domínio customizado no painel Vercel:"
++echo "     bookagent.db8intelligence.com.br → bookagent-web.vercel.app"
++echo "  2. No n8n: criar credenciais BookAgent API Key + Evolution API Key"
++echo "  3. Teste end-to-end com PDF real"
+diff --git a/src/api/controllers/billingController.ts b/src/api/controllers/billingController.ts
+index 507f3e2..681742d 100644
+--- a/src/api/controllers/billingController.ts
++++ b/src/api/controllers/billingController.ts
+@@ -53,7 +53,7 @@ export function setSupabaseClientForBilling(client: SupabaseClientInstance): voi
+
+ const CreateSubscriptionSchema = z.object({
+   tenantId: z.string().min(1),
+-  planTier: z.enum(['basic', 'pro', 'business']),
++  planTier: z.enum(['starter', 'pro', 'agency']),
+   trial: z.boolean().optional().default(false),
+   trialDays: z.number().positive().optional(),
+   customerEmail: z.string().email().optional(),
+@@ -61,7 +61,7 @@ const CreateSubscriptionSchema = z.object({
+ });
+
+ const ChangePlanSchema = z.object({
+-  toPlan: z.enum(['basic', 'pro', 'business']),
++  toPlan: z.enum(['starter', 'pro', 'agency']),
+   immediate: z.boolean().optional().default(true),
+   requestedBy: z.string().min(1),
+ });
+@@ -310,7 +310,7 @@ export async function reactivateSubscriptionEndpoint(req: Request, res: Response
+ export async function getUsageEndpoint(req: Request, res: Response): Promise<void> {
+   const { tenantId } = req.params;
+
+-  const tenantContext = req.tenantContext ?? createDefaultTenantContext(undefined, 'basic');
++  const tenantContext = req.tenantContext ?? createDefaultTenantContext(undefined, 'starter');
+   // Override tenantId for the query
+   const ctx = { ...tenantContext, tenantId };
+
+diff --git a/src/api/controllers/hotmartWebhookController.ts b/src/api/controllers/hotmartWebhookController.ts
+new file mode 100644
+index 0000000..3f81470
+--- /dev/null
++++ b/src/api/controllers/hotmartWebhookController.ts
+@@ -0,0 +1,195 @@
++/**
++ * Hotmart Webhook Controller — BookAgent Intelligence Engine
++ *
++ * Endpoint dedicado para receber eventos do Hotmart e sincronizar
++ * o status dos planos na tabela bookagent_user_plans.
++ *
++ * POST /webhooks/hotmart
++ */
++
++import type { Request, Response } from 'express';
++import { sendSuccess, sendError } from '../helpers/response.js';
++import { HotmartBillingProvider } from '../../modules/billing/providers/hotmart-provider.js';
++import type { SupabaseClient as SupabaseClientInstance } from '../../persistence/supabase-client.js';
++import { logger } from '../../utils/logger.js';
++
++let supabaseClient: SupabaseClientInstance | null = null;
++
++export function setHotmartWebhookClient(client: SupabaseClientInstance): void {
++  supabaseClient = client;
++}
++
++// ---------------------------------------------------------------------------
++// Plano → limites
++// ---------------------------------------------------------------------------
++
++const PLAN_BOOKS_LIMIT: Record<string, number> = {
++  free:    1,
++  starter: 1,
++  pro:     3,
++  agency:  10,
++};
++
++const TIER_TO_PLAN: Record<string, string> = {
++  starter:  'starter',
++  basic:    'starter',  // legado
++  pro:      'pro',
++  business: 'agency',   // legado
++  agency:   'agency',
++};
++
++// ---------------------------------------------------------------------------
++// POST /webhooks/hotmart
++// ---------------------------------------------------------------------------
++
++export async function handleHotmartWebhook(req: Request, res: Response): Promise<void> {
++  const provider = new HotmartBillingProvider();
++
++  const hottokHeader = req.headers['x-hotmart-hottok'] as string | undefined;
++  const rawBody = JSON.stringify(req.body);
++  const isValid = provider.verifyWebhookSignature(rawBody, hottokHeader ?? '');
++
++  if (!isValid) {
++    logger.warn('[HotmartWebhook] Hottok inválido — rejeitando');
++    sendError(res, 'UNAUTHORIZED', 'Hottok inválido', 401);
++    return;
++  }
++
++  const parsed = provider.parseWebhookEvent(req.body as Record<string, unknown>);
++
++  if (!parsed) {
++    sendSuccess(res, { ignored: true, reason: 'evento não tratado' });
++    return;
++  }
++
++  const { eventType, externalEventId, externalCustomerId, externalSubscriptionId, planTier, amountBRL, metadata } = parsed;
++
++  logger.info(`[HotmartWebhook] ${eventType} | email=${externalCustomerId} | plan=${planTier}`);
++
++  // Idempotência
++  if (supabaseClient && externalEventId) {
++    try {
++      const existing = await supabaseClient.select<{ id: string }>(
++        'bookagent_webhook_events',
++        { filters: [{ column: 'source', operator: 'eq', value: externalEventId }], limit: 1 },
++      );
++
++      if (existing.length > 0) {
++        logger.info(`[HotmartWebhook] Evento duplicado ignorado: ${externalEventId}`);
++        sendSuccess(res, { duplicate: true });
++        return;
++      }
++
++      await supabaseClient.insert('bookagent_webhook_events', {
++        event_type: eventType,
++        source: externalEventId,
++        payload: req.body,
++        processed: false,
++      });
++    } catch (err) {
++      logger.error(`[HotmartWebhook] Erro idempotência: ${err}`);
++    }
++  }
++
++  try {
++    if (eventType === 'subscription.created') {
++      await activatePlan({
++        email: externalCustomerId ?? '',
++        phone: metadata?.buyerPhone as string | undefined,
++        planTier: planTier ?? 'starter',
++        hotmartSubId: externalSubscriptionId,
++        amountBRL,
++      });
++    } else if (eventType === 'subscription.canceled') {
++      await cancelPlan({
++        email: externalCustomerId ?? '',
++        hotmartSubId: externalSubscriptionId,
++      });
++    }
++
++    if (supabaseClient && externalEventId) {
++      await supabaseClient.update(
++        'bookagent_webhook_events',
++        { column: 'source', operator: 'eq', value: externalEventId },
++        { processed: true },
++      );
++    }
++
++    sendSuccess(res, { processed: true, eventType, email: externalCustomerId, plan: planTier });
++  } catch (err) {
++    const message = err instanceof Error ? err.message : String(err);
++    logger.error(`[HotmartWebhook] Erro ao processar: ${message}`);
++
++    if (supabaseClient && externalEventId) {
++      await supabaseClient.update(
++        'bookagent_webhook_events',
++        { column: 'source', operator: 'eq', value: externalEventId },
++        { processed: false, error: message },
++      ).catch(() => null);
++    }
++
++    sendError(res, 'PROCESSING_ERROR', message, 500);
++  }
++}
++
++// ---------------------------------------------------------------------------
++// Helpers
++// ---------------------------------------------------------------------------
++
++interface ActivatePlanInput {
++  email: string;
++  phone?: string;
++  planTier: string;
++  hotmartSubId?: string;
++  amountBRL?: number;
++}
++
++async function activatePlan(input: ActivatePlanInput): Promise<void> {
++  if (!supabaseClient) return;
++
++  const plan = TIER_TO_PLAN[input.planTier] ?? 'starter';
++  const booksLimit = PLAN_BOOKS_LIMIT[plan] ?? 1;
++  const validUntil = new Date();
++  validUntil.setMonth(validUntil.getMonth() + 1);
++
++  await supabaseClient.upsert(
++    'bookagent_user_plans',
++    {
++      user_id: input.email || null,
++      phone: input.phone || null,
++      plan,
++      hotmart_sub_id: input.hotmartSubId ?? null,
++      status: 'active',
++      books_limit: booksLimit,
++      books_used: 0,
++      valid_until: validUntil.toISOString(),
++      updated_at: new Date().toISOString(),
++    },
++    input.email ? 'user_id' : 'phone',
++  );
++
++  logger.info(`[HotmartWebhook] Plano ativado: ${input.email} → ${plan} (${booksLimit} books/mês)`);
++}
++
++interface CancelPlanInput {
++  email: string;
++  hotmartSubId?: string;
++}
++
++async function cancelPlan(input: CancelPlanInput): Promise<void> {
++  if (!supabaseClient || !input.email) return;
++
++  await supabaseClient.update(
++    'bookagent_user_plans',
++    { column: 'user_id', operator: 'eq', value: input.email },
++    {
++      plan: 'free',
++      status: 'cancelled',
++      books_limit: 1,
++      valid_until: new Date().toISOString(),
++      updated_at: new Date().toISOString(),
++    },
++  );
++
++  logger.info(`[HotmartWebhook] Plano cancelado: ${input.email} → free`);
++}
+diff --git a/src/api/controllers/leadsController.ts b/src/api/controllers/leadsController.ts
+index fc145fd..94ea878 100644
+--- a/src/api/controllers/leadsController.ts
++++ b/src/api/controllers/leadsController.ts
+@@ -93,7 +93,7 @@ const UpdateStageSchema = z.object({
+   stage: z.enum(['new', 'demo_sent', 'demo_processing', 'demo_delivered', 'offer_sent', 'converted', 'lost', 'reactivated']),
+   notes: z.string().optional(),
+   job_id: z.string().uuid().optional(),
+-  plan_tier: z.enum(['basic', 'pro', 'business']).optional(),
++  plan_tier: z.enum(['starter', 'pro', 'agency']).optional(),
+   force: z.boolean().optional().default(false), // Pular validação de máquina de estados
+ });
+
+@@ -142,7 +142,7 @@ async function activateTrial(phone: string): Promise<void> {
+   try {
+     await supabase.insert('bookagent_plan_overrides', {
+       user_id:     phone,
+-      plan_tier:   'basic',
++      plan_tier:   'starter',
+       valid_until: validUntil.toISOString(),
+       reason:      'trial',
+     });
+diff --git a/src/api/controllers/opsController.ts b/src/api/controllers/opsController.ts
+index f1a2c9e..4f3ed90 100644
+--- a/src/api/controllers/opsController.ts
++++ b/src/api/controllers/opsController.ts
+@@ -167,7 +167,7 @@ async function getCostAnalysis() {
+     const userCosts = rows.map(row =>
+       estimateUserMonthlyCost(
+         row.user_id,
+-        (row.plan_tier as PlanTier) || 'basic',
++        (row.plan_tier as PlanTier) || 'starter',
+         parseInt(row.jobs_count || '0', 10),
+       ),
+     );
+diff --git a/src/api/controllers/videoRenderController.ts b/src/api/controllers/videoRenderController.ts
+index ba953c9..7791a2f 100644
+--- a/src/api/controllers/videoRenderController.ts
++++ b/src/api/controllers/videoRenderController.ts
+@@ -189,7 +189,7 @@ export async function renderVideo(req: Request, res: Response): Promise<void> {
+     // Track metric
+     metrics.track('job_started', {
+       userId: req.resolvedUserId ?? 'unknown',
+-      planTier: req.resolvedPlanTier ?? 'basic',
++      planTier: req.resolvedPlanTier ?? 'starter',
+       jobId,
+       metadata: { type: 'video_render', scenes: sceneCount },
+     });
+diff --git a/src/api/middleware/plan-guard.ts b/src/api/middleware/plan-guard.ts
+index f93a2f4..d4e8f18 100644
+--- a/src/api/middleware/plan-guard.ts
++++ b/src/api/middleware/plan-guard.ts
+@@ -84,11 +84,11 @@ async function countJobsThisMonth(userId: string): Promise<number> {
+   }
+ }
+
+-/** Obtém o plano do usuário do Supabase (último registro). Fallback: 'basic'. */
++/** Obtém o plano do usuário do Supabase (último registro). Fallback: 'starter'. */
+ async function resolveUserPlan(userId: string): Promise<PlanTier> {
+   // Header explícito tem precedência (n8n, API interna)
+   // O header é lido pelo chamador — aqui apenas fallback de DB
+-  if (!supabase) return 'basic';
++  if (!supabase) return 'starter';
+   try {
+     const rows = await supabase.select<{ plan_type: string }>(
+       'bookagent_job_meta',
+@@ -101,9 +101,9 @@ async function resolveUserPlan(userId: string): Promise<PlanTier> {
+       },
+     );
+     const tier = rows[0]?.plan_type as PlanTier | undefined;
+-    return tier === 'pro' || tier === 'business' ? tier : 'basic';
++    return tier === 'pro' || tier === 'agency' ? tier : 'starter';
+   } catch {
+-    return 'basic';
++    return 'starter';
+   }
+ }
+
+@@ -131,14 +131,14 @@ export async function planGuard(
+     return;
+   }
+
+-  // Resolve plano: header X-Plan-Type → DB → 'basic'
++  // Resolve plano: header X-Plan-Type → DB → 'starter'
+   const headerPlan = req.headers['x-plan-type'];
+   let tier: PlanTier = typeof headerPlan === 'string'
+     ? (headerPlan as PlanTier)
+     : await resolveUserPlan(userId);
+
+   // Garante que tier é válido
+-  if (tier !== 'pro' && tier !== 'business') tier = 'basic';
++  if (tier !== 'pro' && tier !== 'agency') tier = 'starter';
+
+   const plan = getPlan(tier);
+
+diff --git a/src/api/middleware/rate-limiter.ts b/src/api/middleware/rate-limiter.ts
+index 06aefb1..fbc6989 100644
+--- a/src/api/middleware/rate-limiter.ts
++++ b/src/api/middleware/rate-limiter.ts
+@@ -93,7 +93,7 @@ setInterval(() => {
+  */
+ export function requestRateLimiter(req: Request, res: Response, next: NextFunction): void {
+   const id = req.resolvedUserId ?? req.ip ?? 'unknown';
+-  const tier: PlanTier = req.resolvedPlanTier ?? 'basic';
++  const tier: PlanTier = req.resolvedPlanTier ?? 'starter';
+   const limit = getPlan(tier).limits.requestsPerMinute;
+
+   const count = minuteCounter.increment(id);
+@@ -119,7 +119,7 @@ export function requestRateLimiter(req: Request, res: Response, next: NextFuncti
+  */
+ export function jobRateLimiter(req: Request, res: Response, next: NextFunction): void {
+   const id = req.resolvedUserId ?? req.ip ?? 'unknown';
+-  const tier: PlanTier = req.resolvedPlanTier ?? 'basic';
++  const tier: PlanTier = req.resolvedPlanTier ?? 'starter';
+   const limit = getPlan(tier).limits.jobsPerHour;
+
+   const key = `job:${id}`;
+diff --git a/src/api/routes/webhooks.ts b/src/api/routes/webhooks.ts
+new file mode 100644
+index 0000000..68bf094
+--- /dev/null
++++ b/src/api/routes/webhooks.ts
+@@ -0,0 +1,14 @@
++/**
++ * Routes: Hotmart Webhook
++ *
++ * POST /webhooks/hotmart → recebe eventos de compra/cancelamento
++ */
++
++import { Router } from 'express';
++import { handleHotmartWebhook } from '../controllers/hotmartWebhookController.js';
++
++const router = Router();
++
++router.post('/hotmart', handleHotmartWebhook);
++
++export default router;
+diff --git a/src/core/tenant-resolver.ts b/src/core/tenant-resolver.ts
+index 8d72326..e5c491a 100644
+--- a/src/core/tenant-resolver.ts
++++ b/src/core/tenant-resolver.ts
+@@ -42,7 +42,7 @@ export function createDefaultTenantContext(
+   userId?: string,
+   planTier?: PlanTier,
+ ): TenantContext {
+-  const tier = planTier ?? 'basic';
++  const tier = planTier ?? 'starter';
+
+   return {
+     tenantId: DEFAULT_TENANT_ID,
+@@ -238,8 +238,8 @@ async function resolvePlanTier(
+   supabase: SupabaseClient | null,
+ ): Promise<PlanTier> {
+   // Header override
+-  if (headerTier === 'pro' || headerTier === 'business') return headerTier;
+-  if (headerTier === 'basic') return 'basic';
++  if (headerTier === 'pro' || headerTier === 'agency') return headerTier;
++  if (headerTier === 'starter') return 'starter';
+
+   // DB lookup (fallback)
+   if (tenantId && supabase) {
+@@ -255,11 +255,11 @@ async function resolvePlanTier(
+         },
+       );
+       const tier = rows[0]?.plan_type;
+-      if (tier === 'pro' || tier === 'business') return tier;
++      if (tier === 'pro' || tier === 'agency') return tier;
+     } catch {
+       // fallback
+     }
+   }
+
+-  return 'basic';
++  return 'starter';
+ }
+diff --git a/src/domain/entities/billing.ts b/src/domain/entities/billing.ts
+index 648c1ac..eab9744 100644
+--- a/src/domain/entities/billing.ts
++++ b/src/domain/entities/billing.ts
+@@ -246,50 +246,50 @@ export interface BillingPlanLimits {
+ }
+
+ export const BILLING_PLAN_LIMITS: Record<PlanTier, BillingPlanLimits> = {
+-  basic: {
+-    jobsPerMonth: 10,
+-    videoRendersPerMonth: 10,
+-    variantsPerMonth: 20,
+-    thumbnailsPerMonth: 30,
++  starter: {
++    jobsPerMonth: 1,
++    videoRendersPerMonth: 3,    // 3 reels / book × 1 book
++    variantsPerMonth: 10,
++    thumbnailsPerMonth: 30,     // 10 imagens × 3 carrosséis
+     autoPublishPerMonth: 0,
+     experimentsPerMonth: 0,
+-    blogsPerMonth: 10,
+-    landingPagesPerMonth: 0,
+-    revisionsPerMonth: 5,
+-    ttsCallsPerMonth: 10,
+-    aiCallsPerMonth: 30,
++    blogsPerMonth: 1,
++    landingPagesPerMonth: 1,
++    revisionsPerMonth: 2,
++    ttsCallsPerMonth: 4,        // 3 reels + 1 podcast
++    aiCallsPerMonth: 20,
+     storageBytesTotal: 500 * 1024 * 1024, // 500MB
+-    maxMonthlyCostUsd: 5.00,
++    maxMonthlyCostUsd: 1.50,
+   },
+   pro: {
+-    jobsPerMonth: 50,
+-    videoRendersPerMonth: 50,
+-    variantsPerMonth: 300,
+-    thumbnailsPerMonth: 200,
++    jobsPerMonth: 3,
++    videoRendersPerMonth: 9,    // 3 reels / book × 3 books
++    variantsPerMonth: 50,
++    thumbnailsPerMonth: 90,     // 10 imagens × 3 carrosséis × 3 books
++    autoPublishPerMonth: 20,
++    experimentsPerMonth: 5,
++    blogsPerMonth: 3,
++    landingPagesPerMonth: 3,
++    revisionsPerMonth: 10,
++    ttsCallsPerMonth: 12,       // (3 reels + 1 podcast) × 3 books
++    aiCallsPerMonth: 100,
++    storageBytesTotal: 2 * 1024 * 1024 * 1024, // 2GB
++    maxMonthlyCostUsd: 5.00,
++  },
++  agency: {
++    jobsPerMonth: 10,
++    videoRendersPerMonth: 30,   // 3 reels / book × 10 books
++    variantsPerMonth: 200,
++    thumbnailsPerMonth: 300,    // 10 imagens × 3 carrosséis × 10 books
+     autoPublishPerMonth: 100,
+     experimentsPerMonth: 20,
+-    blogsPerMonth: 50,
+-    landingPagesPerMonth: 20,
+-    revisionsPerMonth: 50,
+-    ttsCallsPerMonth: 50,
+-    aiCallsPerMonth: 500,
+-    storageBytesTotal: 5 * 1024 * 1024 * 1024, // 5GB
+-    maxMonthlyCostUsd: 50.00,
+-  },
+-  business: {
+-    jobsPerMonth: 500,
+-    videoRendersPerMonth: 500,
+-    variantsPerMonth: 5000,
+-    thumbnailsPerMonth: 2000,
+-    autoPublishPerMonth: 1000,
+-    experimentsPerMonth: 200,
+-    blogsPerMonth: 500,
+-    landingPagesPerMonth: 200,
+-    revisionsPerMonth: 500,
+-    ttsCallsPerMonth: 500,
+-    aiCallsPerMonth: 5000,
+-    storageBytesTotal: 50 * 1024 * 1024 * 1024, // 50GB
+-    maxMonthlyCostUsd: 500.00,
++    blogsPerMonth: 10,
++    landingPagesPerMonth: 10,
++    revisionsPerMonth: 30,
++    ttsCallsPerMonth: 40,       // (3 reels + 1 podcast) × 10 books
++    aiCallsPerMonth: 400,
++    storageBytesTotal: 10 * 1024 * 1024 * 1024, // 10GB
++    maxMonthlyCostUsd: 20.00,
+   },
+ };
+
+diff --git a/src/domain/entities/goal-optimization.ts b/src/domain/entities/goal-optimization.ts
+index 36820f7..cac29fe 100644
+--- a/src/domain/entities/goal-optimization.ts
++++ b/src/domain/entities/goal-optimization.ts
+@@ -410,9 +410,9 @@ export const PRESET_PROFILES: Record<OptimizationObjective, OptimizationProfile>
+ // ---------------------------------------------------------------------------
+
+ export const DEFAULT_OBJECTIVE_BY_PLAN: Record<PlanTier, OptimizationObjective> = {
+-  basic: OptimizationObjective.LOW_COST,
++  starter: OptimizationObjective.LOW_COST,
+   pro: OptimizationObjective.BALANCED,
+-  business: OptimizationObjective.HIGH_QUALITY,
++  agency: OptimizationObjective.HIGH_QUALITY,
+ };
+
+ // ---------------------------------------------------------------------------
+diff --git a/src/domain/entities/governance.ts b/src/domain/entities/governance.ts
+index 6f8d237..41b9fd3 100644
+--- a/src/domain/entities/governance.ts
++++ b/src/domain/entities/governance.ts
+@@ -342,9 +342,9 @@ export interface GovernanceEvaluation {
+ // ---------------------------------------------------------------------------
+
+ export const DEFAULT_AUTONOMY_BY_PLAN: Record<PlanTier, AutonomyLevel> = {
+-  basic: AutonomyLevel.ASSISTED,
++  starter: AutonomyLevel.ASSISTED,
+   pro: AutonomyLevel.SEMI_AUTONOMOUS,
+-  business: AutonomyLevel.SUPERVISED_AUTONOMOUS,
++  agency: AutonomyLevel.SUPERVISED_AUTONOMOUS,
+ };
+
+ export const DEFAULT_QUALITY_THRESHOLD = 50;
+diff --git a/src/domain/entities/publication.ts b/src/domain/entities/publication.ts
+index 616b8ef..125e752 100644
+--- a/src/domain/entities/publication.ts
++++ b/src/domain/entities/publication.ts
+@@ -92,6 +92,9 @@ export interface PublishPayload {
+
+   /** Metadados adicionais específicos da plataforma */
+   platformMeta?: Record<string, unknown>;
++
++  /** Telefone do destinatário (WhatsApp) — formato: 5571999733883 */
++  recipientPhone?: string;
+ }
+
+ /**
+diff --git a/src/domain/entities/subscription.ts b/src/domain/entities/subscription.ts
+index 0107d10..dfaa6da 100644
+--- a/src/domain/entities/subscription.ts
++++ b/src/domain/entities/subscription.ts
+@@ -35,6 +35,7 @@ export enum SubscriptionStatus {
+ export enum BillingProvider {
+   STRIPE = 'stripe',
+   ASAAS = 'asaas',
++  HOTMART = 'hotmart',
+   MANUAL = 'manual',
+   NONE = 'none',
+ }
+diff --git a/src/domain/entities/template-marketplace.ts b/src/domain/entities/template-marketplace.ts
+index 271d772..54eb6ed 100644
+--- a/src/domain/entities/template-marketplace.ts
++++ b/src/domain/entities/template-marketplace.ts
+@@ -53,7 +53,7 @@ export enum CatalogItemStatus {
+ export enum CatalogTier {
+   FREE = 'free',
+   PRO = 'pro',
+-  BUSINESS = 'business',
++  BUSINESS = 'agency',
+   PREMIUM = 'premium',
+ }
+
+diff --git a/src/domain/entities/tenant.ts b/src/domain/entities/tenant.ts
+index 9a06d3a..e9345c0 100644
+--- a/src/domain/entities/tenant.ts
++++ b/src/domain/entities/tenant.ts
+@@ -234,7 +234,7 @@ export interface TenantContext {
+ // ---------------------------------------------------------------------------
+
+ export const PLAN_FEATURES: Record<PlanTier, TenantFeatureFlags> = {
+-  basic: {
++  starter: {
+     autoPublish: false,
+     intermediateApproval: false,
+     apiAccess: false,
+@@ -264,7 +264,7 @@ export const PLAN_FEATURES: Record<PlanTier, TenantFeatureFlags> = {
+     blogGeneration: true,
+     landingPageGeneration: true,
+   },
+-  business: {
++  agency: {
+     autoPublish: true,
+     intermediateApproval: true,
+     apiAccess: true,
+@@ -282,7 +282,7 @@ export const PLAN_FEATURES: Record<PlanTier, TenantFeatureFlags> = {
+ };
+
+ export const PLAN_TENANT_LIMITS: Record<PlanTier, TenantLimits> = {
+-  basic: {
++  starter: {
+     jobsPerMonth: 10,
+     concurrentJobs: 1,
+     queuePriority: 10,
+@@ -310,7 +310,7 @@ export const PLAN_TENANT_LIMITS: Record<PlanTier, TenantLimits> = {
+     maxCostPerJobUsd: 2.00,
+     learningScope: LearningScope.HYBRID,
+   },
+-  business: {
++  agency: {
+     jobsPerMonth: 500,
+     concurrentJobs: 10,
+     queuePriority: 1,
+diff --git a/src/domain/value-objects/index.ts b/src/domain/value-objects/index.ts
+index 5bb1044..5d70a03 100644
+--- a/src/domain/value-objects/index.ts
++++ b/src/domain/value-objects/index.ts
+@@ -130,7 +130,7 @@ export enum VisualIntensity {
+ export enum SophisticationLevel {
+   PREMIUM = 'premium',
+   STANDARD = 'standard',
+-  BASIC = 'basic',
++  BASIC = 'starter',
+ }
+
+ // ---------------------------------------------------------------------------
+diff --git a/src/index.ts b/src/index.ts
+index 11f9153..b22a54a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -83,6 +83,7 @@ import leadsRoutes from './api/routes/leads.js';
+ import opsRoutes from './api/routes/ops.js';
+ import experimentRoutes from './api/routes/experiments.js';
+ import billingRoutes from './api/routes/billing.js';
++import webhooksRoutes from './api/routes/webhooks.js';
+ import adminRoutes from './api/routes/admin.js';
+ import analyticsRoutes from './api/routes/analytics.js';
+ import insightsRoutes from './api/routes/insights.js';
+@@ -253,7 +254,7 @@ app.get('/health', (_req, res) => {
+       tts: providers.tts,
+     },
+     plans: {
+-      available: ['basic', 'pro', 'business'],
++      available: ['starter', 'pro', 'agency'],
+       enforcement: 'active',
+     },
+   });
+diff --git a/src/modules/admin/admin-queries.ts b/src/modules/admin/admin-queries.ts
+index d5d2a62..31fdeae 100644
+--- a/src/modules/admin/admin-queries.ts
++++ b/src/modules/admin/admin-queries.ts
+@@ -57,7 +57,7 @@ export async function listTenants(
+           tenantId: tid,
+           name: tid,
+           status: 'active',
+-          planTier: (row.plan_type as AdminTenantView['planTier']) ?? 'basic',
++          planTier: (row.plan_type as AdminTenantView['planTier']) ?? 'starter',
+           subscriptionStatus: 'active',
+           ownerId: row.user_id ?? '',
+           memberCount: 1,
+diff --git a/src/modules/analytics/analytics-service.ts b/src/modules/analytics/analytics-service.ts
+index e0f9974..8554015 100644
+--- a/src/modules/analytics/analytics-service.ts
++++ b/src/modules/analytics/analytics-service.ts
+@@ -281,7 +281,7 @@ export async function getTenantAnalytics(
+     const tenantMap = new Map<string, { count: number; plan: string }>();
+     for (const r of rows) {
+       const tid = r.tenant_id ?? r.user_id ?? 'unknown';
+-      const entry = tenantMap.get(tid) ?? { count: 0, plan: r.plan_type ?? 'basic' };
++      const entry = tenantMap.get(tid) ?? { count: 0, plan: r.plan_type ?? 'starter' };
+       entry.count++;
+       tenantMap.set(tid, entry);
+     }
+diff --git a/src/modules/billing/limit-checker.ts b/src/modules/billing/limit-checker.ts
+index d74a27f..d2b90f2 100644
+--- a/src/modules/billing/limit-checker.ts
++++ b/src/modules/billing/limit-checker.ts
+@@ -100,7 +100,7 @@ export async function checkUsageLimit(
+
+   // 2. Get plan limits
+   const planLimits = BILLING_PLAN_LIMITS[tenantContext.planTier]
+-    ?? BILLING_PLAN_LIMITS['basic'];
++    ?? BILLING_PLAN_LIMITS['starter'];
+   const limitField = EVENT_TO_LIMIT_FIELD[eventType];
+
+   if (!limitField) {
+@@ -241,7 +241,7 @@ export async function getRemainingQuota(
+   supabase: SupabaseClient | null,
+ ): Promise<{ remaining: number; limit: number; used: number }> {
+   const planLimits = BILLING_PLAN_LIMITS[tenantContext.planTier]
+-    ?? BILLING_PLAN_LIMITS['basic'];
++    ?? BILLING_PLAN_LIMITS['starter'];
+   const limitField = EVENT_TO_LIMIT_FIELD[eventType];
+   const limit = limitField ? planLimits[limitField] : 0;
+
+@@ -266,7 +266,7 @@ export async function getUsageSummary(
+   supabase: SupabaseClient | null,
+ ): Promise<UsageSummary> {
+   const planLimits = BILLING_PLAN_LIMITS[tenantContext.planTier]
+-    ?? BILLING_PLAN_LIMITS['basic'];
++    ?? BILLING_PLAN_LIMITS['starter'];
+
+   const counters = await getAllUsageCounts(tenantContext.tenantId, supabase);
+   const features: FeatureUsage[] = [];
+@@ -340,12 +340,12 @@ function buildUpgradeHint(
+   eventType: UsageEventType,
+   currentLimit: number,
+ ): string {
+-  if (currentTier === 'basic') {
++  if (currentTier === 'starter') {
+     const proLimit = BILLING_PLAN_LIMITS['pro'][EVENT_TO_LIMIT_FIELD[eventType] ?? 'jobsPerMonth'];
+     return `Upgrade para Pro: limite de ${proLimit} ${EVENT_LABELS[eventType]}/mês.`;
+   }
+   if (currentTier === 'pro') {
+-    const bizLimit = BILLING_PLAN_LIMITS['business'][EVENT_TO_LIMIT_FIELD[eventType] ?? 'jobsPerMonth'];
++    const bizLimit = BILLING_PLAN_LIMITS['agency'][EVENT_TO_LIMIT_FIELD[eventType] ?? 'jobsPerMonth'];
+     return `Upgrade para Business: limite de ${bizLimit} ${EVENT_LABELS[eventType]}/mês.`;
+   }
+   return 'Entre em contato para limites customizados.';
+diff --git a/src/modules/billing/provider-factory.ts b/src/modules/billing/provider-factory.ts
+index df8dbc9..8a2a68a 100644
+--- a/src/modules/billing/provider-factory.ts
++++ b/src/modules/billing/provider-factory.ts
+@@ -12,6 +12,7 @@ import { BillingProvider } from '../../domain/entities/subscription.js';
+ import type { IBillingProvider } from './billing-provider.js';
+ import { ManualBillingProvider } from './providers/manual-provider.js';
+ import { StripeBillingProvider } from './providers/stripe-provider.js';
++import { HotmartBillingProvider } from './providers/hotmart-provider.js';
+ import { logger } from '../../utils/logger.js';
+
+ // ---------------------------------------------------------------------------
+@@ -21,6 +22,7 @@ import { logger } from '../../utils/logger.js';
+ const providers = new Map<BillingProvider, IBillingProvider>();
+ providers.set(BillingProvider.MANUAL, new ManualBillingProvider());
+ providers.set(BillingProvider.STRIPE, new StripeBillingProvider());
++providers.set(BillingProvider.HOTMART, new HotmartBillingProvider());
+
+ // ---------------------------------------------------------------------------
+ // Factory
+diff --git a/src/modules/billing/providers/hotmart-provider.ts b/src/modules/billing/providers/hotmart-provider.ts
+new file mode 100644
+index 0000000..4382a43
+--- /dev/null
++++ b/src/modules/billing/providers/hotmart-provider.ts
+@@ -0,0 +1,346 @@
++/**
++ * Hotmart Billing Provider — BookAgent Intelligence Engine
++ *
++ * Integração com Hotmart para processamento de assinaturas no mercado BR.
++ *
++ * Eventos tratados:
++ *   PURCHASE_APPROVED      → ativar plano
++ *   PURCHASE_REFUNDED      → cancelar plano + reverter para free
++ *   PURCHASE_CANCELED      → cancelar plano
++ *   SUBSCRIPTION_CANCELLATION → cancelar assinatura recorrente
++ *
++ * Mapeamento de produtos Hotmart → planos BookAgent:
++ *   Configurado via env vars HOTMART_PRODUCT_ID_<PLANO>
++ *   ou detectado pelo preço pago (fallback).
++ *
++ * Variáveis de ambiente:
++ *   HOTMART_API_KEY            — client_id para API Hotmart
++ *   HOTMART_API_SECRET         — client_secret
++ *   HOTMART_WEBHOOK_HOTTOK     — token de validação de webhooks (hottok)
++ *   HOTMART_PRODUCT_ID_BASIC   — ID do produto Básico (R$97)
++ *   HOTMART_PRODUCT_ID_PRO     — ID do produto PRO (R$397)
++ *   HOTMART_PRODUCT_ID_MAX     — ID do produto MAX (R$697)
++ *
++ * Parte 76+ (revisão): Hotmart Provider real
++ */
++
++import type {
++  IBillingProvider,
++  ProviderResult,
++  CreateCustomerInput,
++  CreateSubscriptionInput,
++  ChangePlanInput,
++  ParsedWebhookEvent,
++} from '../billing-provider.js';
++import { BillingProvider } from '../../../domain/entities/subscription.js';
++import type { PlanTier } from '../../../plans/plan-config.js';
++import { logger } from '../../../utils/logger.js';
++
++// ---------------------------------------------------------------------------
++// Types — Hotmart webhook payload (simplificado)
++// ---------------------------------------------------------------------------
++
++interface HotmartWebhookPayload {
++  event: string;
++  version: string;
++  creation_date: number;
++  data: {
++    purchase?: {
++      transaction?: string;
++      approved_date?: number;
++      status?: string;
++      price?: { value: number; currency_code: string };
++      hottok?: string;
++    };
++    product?: {
++      id: number;
++      name?: string;
++    };
++    buyer?: {
++      email?: string;
++      name?: string;
++      phone?: string;
++    };
++    subscription?: {
++      subscriber_code?: string;
++      status?: string;
++      plan?: { id: string; name?: string };
++    };
++  };
++}
++
++// ---------------------------------------------------------------------------
++// Config
++// ---------------------------------------------------------------------------
++
++function getConfig() {
++  return {
++    apiKey: process.env.HOTMART_API_KEY ?? '',
++    apiSecret: process.env.HOTMART_API_SECRET ?? '',
++    hottok: process.env.HOTMART_WEBHOOK_HOTTOK ?? '',
++    productIds: {
++      starter: process.env.HOTMART_PRODUCT_ID_STARTER ?? '',
++      basico:  process.env.HOTMART_PRODUCT_ID_BASIC   ?? '',
++      pro:     process.env.HOTMART_PRODUCT_ID_PRO     ?? '',
++      max:     process.env.HOTMART_PRODUCT_ID_MAX     ?? '',
++    },
++  };
++}
++
++// Mapeamento preço → plano (fallback quando product_id não está configurado)
++const PRICE_TO_PLAN: Array<{ maxBRL: number; plan: PlanTier }> = [
++  { maxBRL: 150,  plan: 'starter' },   // R$97 → basic
++  { maxBRL: 300,  plan: 'starter' },   // R$197 → basic (básico)
++  { maxBRL: 500,  plan: 'pro' },     // R$397 → pro
++  { maxBRL: 9999, plan: 'agency' },// R$697 → business (max)
++];
++
++// ---------------------------------------------------------------------------
++// Provider
++// ---------------------------------------------------------------------------
++
++export class HotmartBillingProvider implements IBillingProvider {
++  readonly provider = BillingProvider.HOTMART;
++  readonly name = 'Hotmart';
++
++  isConfigured(): boolean {
++    const cfg = getConfig();
++    return !!(cfg.hottok || cfg.apiKey);
++  }
++
++  // -------------------------------------------------------------------------
++  // createCustomer — Hotmart não tem API de criação de customer
++  // O customer é criado no checkout pelo próprio comprador
++  // -------------------------------------------------------------------------
++  async createCustomer(input: CreateCustomerInput): Promise<ProviderResult<{ customerId: string }>> {
++    logger.info(`[HotmartProvider] createCustomer: ${input.email} — Hotmart gerencia checkout`);
++    return {
++      success: true,
++      data: { customerId: input.email }, // usa email como ID externo
++    };
++  }
++
++  // -------------------------------------------------------------------------
++  // createSubscription — direcionar para página de checkout Hotmart
++  // -------------------------------------------------------------------------
++  async createSubscription(input: CreateSubscriptionInput): Promise<ProviderResult<{
++    subscriptionId: string;
++    planId: string;
++    status: string;
++  }>> {
++    const cfg = getConfig();
++    const productId = cfg.productIds[input.planTier as keyof typeof cfg.productIds] ?? '';
++
++    if (!productId) {
++      return {
++        success: false,
++        error: `HOTMART_PRODUCT_ID_${input.planTier.toUpperCase()} não configurado`,
++      };
++    }
++
++    const checkoutUrl = `https://pay.hotmart.com/${productId}?email=${input.externalCustomerId}`;
++    logger.info(`[HotmartProvider] Checkout URL: ${checkoutUrl}`);
++
++    return {
++      success: true,
++      data: {
++        subscriptionId: `hotmart:pending:${productId}`,
++        planId: productId,
++        status: 'pending_checkout',
++      },
++    };
++  }
++
++  // -------------------------------------------------------------------------
++  // cancelSubscription — via API Hotmart (requires token)
++  // -------------------------------------------------------------------------
++  async cancelSubscription(externalSubscriptionId: string): Promise<ProviderResult> {
++    const cfg = getConfig();
++
++    if (!cfg.apiKey || !cfg.apiSecret) {
++      logger.warn('[HotmartProvider] cancelSubscription: sem credenciais API — cancelamento manual');
++      return {
++        success: false,
++        error: 'Cancelamento manual necessário — configure HOTMART_API_KEY e HOTMART_API_SECRET',
++      };
++    }
++
++    try {
++      // 1) Obter access_token
++      const tokenRes = await fetch('https://api-hot-connect.hotmart.com/security/oauth/token', {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
++        body: new URLSearchParams({
++          grant_type: 'client_credentials',
++          client_id: cfg.apiKey,
++          client_secret: cfg.apiSecret,
++        }),
++      });
++
++      if (!tokenRes.ok) {
++        return { success: false, error: `Hotmart auth failed: ${tokenRes.status}` };
++      }
++
++      const tokenData = (await tokenRes.json()) as { access_token: string };
++
++      // 2) Cancelar assinatura
++      const cancelRes = await fetch(
++        `https://api-hot-connect.hotmart.com/payments/api/v1/subscriptions/${externalSubscriptionId}/cancel`,
++        {
++          method: 'POST',
++          headers: {
++            'Content-Type': 'application/json',
++            Authorization: `Bearer ${tokenData.access_token}`,
++          },
++          body: JSON.stringify({ send_email: true }),
++        },
++      );
++
++      if (!cancelRes.ok) {
++        return { success: false, error: `Hotmart cancel failed: ${cancelRes.status}` };
++      }
++
++      logger.info(`[HotmartProvider] Assinatura cancelada: ${externalSubscriptionId}`);
++      return { success: true };
++    } catch (err) {
++      const msg = err instanceof Error ? err.message : String(err);
++      return { success: false, error: msg };
++    }
++  }
++
++  // -------------------------------------------------------------------------
++  // changePlan — Hotmart não tem API de upgrade inline
++  // -------------------------------------------------------------------------
++  async changePlan(input: ChangePlanInput): Promise<ProviderResult<{
++    subscriptionId: string;
++    newPlanId: string;
++    effectiveDate: string;
++  }>> {
++    logger.info(`[HotmartProvider] changePlan: ${input.externalSubscriptionId} → ${input.newPlanTier}`);
++    return {
++      success: true,
++      data: {
++        subscriptionId: input.externalSubscriptionId,
++        newPlanId: input.newPlanTier,
++        effectiveDate: new Date().toISOString(),
++      },
++    };
++  }
++
++  // -------------------------------------------------------------------------
++  // getSubscriptionStatus
++  // -------------------------------------------------------------------------
++  async getSubscriptionStatus(externalSubscriptionId: string): Promise<ProviderResult<{
++    status: string;
++    currentPeriodEnd: string;
++    cancelAtPeriodEnd: boolean;
++  }>> {
++    const cfg = getConfig();
++
++    if (!cfg.apiKey || !cfg.apiSecret) {
++      return {
++        success: false,
++        error: 'Credenciais Hotmart não configuradas',
++      };
++    }
++
++    try {
++      const tokenRes = await fetch('https://api-hot-connect.hotmart.com/security/oauth/token', {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
++        body: new URLSearchParams({
++          grant_type: 'client_credentials',
++          client_id: cfg.apiKey,
++          client_secret: cfg.apiSecret,
++        }),
++      });
++
++      if (!tokenRes.ok) {
++        return { success: false, error: `Hotmart auth failed: ${tokenRes.status}` };
++      }
++
++      const tokenData = (await tokenRes.json()) as { access_token: string };
++
++      const subRes = await fetch(
++        `https://api-hot-connect.hotmart.com/payments/api/v1/subscriptions?subscriber_code=${externalSubscriptionId}`,
++        {
++          headers: {
++            Authorization: `Bearer ${tokenData.access_token}`,
++          },
++        },
++      );
++
++      if (!subRes.ok) {
++        return { success: false, error: `Hotmart API: ${subRes.status}` };
++      }
++
++      const subData = (await subRes.json()) as {
++        items?: Array<{
++          status: string;
++          date_next_charge?: number;
++          request_date?: number;
++        }>;
++      };
++
++      const sub = subData.items?.[0];
++      if (!sub) {
++        return { success: false, error: 'Assinatura não encontrada' };
++      }
++
++      return {
++        success: true,
++        data: {
++          status: sub.status === 'ACTIVE' ? 'active' : 'canceled',
++          currentPeriodEnd: sub.date_next_charge
++            ? new Date(sub.date_next_charge).toISOString()
++            : new Date().toISOString(),
++          cancelAtPeriodEnd: sub.status !== 'ACTIVE',
++        },
++      };
++    } catch (err) {
++      const msg = err instanceof Error ? err.message : String(err);
++      return { success: false, error: msg };
++    }
++  }
++
++  // -------------------------------------------------------------------------
++  // Webhook parsing
++  // -------------------------------------------------------------------------
++  verifyWebhookSignature(rawBody: string, signature: string): boolean {
++    const cfg = getConfig();
++    if (!cfg.hottok) return true; // sem hottok, aceita tudo (dev)
++    return signature === cfg.hottok;
++  }
++
++  parseWebhookEvent(payload: Record<string, unknown>): ParsedWebhookEvent | null {
++    const body = payload as unknown as HotmartWebhookPayload;
++    const event = body.event;
++
++    if (!event) return null;
++
++    const purchase = body.data?.purchase;
++    const buyer = body.data?.buyer;
++    const subscription = body.data?.subscription;
++
++    // Mapear evento Hotmart → evento interno
++    let eventType: string;
++    switch (event) {
++      case 'PURCHASE_APPROVED':
++      case 'PURCHASE_COMPLETE':
++        eventType = 'subscription.created';
++        break;
++      case 'PURCHASE_REFUNDED':
++      case 'PURCHASE_CANCELED':
++      case 'SUBSCRIPTION_CANCELLATION':
++        eventType = 'subscription.canceled';
++        break;
++      default:
++        return null; // evento não tratado
++    }
++
++    // Determinar plano pelo preço
++    const priceBRL = purchase?.price?.value ?? 0;
++    const planTier = this.resolvePlanFromPrice(priceBRL);
++
++    return {
++      eventType,
++      externalEventId: purchase?.transaction ?? `hotmart:${Date.now()}`,
++      externalCustomerId: buyer?.email ?? '',
++      externalSubscriptionId: subscription?.subscriber_code ?? purchase?.transaction ?? '',
++      planTier,
++      amountBRL: priceBRL,
++      metadata: {
++        buyerName: buyer?.name,
++        buyerPhone: buyer?.phone,
++        hotmartEvent: event,
++        productId: body.data?.product?.id,
++        productName: body.data?.product?.name,
++      },
++    };
++  }
++
++  // -------------------------------------------------------------------------
++  // Helpers
++  // -------------------------------------------------------------------------
++  private resolvePlanFromPrice(priceBRL: number): PlanTier {
++    for (const entry of PRICE_TO_PLAN) {
++      if (priceBRL <= entry.maxBRL) return entry.plan;
++    }
++    return 'agency';
++  }
++}
+diff --git a/src/modules/billing/subscription-manager.ts b/src/modules/billing/subscription-manager.ts
+index 8e5d10b..2de4cfa 100644
+--- a/src/modules/billing/subscription-manager.ts
++++ b/src/modules/billing/subscription-manager.ts
+@@ -72,7 +72,7 @@ export async function createSubscription(
+   supabase: SupabaseClient | null,
+ ): Promise<{
+   subscription: {
+-    planTier: 'basic' | 'pro' | 'business';
++    planTier: 'starter' | 'pro' | 'agency';
+     status: string;
+     externalId?: string;
+   };
+diff --git a/src/modules/customer-dashboard/dashboard-service.ts b/src/modules/customer-dashboard/dashboard-service.ts
+index 4b9b90b..ff2e90f 100644
+--- a/src/modules/customer-dashboard/dashboard-service.ts
++++ b/src/modules/customer-dashboard/dashboard-service.ts
+@@ -28,7 +28,7 @@ import type { SupabaseClient } from '../../persistence/supabase-client.js';
+ import { getPlan } from '../../plans/plan-config.js';
+ import type { PlanTier } from '../../plans/plan-config.js';
+ import type { TenantContext } from '../../domain/entities/tenant.js';
+-import { PLAN_FEATURES } from '../../domain/entities/tenant.js';
++import { PLAN_FEATURES, PLAN_TENANT_LIMITS } from '../../domain/entities/tenant.js';
+ import { BILLING_PLAN_LIMITS } from '../../domain/entities/billing.js';
+ import { logger } from '../../utils/logger.js';
+
+@@ -128,8 +128,8 @@ export class DashboardService {
+     const plan = getPlan(this.planTier);
+
+     return {
+-      tenantName: this.tenantContext?.tenantId ?? 'Default Tenant',
+-      planTier: this.planTier,
++      tenantName: this.tenantContext?.tenantId ?? 'Meu Escritório',
++      planTier: plan.name ?? this.planTier,
+       subscriptionStatus: 'active',
+       stats: {
+         jobsThisMonth: jobsThisMonth,
+diff --git a/src/modules/goal-optimization/goal-resolver.ts b/src/modules/goal-optimization/goal-resolver.ts
+index 6b2e3e2..b9e4bac 100644
+--- a/src/modules/goal-optimization/goal-resolver.ts
++++ b/src/modules/goal-optimization/goal-resolver.ts
+@@ -82,7 +82,7 @@ export function resolveGoalBasedConfig(
+   const planObjective =
+     DEFAULT_OBJECTIVE_BY_PLAN[planTier] ?? OptimizationObjective.BALANCED;
+   const planAutonomy =
+-    DEFAULT_AUTONOMY_BY_PLAN[planTier] ?? DEFAULT_AUTONOMY_BY_PLAN.basic;
++    DEFAULT_AUTONOMY_BY_PLAN[planTier] ?? DEFAULT_AUTONOMY_BY_PLAN.starter;
+   const planQualityThreshold = DEFAULT_QUALITY_THRESHOLD;
+
+   // 2. User overrides
+diff --git a/src/modules/insights/insight-generator.ts b/src/modules/insights/insight-generator.ts
+index d6e1e72..ed2d8d8 100644
+--- a/src/modules/insights/insight-generator.ts
++++ b/src/modules/insights/insight-generator.ts
+@@ -188,7 +188,7 @@ export async function generateHealthInsights(
+
+   // Plan-tier alert
+   const tier = tenantContext.planTier;
+-  if (tier === 'basic') {
++  if (tier === 'starter') {
+     const proFeatures = ['autoPublish', 'apiAccess', 'webhooks', 'multiChannelPublish'];
+     const lockedCount = proFeatures.length;
+     if (lockedCount > 0) {
+@@ -206,7 +206,7 @@ export async function generateHealthInsights(
+
+   // Usage thresholds
+   const planLimits = BILLING_PLAN_LIMITS[tier]
+-    ?? BILLING_PLAN_LIMITS['basic'];
++    ?? BILLING_PLAN_LIMITS['starter'];
+
+   // Cost alert
+   if (planLimits.maxMonthlyCostUsd > 0) {
+diff --git a/src/modules/performance/cost-estimator.ts b/src/modules/performance/cost-estimator.ts
+index 6df1da4..f8b5b2b 100644
+--- a/src/modules/performance/cost-estimator.ts
++++ b/src/modules/performance/cost-estimator.ts
+@@ -136,7 +136,7 @@ export function estimateUserMonthlyCost(
+   _planTier: PlanTier,
+   totalJobs: number,
+ ): { userId: string; estimatedUsd: number; perJob: number; withinBudget: boolean } {
+-  const limits = BILLING_PLAN_LIMITS[_planTier] ?? BILLING_PLAN_LIMITS['basic'];
++  const limits = BILLING_PLAN_LIMITS[_planTier] ?? BILLING_PLAN_LIMITS['starter'];
+   const perJob = totalJobs > 0 ? limits.maxMonthlyCostUsd / totalJobs : 0;
+
+   return {
+diff --git a/src/modules/performance/index.ts b/src/modules/performance/index.ts
+index c3e5302..1ba5c49 100644
+--- a/src/modules/performance/index.ts
++++ b/src/modules/performance/index.ts
+@@ -48,7 +48,7 @@ export interface PerformanceReport {
+ export function createPerformanceReport(
+   ctx: ProcessingContext,
+ ): PerformanceReport {
+-  const planLimits = BILLING_PLAN_LIMITS[ctx.tenantContext?.planTier ?? 'basic'];
++  const planLimits = BILLING_PLAN_LIMITS[ctx.tenantContext?.planTier ?? 'starter'];
+   const costBreakdown = estimateJobCost(ctx);
+
+   return {
+diff --git a/src/modules/publishing/adapters/facebook-adapter.ts b/src/modules/publishing/adapters/facebook-adapter.ts
+index 5b1bceb..5a29c30 100644
+--- a/src/modules/publishing/adapters/facebook-adapter.ts
++++ b/src/modules/publishing/adapters/facebook-adapter.ts
+@@ -40,8 +40,11 @@ export class FacebookAdapter implements IPlatformAdapter {
+   }
+
+   async publish(payload: PublishPayload): Promise<PublishResult> {
+-    // Determinar tipo de publicação
+-    const contentType = payload.contentType ?? this.inferContentType(payload);
++    // Se recipientPhone está presente, é WhatsApp — não Facebook
++    if (payload.recipientPhone) {
++      return { success: false, platformPostId: undefined, error: 'FacebookAdapter não suporta recipientPhone — use WhatsAppAdapter' };
++    }
++    const contentType = payload.contentType ?? this.inferContentType(payload);
+
+     switch (contentType) {
+       case 'image':
+@@ -51,30 +54,6 @@ export class FacebookAdapter implements IPlatformAdapter {
+         return this.publishFeed(payload);
+       case 'carousel':
+         return this.publishCarousel(payload);
+-      case 'story':
+-        return this.publishStory(payload);
+-      default:
+-        return this.publishFeed(payload);
+-    }
+-  }
+-
+-  // ────────────────────────────────────────────────────────────────
+-  // Feed post (texto + link opcional)
+-  // ────────────────────────────────────────────────────────────────
+-  private async publishFeed(payload: PublishPayload): Promise<PublishResult> {
+-    const body: Record<string, string> = {
+-      message: this.buildCaption(payload),
+-      access_token: this.accessToken,
+-    };
+-
+-    if (payload.linkUrl) body.link = payload.linkUrl;
+-
+-    const res = await fetch(`${GRAPH_BASE}/${this.pageId}/feed`, {
+-      method: 'POST',
+-      headers: { 'Content-Type': 'application/json' },
+-      body: JSON.stringify(body),
+-    });
+-
+-    return this.handleResponse(res, 'feed');
+   }
+
+   // ────────────────────────────────────────────────────────────────
+@@ -107,12 +86,44 @@ export class FacebookAdapter implements IPlatformAdapter {
+   }
+
+   // ────────────────────────────────────────────────────────────────
+-  // Video (upload via resumable)
++  // Feed post (texto + link opcional)
++  // ────────────────────────────────────────────────────────────────
++  private async publishFeed(payload: PublishPayload): Promise<PublishResult> {
++    const body: Record<string, string> = {
++      message: this.buildCaption(payload),
++      access_token: this.accessToken,
++    };
++
++    if (payload.linkUrl) body.link = payload.linkUrl;
++
++    const res = await fetch(`${GRAPH_BASE}/${this.pageId}/feed`, {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify(body),
++    });
++
++    return this.handleResponse(res, 'feed');
++  }
++
++  // ────────────────────────────────────────────────────────────────
++  // Video
+   // ────────────────────────────────────────────────────────────────
+   private async publishVideo(payload: PublishPayload): Promise<PublishResult> {
+-    if (!payload.mediaUrl) {
+-      return { success: false, platformPostId: undefined, error: 'mediaUrl obrigatório para vídeo' };
++    const videoUrl = payload.mediaUrl ?? payload.videoUrl;
++    if (!videoUrl) {
++      return { success: false, platformPostId: undefined, error: 'mediaUrl ou videoUrl obrigatório para vídeo' };
+     }
++
++    const body: Record<string, string> = {
++      file_url: videoUrl,
++      description: this.buildCaption(payload),
++      access_token: this.accessToken,
++    };
++
++    const res = await fetch(`${GRAPH_BASE}/${this.pageId}/videos`, {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify(body),
++    });
++
++    return this.handleResponse(res, 'video');
+   }
+
+   // ────────────────────────────────────────────────────────────────
+@@ -120,6 +131,24 @@ export class FacebookAdapter implements IPlatformAdapter {
+   // ────────────────────────────────────────────────────────────────
+   private async publishCarousel(payload: PublishPayload): Promise<PublishResult> {
+     const images = payload.carouselItems ?? [];
++
++    if (images.length === 0 && payload.mediaUrl) {
++      // fallback: single image
++      return this.publishImage(payload);
++    }
++
++    if (images.length === 0) {
++      return { success: false, platformPostId: undefined, error: 'carouselItems vazio' };
++    }
++
++    // Facebook "carousel" = multiple photos attached
++    // Use unpublished photo IDs then create a feed post referencing them
++    const photoIds: string[] = [];
++
++    for (const item of images) {
++      const imgUrl = item.mediaUrl ?? item.imageUrl;
++      if (!imgUrl) continue;
++
+       const uploadRes = await fetch(`${GRAPH_BASE}/${this.pageId}/photos`, {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+@@ -130,23 +159,75 @@ export class FacebookAdapter implements IPlatformAdapter {
+         }),
+       });
+
+-      if (!uploadRes.ok) continue;
++      if (!uploadRes.ok) {
++        logger.warn(`[FacebookAdapter] Carousel photo upload failed: ${uploadRes.status}`);
++        continue;
++      }
++
+       const uploadData = (await uploadRes.json()) as { id?: string };
+-      if (uploadData.id) photoIds.push(uploadData.id);
++      if (uploadData.id) {
++        photoIds.push(uploadData.id);
++      }
+     }
+
+     if (photoIds.length === 0) {
+       return { success: false, platformPostId: undefined, error: 'Nenhuma foto do carrossel foi enviada' };
+     }
+
+-    // Feed post with attached photos
+-    const feedBody: Record<string, unknown> = {
+-      message: payload.caption ?? '',
++    // Create feed post with attached_media
++    const feedBody: Record<string, string | Array<{ media_fbid: string }>> = {
++      message: this.buildCaption(payload),
+       attached_media: photoIds.map(id => ({ media_fbid: id })),
+       access_token: this.accessToken,
+     };
+
+-    const feedRes = await fetch(`${GRAPH_BASE}/${this.pageId}/feed`, {
++    const res = await fetch(`${GRAPH_BASE}/${this.pageId}/feed`, {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify(feedBody),
++    });
++
++    return this.handleResponse(res, 'carousel');
++  }
++
++  // ────────────────────────────────────────────────────────────────
++  // Story (photo)
++  // ────────────────────────────────────────────────────────────────
++  private async publishStory(payload: PublishPayload): Promise<PublishResult> {
++    const imageUrl = payload.mediaUrl ?? payload.thumbnailUrl;
++    if (!imageUrl) {
++      return { success: false, platformPostId: undefined, error: 'mediaUrl obrigatório para story' };
++    }
++
++    // Facebook Page Stories: POST /{page-id}/photo_stories
++    // First upload unpublished photo
++    const uploadRes = await fetch(`${GRAPH_BASE}/${this.pageId}/photos`, {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({
++        url: imageUrl,
++        published: false,
++        access_token: this.accessToken,
++      }),
++    });
++
++    if (!uploadRes.ok) {
++      const err = await uploadRes.text();
++      return { success: false, platformPostId: undefined, error: `Story photo upload failed: ${err}` };
++    }
++
++    const uploadData = (await uploadRes.json()) as { id?: string };
++    if (!uploadData.id) {
++      return { success: false, platformPostId: undefined, error: 'Story photo upload: no ID returned' };
++    }
++
++    // Then create story
++    const res = await fetch(`${GRAPH_BASE}/${this.pageId}/photo_stories`, {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({
++        photo_id: uploadData.id,
++        access_token: this.accessToken,
++      }),
++    });
++
++    return this.handleResponse(res, 'story');
++  }
++
++  // Alias methods
++  private async publishReels(_payload: PublishPayload): Promise<PublishResult> {
++    // Facebook Reels: POST /{page-id}/video_reels
++    const videoUrl = _payload.mediaUrl ?? _payload.videoUrl;
++    if (!videoUrl) {
++      return { success: false, platformPostId: undefined, error: 'mediaUrl obrigatório para reel' };
++    }
++
++    const res = await fetch(`${GRAPH_BASE}/${this.pageId}/video_reels`, {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({
++        video_url: videoUrl,
++        description: this.buildCaption(_payload),
+         access_token: this.accessToken,
+-        ...feedBody,
+       }),
+     });
+
+-    return this.handleResponse(feedRes, 'carousel');
++    return this.handleResponse(res, 'reel');
+   }
+
+   // ────────────────────────────────────────────────────────────────
+@@ -163,7 +244,15 @@ export class FacebookAdapter implements IPlatformAdapter {
+
+   private inferContentType(payload: PublishPayload): string {
+     if (payload.videoUrl || payload.mediaUrl?.match(/\.(mp4|mov|avi)/i)) return 'video';
+-    if (payload.mediaUrl || payload.thumbnailUrl) return 'image';
++    if (payload.carouselItems && payload.carouselItems.length > 0) return 'carousel';
++    if (payload.contentType === 'story') return 'story';
++    if (payload.contentType === 'reel') return 'video';
++    if (payload.mediaUrl || payload.thumbnailUrl) {
++      // Check if it's a video URL
++      if (payload.mediaUrl?.match(/\.(mp4|mov|avi|webm)/i)) return 'video';
++      return 'image';
++    }
++    if (payload.linkUrl) return 'feed';
+     return 'feed';
+   }
+
+diff --git a/src/modules/publishing/adapters/whatsapp-adapter.ts b/src/modules/publishing/adapters/whatsapp-adapter.ts
+index a4e7df8..d56b6f0 100644
+--- a/src/modules/publishing/adapters/whatsapp-adapter.ts
++++ b/src/modules/publishing/adapters/whatsapp-adapter.ts
+@@ -1,37 +1,36 @@
+ /**
+- * WhatsApp Publishing Adapter — via Evolution API
++ * WhatsApp Adapter — BookAgent Intelligence Engine
+  *
+- * Implementa IPlatformAdapter para envio de mensagens via WhatsApp
+- * usando a Evolution API como infraestrutura de comunicação.
++ * Publica conteúdo via Evolution API (instância bookagent).
++ * Envia: texto, imagens, vídeos, documentos e carrosséis (sequenciais).
+  *
+- * Endpoints utilizados:
+- *   POST /message/sendText/{instance}    — texto simples
+- *   POST /message/sendMedia/{instance}   — imagem, vídeo, documento
++ * Endpoints Evolution API:
++ *   POST /message/sendText/{instance}
++ *   POST /message/sendMedia/{instance}
+  *
+  * Configuração via env:
+  *   EVOLUTION_API_URL      — base URL da instância Evolution
+  *   EVOLUTION_API_KEY      — apikey para autenticação
+  *   EVOLUTION_INSTANCE     — nome da instância (default: bookagent)
+- *
+- * Formato de número: 5571999733883 (sem +, sem espaços)
+  */
+
+-import type { PublishPayload, PublishResult } from '../../../domain/entities/publication.js';
+-import type { IPlatformAdapter } from '../social-publisher.js';
++import type { IPlatformAdapter } from '../social-publisher.js';
++import type { PublishPayload, PublishResult } from '../../../domain/entities/publication.js';
+ import { logger } from '../../../utils/logger.js';
+
+-// ---------------------------------------------------------------------------
+-// Config
+-// ---------------------------------------------------------------------------
+-
+ function getConfig() {
+   return {
+     baseUrl: (process.env.EVOLUTION_API_URL ?? 'https://evolution-api.db8intelligence.com.br').replace(/\/+$/, ''),
+     apiKey: process.env.EVOLUTION_API_KEY ?? '',
+-    instance: process.env.EVOLUTION_INSTANCE ?? 'bookagent',
++    instance: process.env.EVOLUTION_INSTANCE ?? 'bookagent',
+   };
+ }
+
+-// ---------------------------------------------------------------------------
+-// Adapter
+-// ---------------------------------------------------------------------------
++function formatPhone(phone: string): string {
++  // Remove tudo que não é dígito
++  const digits = phone.replace(/\D/g, '');
++  // Se não começa com 55, adiciona
++  if (!digits.startsWith('55')) return `55${digits}`;
++  return digits;
++}
+
+ export class WhatsAppAdapter implements IPlatformAdapter {
+   readonly platform = 'whatsapp';
+@@ -47,56 +46,120 @@ export class WhatsAppAdapter implements IPlatformAdapter {
+   }
+
+   async publish(payload: PublishPayload): Promise<PublishResult> {
+-    const recipient = payload.recipientPhone
+-      ?? payload.platformMeta?.recipientPhone as string | undefined;
++    const phone = payload.recipientPhone
++      ?? (payload.platformMeta?.recipientPhone as string | undefined);
+
+-    if (!recipient) {
++    if (!phone) {
+       return {
+         success: false,
+         platformPostId: undefined,
+-        error: 'recipientPhone obrigatório para WhatsApp',
++        error: 'recipientPhone obrigatório para WhatsApp',
+       };
+     }
+
+-    const phone = recipient.replace(/\D/g, '');
+-    const contentType = payload.contentType ?? this.inferType(payload);
++    const formattedPhone = formatPhone(phone);
++    const contentType = payload.contentType ?? this.inferContentType(payload);
+
+     try {
+       switch (contentType) {
++        case 'carousel':
++          return await this.sendCarousel(formattedPhone, payload);
+         case 'image':
+-        case 'video':
+-        case 'document':
+-          return await this.sendMedia(phone, contentType, payload);
++          return await this.sendMedia(formattedPhone, 'image', payload);
++        case 'video':
++        case 'reel':
++          return await this.sendMedia(formattedPhone, 'video', payload);
++        case 'document':
++          return await this.sendMedia(formattedPhone, 'document', payload);
+         default:
+-          return await this.sendText(phone, payload);
++          return await this.sendText(formattedPhone, payload);
+       }
+     } catch (err) {
+       const msg = err instanceof Error ? err.message : String(err);
+-      logger.error(`[WhatsAppAdapter] Erro: ${msg}`);
++      logger.error(`[WhatsAppAdapter] Erro ao publicar: ${msg}`);
+       return { success: false, platformPostId: undefined, error: msg };
+     }
+   }
+
+-  // ── Text ─────────────────────────────────────────────────────────
++  // ────────────────────────────────────────────────────────────────
++  // Text
++  // ────────────────────────────────────────────────────────────────
+   private async sendText(phone: string, payload: PublishPayload): Promise<PublishResult> {
+     const cfg = getConfig();
+-    const text = payload.caption
+-      ?? payload.title
+-      ?? 'Conteúdo BookAgent';
++    const text = this.buildMessage(payload);
+
+     const res = await fetch(`${cfg.baseUrl}/message/sendText/${cfg.instance}`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+-        apikey: cfg.apiKey,
++        'apikey': cfg.apiKey,
+       },
+       body: JSON.stringify({
+         number: phone,
+-        text,
++        text: text,
+       }),
+     });
+
+-    return this.handleRes(res);
++    return this.handleResponse(res);
+   }
+
+-  // ── Media ────────────────────────────────────────────────────────
++  // ────────────────────────────────────────────────────────────────
++  // Media (image, video, document)
++  // ────────────────────────────────────────────────────────────────
+   private async sendMedia(
+     phone: string,
+     mediaType: string,
+     payload: PublishPayload,
+   ): Promise<PublishResult> {
+     const cfg = getConfig();
+-    const mediaUrl = payload.mediaUrl ?? payload.videoUrl ?? payload.thumbnailUrl ?? '';
++    const mediaUrl = payload.mediaUrl
++      ?? payload.videoUrl
++      ?? payload.thumbnailUrl
++      ?? '';
++
++    if (!mediaUrl) {
++      return { success: false, platformPostId: undefined, error: `${mediaType}: URL de mídia não fornecida` };
++    }
++
++    const caption = this.buildMessage(payload);
+
+     const res = await fetch(`${cfg.baseUrl}/message/sendMedia/${cfg.instance}`, {
+       method: 'POST',
+       headers: {
+         'Content-Type': 'application/json',
+-        apikey: cfg.apiKey,
++        'apikey': cfg.apiKey,
+       },
+       body: JSON.stringify({
+         number: phone,
+         mediatype: mediaType,
+         media: mediaUrl,
+-        caption: payload.caption ?? payload.title ?? '',
++        caption,
++        fileName: payload.title ?? `bookagent-${mediaType}`,
+       }),
+     });
+
+-    return this.handleRes(res);
++    return this.handleResponse(res);
+   }
+
+-  // ── Response handler ─────────────────────────────────────────────
+-  private async handleRes(res: Response): Promise<PublishResult> {
+-    if (!res.ok) {
+-      const text = await res.text().catch(() => '');
+-      return {
+-        success: false,
+-        platformPostId: undefined,
+-        error: `Evolution API ${res.status}: ${text}`,
+-      };
++  // ────────────────────────────────────────────────────────────────
++  // Carousel (sequential images)
++  // ────────────────────────────────────────────────────────────────
++  private async sendCarousel(phone: string, payload: PublishPayload): Promise<PublishResult> {
++    const items = payload.carouselItems ?? [];
++
++    if (items.length === 0 && payload.mediaUrl) {
++      // fallback: single image
++      return this.sendMedia(phone, 'image', payload);
++    }
++
++    if (items.length === 0) {
++      return { success: false, platformPostId: undefined, error: 'carouselItems vazio' };
++    }
++
++    // Send header text first
++    if (payload.caption || payload.title) {
++      await this.sendText(phone, {
++        ...payload,
++        caption: `${payload.title ?? ''}\n\n${payload.caption ?? ''}`.trim(),
++      });
++    }
++
++    // Then send each image
++    let lastResult: PublishResult = { success: false, platformPostId: undefined, error: 'nenhuma imagem enviada' };
++
++    for (let i = 0; i < items.length; i++) {
++      const item = items[i];
++      const imgUrl = item.mediaUrl ?? item.imageUrl;
++      if (!imgUrl) continue;
++
++      lastResult = await this.sendMedia(phone, 'image', {
++        ...payload,
++        mediaUrl: imgUrl,
++        caption: item.caption ?? `${i + 1}/${items.length}`,
++        title: undefined,
++      });
++
++      // Small delay between messages to avoid rate limiting
++      if (i < items.length - 1) {
++        await new Promise(resolve => setTimeout(resolve, 500));
++      }
+     }
+
++    return lastResult;
++  }
++
++  // ────────────────────────────────────────────────────────────────
++  // Helpers
++  // ────────────────────────────────────────────────────────────────
++  private async handleResponse(res: Response): Promise<PublishResult> {
+     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+-    const messageId = data.key?.id as string | undefined
+-      ?? data.messageId as string | undefined;
++
++    if (!res.ok) {
++      const error = (data.message as string) ?? `Evolution API ${res.status}`;
++      return { success: false, platformPostId: undefined, error };
++    }
++
++    const messageId =
++      (data.key as Record<string, unknown>)?.id as string | undefined
++      ?? data.messageId as string | undefined
++      ?? data.id as string | undefined;
+
+     return {
+       success: true,
+@@ -104,10 +167,30 @@ export class WhatsAppAdapter implements IPlatformAdapter {
+     };
+   }
+
+-  private inferType(payload: PublishPayload): string {
++  private buildMessage(payload: PublishPayload): string {
++    const parts: string[] = [];
++
++    if (payload.title) parts.push(`*${payload.title}*`);
++    if (payload.caption) parts.push(payload.caption);
++
++    if (payload.hashtags && payload.hashtags.length > 0) {
++      parts.push('');
++      parts.push(payload.hashtags.map(h => h.startsWith('#') ? h : `#${h}`).join(' '));
++    }
++
++    if (payload.linkUrl) {
++      parts.push('');
++      parts.push(payload.linkUrl);
++    }
++
++    return parts.join('\n') || 'Conteúdo BookAgent';
++  }
++
++  private inferContentType(payload: PublishPayload): string {
++    if (payload.carouselItems && payload.carouselItems.length > 0) return 'carousel';
+     if (payload.videoUrl) return 'video';
+-    if (payload.mediaUrl?.match(/\.(mp4|mov|avi)/i)) return 'video';
+-    if (payload.mediaUrl?.match(/\.(pdf|doc|docx|xls)/i)) return 'document';
++    if (payload.mediaUrl?.match(/\.(mp4|mov|avi|webm)/i)) return 'video';
++    if (payload.mediaUrl?.match(/\.(pdf|docx?|xlsx?|pptx?)/i)) return 'document';
+     if (payload.mediaUrl || payload.thumbnailUrl) return 'image';
+     return 'text';
+   }
+diff --git a/src/modules/template-marketplace/style-resolver.ts b/src/modules/template-marketplace/style-resolver.ts
+index 0a29f1f..8dfe78b 100644
+--- a/src/modules/template-marketplace/style-resolver.ts
++++ b/src/modules/template-marketplace/style-resolver.ts
+@@ -77,7 +77,7 @@ export async function resolveStyleForJob(
+   // 3. Se não há catalog → default
+   return {
+     resolvedFrom: 'default',
+-    tier: CatalogTier.FREE,
++    tier: CatalogTier.FREE,
+     templateId: undefined,
+     overlays: [],
+     transitions: ['fade'],
+diff --git a/src/persistence/persistent-orchestrator.ts b/src/persistence/persistent-orchestrator.ts
+index 66f3a63..9fbb2a6 100644
+--- a/src/persistence/persistent-orchestrator.ts
++++ b/src/persistence/persistent-orchestrator.ts
+@@ -99,7 +99,7 @@ export async function processWithPersistence(
+       // Verify completion
+       const verification = await verifyPersistence(jobId, client, ctx);
+       if (!verification.isValid) {
+-        logger.warn(`[PersistentOrchestrator] Persistence verification issues: ${JSON.stringify(verification.issues)}`);
++        logger.warn(`[PersistentOrchestrator] Persistence verification issues: ${JSON.stringify(verification.issues)}`);
+       }
+     } catch (persistError) {
+       // Non-fatal — log but don't fail the job
+diff --git a/src/plans/plan-config.ts b/src/plans/plan-config.ts
+index b1c3f3c..4cdcbcf 100644
+--- a/src/plans/plan-config.ts
++++ b/src/plans/plan-config.ts
+@@ -1,22 +1,29 @@
+ /**
+- * Plan Configuration — BookAgent Intelligence Engine
++ * Plan Configuration — BookAgent
+  *
+- * Define the available plans (tiers) and their limits/features.
+- * This is the single source of truth for what each plan can do.
+- *
+- * Used by:
+- *   - planGuard middleware (enforce limits on API calls)
+- *   - tenantGuard middleware (resolve plan context)
+- *   - billing module (check usage against limits)
+- *   - dashboard (display plan info)
+- *   - cost estimator (estimate costs per plan)
++ * Planos reais do BookAgent:
++ *   starter  R$47/mês · 1 book/mês
++ *   pro      R$97/mês · 3 books/mês · WhatsApp + auto-publish
++ *   agency   R$247/mês · 10 books/mês · API programática
+  */
+
+ // ---------------------------------------------------------------------------
+ // Types
+ // ---------------------------------------------------------------------------
+
+-/** Plan tiers available in the system */
+-export type PlanTier = 'basic' | 'pro' | 'business';
++export type PlanTier = 'starter' | 'pro' | 'agency';
++
++/** Mapeamento legado → novo (para compatibilidade com dados existentes) */
++export function normalizePlanTier(raw: string | undefined | null): PlanTier {
++  if (!raw) return 'starter';
++  const lower = raw.toLowerCase().trim();
++  if (lower === 'basic' || lower === 'starter' || lower === 'free') return 'starter';
++  if (lower === 'pro') return 'pro';
++  if (lower === 'business' || lower === 'agency' || lower === 'max') return 'agency';
++  return 'starter';
++}
++
++/** Alias de compatibilidade */
++export const PLAN_TIERS: PlanTier[] = ['starter', 'pro', 'agency'];
+
+ /** Limits enforced per plan */
+ export interface PlanLimits {
+@@ -37,10 +44,9 @@ export interface PlanLimits {
+
+ /** Full plan configuration */
+ export interface PlanConfig {
+-  tier: PlanTier;
+   name: string;
+-  description: string;
+-  priceMonthly: number; // USD cents
++  tier: PlanTier;
++  priceBRL: number;
+   limits: PlanLimits;
+   features: string[];
+ }
+@@ -49,48 +55,46 @@ export interface PlanConfig {
+ // Plan Definitions
+ // ---------------------------------------------------------------------------
+
+-const PLANS: Record<PlanTier, PlanConfig> = {
+-  basic: {
+-    tier: 'basic',
+-    name: 'Basic',
+-    description: 'Ideal para corretores individuais',
+-    priceMonthly: 4900, // R$49
++export const PLANS: Record<PlanTier, PlanConfig> = {
++  starter: {
++    name: 'Starter',
++    tier: 'starter',
++    priceBRL: 47,
+     limits: {
+-      jobsPerMonth: 10,
+-      jobsPerHour: 3,
+-      concurrentJobs: 1,
+-      requestsPerMinute: 30,
+-      maxUploadSizeMb: 50,
+-      maxPdfPages: 100,
+-      retentionDays: 30,
++      jobsPerMonth: 1,
++      jobsPerHour: 1,
++      concurrentJobs: 1,
++      requestsPerMinute: 20,
++      maxUploadSizeMb: 30,
++      maxPdfPages: 80,
++      retentionDays: 30,
+     },
+     features: [
+-      'pdf_processing',
+-      'blog_generation',
+-      'landing_page',
+-      'email_support',
++      'pdf_processing',
++      'blog_generation',
++      'landing_page_generation',
++      '3_reels_tts',
++      '1_podcast_2_voices',
++      '3_carousels_10_images',
++      '3_stories',
+     ],
+   },
+-
+   pro: {
+-    tier: 'pro',
+     name: 'Pro',
+-    description: 'Para imobiliárias e equipes',
+-    priceMonthly: 14900, // R$149
++    tier: 'pro',
++    priceBRL: 97,
+     limits: {
+-      jobsPerMonth: 50,
+-      jobsPerHour: 10,
+-      concurrentJobs: 3,
+-      requestsPerMinute: 60,
+-      maxUploadSizeMb: 100,
+-      maxPdfPages: 300,
+-      retentionDays: 90,
++      jobsPerMonth: 3,
++      jobsPerHour: 2,
++      concurrentJobs: 2,
++      requestsPerMinute: 40,
++      maxUploadSizeMb: 50,
++      maxPdfPages: 150,
++      retentionDays: 60,
+     },
+     features: [
+-      'pdf_processing',
+-      'blog_generation',
+-      'landing_page',
+-      'video_generation',
+-      'social_publishing',
+-      'whatsapp_integration',
+-      'auto_publish',
+-      'priority_queue',
+-      'api_access',
++      'pdf_processing',
++      'blog_generation',
++      'landing_page_generation',
++      '3_reels_tts',
++      '1_podcast_2_voices',
++      '3_carousels_10_images',
++      '3_stories',
++      'whatsapp_delivery',
++      'auto_publish',
+       'priority_support',
+     ],
+   },
+-
+-  business: {
+-    tier: 'business',
+-    name: 'Business',
+-    description: 'Para redes e incorporadoras',
+-    priceMonthly: 49900, // R$499
++  agency: {
++    name: 'Agency',
++    tier: 'agency',
++    priceBRL: 247,
+     limits: {
+-      jobsPerMonth: 500,
+-      jobsPerHour: 50,
+-      concurrentJobs: 10,
+-      requestsPerMinute: 120,
+-      maxUploadSizeMb: 200,
+-      maxPdfPages: 500,
++      jobsPerMonth: 10,
++      jobsPerHour: 5,
++      concurrentJobs: 5,
++      requestsPerMinute: 80,
++      maxUploadSizeMb: 100,
++      maxPdfPages: 300,
+       retentionDays: 180,
+     },
+     features: [
+-      'pdf_processing',
+-      'blog_generation',
+-      'landing_page',
+-      'video_generation',
+-      'social_publishing',
+-      'whatsapp_integration',
+-      'auto_publish',
+-      'priority_queue',
+-      'api_access',
+-      'white_label',
+-      'custom_branding',
+-      'dedicated_support',
+-      'analytics_dashboard',
++      'pdf_processing',
++      'blog_generation',
++      'landing_page_generation',
++      '3_reels_tts',
++      '1_podcast_2_voices',
++      '3_carousels_10_images',
++      '3_stories',
++      'whatsapp_delivery',
++      'auto_publish',
++      'api_access',
++      'priority_queue',
++      'white_label',
++      'dedicated_support',
+     ],
+   },
+ };
+@@ -100,12 +104,19 @@ const PLANS: Record<PlanTier, PlanConfig> = {
+ // ---------------------------------------------------------------------------
+
+ export function getPlan(tier: PlanTier): PlanConfig {
+-  return PLANS[tier] ?? PLANS.basic;
++  return PLANS[tier] ?? PLANS.starter;
+ }
+
+ export function getAllPlans(): PlanConfig[] {
+   return Object.values(PLANS);
+ }
+
+-export { PLANS };
++export function getPlanByPrice(priceBRL: number): PlanConfig {
++  if (priceBRL >= 200) return PLANS.agency;
++  if (priceBRL >= 80)  return PLANS.pro;
++  return PLANS.starter;
++}
++
+ export default PLANS;
+diff --git a/src/queue/video-processor.ts b/src/queue/video-processor.ts
+index 5eb3530..d4a3c10 100644
+--- a/src/queue/video-processor.ts
++++ b/src/queue/video-processor.ts
+@@ -101,7 +101,7 @@ async function processVideoJob(job: Job<VideoJobPayload>): Promise<VideoJobResul
+     // Track metrics
+     metrics.track('video_rendered', {
+       userId: data.userId ?? 'system',
+-      planTier: data.planTier ?? 'basic',
++      planTier: data.planTier ?? 'starter',
+       jobId: data.jobId,
+       metadata: {
+         sceneCount: data.scenes.length,
+@@ -118,7 +118,7 @@ async function processVideoJob(job: Job<VideoJobPayload>): Promise<VideoJobResul
+     // Track failure
+     metrics.track('video_render_failed', {
+       userId: data.userId ?? 'system',
+-      planTier: data.planTier ?? 'basic',
++      planTier: data.planTier ?? 'starter',
+       jobId: data.jobId,
+       metadata: { error: message },
+     });
+diff --git a/src/types/dashboard.ts b/src/types/dashboard.ts
+index 3e6ad3f..e5b8e85 100644
+--- a/src/types/dashboard.ts
++++ b/src/types/dashboard.ts
+@@ -23,7 +23,7 @@ declare global {
+     // Resolved by tenantGuard
+     tenantContext?: import('../domain/entities/tenant.js').TenantContext;
+     resolvedUserId?: string;
+-    resolvedPlanTier?: 'basic' | 'pro' | 'business';
++    resolvedPlanTier?: 'starter' | 'pro' | 'agency';
+   }
+ }
+
+diff --git a/supabase/migrations/008_webhook_events_and_user_plans.sql b/supabase/migrations/008_webhook_events_and_user_plans.sql
+index 7b07d85..b250b1b 100644
+--- a/supabase/migrations/008_webhook_events_and_user_plans.sql
++++ b/supabase/migrations/008_webhook_events_and_user_plans.sql
+@@ -1,3 +1,79 @@
++-- ============================================================================
++-- Migration 008: Webhook Events + User Plans
++-- BookAgent Intelligence Engine
++--
++-- Tabelas para:
++--   1. bookagent_webhook_events — log de eventos recebidos (Hotmart, etc.)
++--   2. bookagent_user_plans     — plano ativo por usuário
++--   3. bookagent_plan_definitions — catálogo de planos
++-- ============================================================================
++
++-- 1. Webhook Events — idempotência e auditoria
++CREATE TABLE IF NOT EXISTS bookagent_webhook_events (
++  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
++  event_type TEXT NOT NULL,
++  source TEXT NOT NULL,           -- transaction_id / event_id externo
++  payload JSONB DEFAULT '{}',
++  processed BOOLEAN DEFAULT FALSE,
++  error TEXT,
++  created_at TIMESTAMPTZ DEFAULT NOW()
++);
++
++CREATE INDEX IF NOT EXISTS idx_webhook_events_source
++  ON bookagent_webhook_events(source);
++CREATE INDEX IF NOT EXISTS idx_webhook_events_type
++  ON bookagent_webhook_events(event_type);
++
++-- 2. User Plans — plano ativo por usuário (email ou phone)
++CREATE TABLE IF NOT EXISTS bookagent_user_plans (
++  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
++  user_id TEXT,                   -- email do comprador
++  phone TEXT,                     -- telefone (WhatsApp)
++  plan TEXT NOT NULL DEFAULT 'free'
++    CHECK (plan IN ('free', 'starter', 'pro', 'agency')),
++  hotmart_sub_id TEXT,            -- subscriber_code do Hotmart
++  status TEXT NOT NULL DEFAULT 'active'
++    CHECK (status IN ('active', 'cancelled', 'expired', 'trial')),
++  books_limit INTEGER NOT NULL DEFAULT 1,
++  books_used INTEGER NOT NULL DEFAULT 0,
++  valid_until TIMESTAMPTZ,
++  created_at TIMESTAMPTZ DEFAULT NOW(),
++  updated_at TIMESTAMPTZ DEFAULT NOW()
++);
++
++-- Unique por user_id (email)
++CREATE UNIQUE INDEX IF NOT EXISTS idx_user_plans_user_id
++  ON bookagent_user_plans(user_id) WHERE user_id IS NOT NULL;
++-- Unique por phone
++CREATE UNIQUE INDEX IF NOT EXISTS idx_user_plans_phone
++  ON bookagent_user_plans(phone) WHERE phone IS NOT NULL;
++
++-- 3. Plan Definitions — catálogo de planos (referência, não enforcement)
++CREATE TABLE IF NOT EXISTS bookagent_plan_definitions (
++  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
++  tier TEXT NOT NULL UNIQUE
++    CHECK (tier IN ('free', 'starter', 'pro', 'agency')),
++  name TEXT NOT NULL,
++  price_brl NUMERIC(10,2) NOT NULL DEFAULT 0,
++  books_per_month INTEGER NOT NULL DEFAULT 1,
++  features JSONB DEFAULT '[]',
++  active BOOLEAN DEFAULT TRUE,
++  created_at TIMESTAMPTZ DEFAULT NOW()
++);
++
++-- Seed dos planos
++INSERT INTO bookagent_plan_definitions (tier, name, price_brl, books_per_month, features, active)
++VALUES
++  ('free', 'Free', 0, 0, '["preview_only"]', true),
++  ('starter', 'Starter', 47, 1, '["pdf_processing","blog","landing_page","3_reels","1_podcast","3_carousels","3_stories"]', true),
++  ('pro', 'Pro', 97, 3, '["pdf_processing","blog","landing_page","3_reels","1_podcast","3_carousels","3_stories","whatsapp","auto_publish"]', true),
++  ('agency', 'Agency', 247, 10, '["pdf_processing","blog","landing_page","3_reels","1_podcast","3_carousels","3_stories","whatsapp","auto_publish","api_access","white_label"]', true)
++ON CONFLICT (tier) DO UPDATE SET
++  name = EXCLUDED.name,
++  price_brl = EXCLUDED.price_brl,
++  books_per_month = EXCLUDED.books_per_month,
++  features = EXCLUDED.features;
++
++-- ============================================================================
++-- LEGACY content below (video_jobs) — kept for backwards compatibility
++-- ============================================================================
++
+ -- Migration 008: Video Render Jobs
+ -- Tabela para tracking de jobs de renderização de vídeo
+
+diff --git a/supabase/migrations/009_update_plan_names_starter_pro_agency.sql b/supabase/migrations/009_update_plan_names_starter_pro_agency.sql
+index 1dc2c87..ee9a34b 100644
+--- a/supabase/migrations/009_update_plan_names_starter_pro_agency.sql
++++ b/supabase/migrations/009_update_plan_names_starter_pro_agency.sql
+@@ -1,49 +1,83 @@
+--- Migration 009: Social Publish Extensions
+--- Expande status CHECK e adiciona content_type
++-- ============================================================================
++-- Migration 009: Rename plan tiers basic→starter, business→agency
++-- BookAgent Intelligence Engine
+ --
+--- Depende de: 003_publications_update.sql (bookagent_publications)
++-- Atualiza todos os dados existentes e constraints para usar os novos nomes.
++-- ============================================================================
+
+ BEGIN;
+
+--- 1. Drop the existing CHECK constraint on status
++-- ── 1. bookagent_job_meta ──────────────────────────────────────────────────
++UPDATE bookagent_job_meta
++SET plan_type = CASE
++  WHEN plan_type = 'basic'    THEN 'starter'
++  WHEN plan_type = 'business' THEN 'agency'
++  ELSE plan_type
++END
++WHERE plan_type IN ('basic', 'business');
++
++-- Drop old constraint if exists, add new one
+ DO $$
+ BEGIN
+-  -- Try to drop constraint by common names
+-  BEGIN
+-    ALTER TABLE bookagent_publications DROP CONSTRAINT IF EXISTS bookagent_publications_status_check;
+-  EXCEPTION WHEN undefined_object THEN NULL;
+-  END;
+-  BEGIN
+-    ALTER TABLE bookagent_publications DROP CONSTRAINT IF EXISTS chk_publication_status;
+-  EXCEPTION WHEN undefined_object THEN NULL;
+-  END;
++  ALTER TABLE bookagent_job_meta DROP CONSTRAINT IF EXISTS chk_plan_type;
++EXCEPTION WHEN undefined_object THEN NULL;
+ END $$;
+
+--- 2. Add expanded CHECK with all statuses the social publisher uses
+-ALTER TABLE bookagent_publications
+-  ADD CONSTRAINT bookagent_publications_status_check
+-  CHECK (status IN (
+-    'pending',
+-    'queued',
+-    'publishing',
+-    'published',
+-    'failed',
+-    'retrying',
+-    'skipped',
+-    'scheduled'
+-  ));
+-
+--- 3. Add content_type column if missing
+-DO $$
+-BEGIN
+-  IF NOT EXISTS (
+-    SELECT 1 FROM information_schema.columns
+-    WHERE table_name = 'bookagent_publications'
+-      AND column_name = 'content_type'
+-  ) THEN
+-    ALTER TABLE bookagent_publications
+-      ADD COLUMN content_type TEXT DEFAULT 'image';
+-  END IF;
+-END $$;
++-- ── 2. bookagent_plan_overrides ────────────────────────────────────────────
++UPDATE bookagent_plan_overrides
++SET plan_tier = CASE
++  WHEN plan_tier = 'basic'    THEN 'starter'
++  WHEN plan_tier = 'business' THEN 'agency'
++  ELSE plan_tier
++END
++WHERE plan_tier IN ('basic', 'business');
+
+--- 4. Index for faster lookups by status
+-CREATE INDEX IF NOT EXISTS idx_publications_status
+-  ON bookagent_publications(status);
++DO $$
++BEGIN
++  ALTER TABLE bookagent_plan_overrides DROP CONSTRAINT IF EXISTS chk_plan_tier;
++EXCEPTION WHEN undefined_object THEN NULL;
++END $$;
+
+-CREATE INDEX IF NOT EXISTS idx_publications_content_type
+-  ON bookagent_publications(content_type);
++ALTER TABLE bookagent_plan_overrides
++  ADD CONSTRAINT chk_plan_tier
++  CHECK (plan_tier IN ('starter', 'pro', 'agency'));
++
++-- ── 3. bookagent_subscriptions ─────────────────────────────────────────────
++UPDATE bookagent_subscriptions
++SET plan_tier = CASE
++  WHEN plan_tier = 'basic'    THEN 'starter'
++  WHEN plan_tier = 'business' THEN 'agency'
++  ELSE plan_tier
++END
++WHERE plan_tier IN ('basic', 'business');
++
++-- ── 4. bookagent_publications — expand status CHECK ────────────────────────
++DO $$
++BEGIN
++  ALTER TABLE bookagent_publications DROP CONSTRAINT IF EXISTS bookagent_publications_status_check;
++  ALTER TABLE bookagent_publications DROP CONSTRAINT IF EXISTS chk_publication_status;
++EXCEPTION WHEN undefined_object THEN NULL;
++END $$;
++
++ALTER TABLE bookagent_publications
++  ADD CONSTRAINT bookagent_publications_status_check
++  CHECK (status IN (
++    'pending', 'queued', 'publishing', 'published',
++    'failed', 'retrying', 'skipped', 'scheduled'
++  ));
++
++-- Add content_type column if missing
++DO $$
++BEGIN
++  IF NOT EXISTS (
++    SELECT 1 FROM information_schema.columns
++    WHERE table_name = 'bookagent_publications'
++      AND column_name = 'content_type'
++  ) THEN
++    ALTER TABLE bookagent_publications
++      ADD COLUMN content_type TEXT DEFAULT 'image';
++  END IF;
++END $$;
++
++CREATE INDEX IF NOT EXISTS idx_publications_status
++  ON bookagent_publications(status);
++CREATE INDEX IF NOT EXISTS idx_publications_content_type
++  ON bookagent_publications(content_type);
+
+ COMMIT;
+diff --git a/web/app/layout.tsx b/web/app/layout.tsx
+index b0fa331..f3c10e0 100644
+--- a/web/app/layout.tsx
++++ b/web/app/layout.tsx
+@@ -22,6 +22,9 @@ export default function RootLayout({ children }: { children: React.ReactNode })
+               <Link href="/dashboard" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                 Dashboard
+               </Link>
++              <Link href="/planos" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
++                Planos
++              </Link>
+               <Link href="/upload" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                 Upload
+               </Link>
+diff --git a/web/app/planos/page.tsx b/web/app/planos/page.tsx
+new file mode 100644
+index 0000000..e18e6e5
+--- /dev/null
++++ b/web/app/planos/page.tsx
+@@ -0,0 +1,285 @@
++"use client";
++
++import { useState } from "react";
++import Link from "next/link";
++
++// ── Plan data ───────────────────────────────────────────────────────────────
++
++const PLANS = [
++  {
++    tier: "starter",
++    name: "Starter",
++    price: 47,
++    books: 1,
++    badge: null,
++    description: "Para corretores que querem testar o poder da IA",
++    features: [
++      "1 book/mês processado",
++      "3 reels com narração TTS (30-60s)",
++      "1 podcast estilo NotebookLM (2 vozes)",
++      "3 carrosséis com 10 imagens cada",
++      "3 stories com texto e CTA",
++      "1 landing page",
++      "1 blog post SEO",
++      "Suporte por e-mail",
++    ],
++    notIncluded: [
++      "WhatsApp delivery",
++      "Auto-publish redes sociais",
++      "API programática",
++    ],
++    cta: "Começar agora",
++    hotmartUrl: "#", // TODO: replace with actual Hotmart checkout URL
++  },
++  {
++    tier: "pro",
++    name: "Pro",
++    price: 97,
++    books: 3,
++    badge: "Mais popular",
++    description: "Para imobiliárias que publicam conteúdo toda semana",
++    features: [
++      "3 books/mês processados",
++      "9 reels com narração TTS",
++      "3 podcasts estilo NotebookLM",
++      "9 carrosséis com 10 imagens cada",
++      "9 stories com texto e CTA",
++      "3 landing pages",
++      "3 blog posts SEO",
++      "Entrega automática via WhatsApp",
++      "Auto-publish Instagram + Facebook",
++      "Suporte prioritário",
++    ],
++    notIncluded: [
++      "API programática",
++      "White-label",
++    ],
++    cta: "Assinar Pro",
++    hotmartUrl: "#",
++  },
++  {
++    tier: "agency",
++    name: "Agency",
++    price: 247,
++    books: 10,
++    badge: null,
++    description: "Para agências e redes com múltiplos empreendimentos",
++    features: [
++      "10 books/mês processados",
++      "30 reels com narração TTS",
++      "10 podcasts estilo NotebookLM",
++      "30 carrosséis com 10 imagens cada",
++      "30 stories com texto e CTA",
++      "10 landing pages",
++      "10 blog posts SEO",
++      "Entrega automática via WhatsApp",
++      "Auto-publish todas as redes",
++      "API programática (integração CRM)",
++      "White-label (sua marca)",
++      "Suporte dedicado",
++    ],
++    notIncluded: [],
++    cta: "Falar com vendas",
++    hotmartUrl: "#",
++  },
++];
++
++const BENCHMARK = [
++  { label: "3 reels com narração", manual: "R$1.500+", bookagent: "Incluso", saved: "R$1.500" },
++  { label: "1 podcast 2 vozes", manual: "R$800+", bookagent: "Incluso", saved: "R$800" },
++  { label: "3 carrosséis (30 imgs)", manual: "R$900+", bookagent: "Incluso", saved: "R$900" },
++  { label: "3 stories", manual: "R$450+", bookagent: "Incluso", saved: "R$450" },
++  { label: "Landing page", manual: "R$2.000+", bookagent: "Incluso", saved: "R$2.000" },
++  { label: "Blog post SEO", manual: "R$500+", bookagent: "Incluso", saved: "R$500" },
++];
++
++const FAQ = [
++  {
++    q: "O que é um 'book' de lançamento?",
++    a: "É o PDF ou apresentação que a incorporadora envia com plantas, renders, localização e diferenciais do empreendimento. O BookAgent processa esse material e gera todo o conteúdo automaticamente.",
++  },
++  {
++    q: "Quanto tempo leva o processamento?",
++    a: "Em média 3-5 minutos para um book completo. Você recebe o conteúdo pronto via WhatsApp e/ou dashboard.",
++  },
++  {
++    q: "Posso cancelar a qualquer momento?",
++    a: "Sim. Sem fidelidade, sem multa. Cancele quando quiser pelo painel Hotmart.",
++  },
++  {
++    q: "O conteúdo é publicado automaticamente?",
++    a: "Nos planos Pro e Agency, sim — direto no Instagram e Facebook da sua conta. No Starter, você baixa e publica manualmente.",
++  },
++  {
++    q: "Preciso de conta Meta (Instagram/Facebook)?",
++    a: "Apenas nos planos Pro e Agency para auto-publish. No Starter, você recebe os arquivos prontos para postar.",
++  },
++];
++
++// ── Component ───────────────────────────────────────────────────────────────
++
++export default function PlanosPage() {
++  const [openFaq, setOpenFaq] = useState<number | null>(null);
++  const totalManual = 6150; // sum of manual costs
++
++  return (
++    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
++      {/* Hero */}
++      <section className="max-w-5xl mx-auto px-4 pt-16 pb-12 text-center">
++        <h1 className="text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl">
++          Transforme PDFs em conteúdo profissional
++        </h1>
++        <p className="mt-4 text-lg text-slate-600 max-w-2xl mx-auto">
++          Cada book de lançamento gera <strong>3 reels + 1 podcast + 3 carrosséis + 3 stories + landing page + blog</strong> — tudo automático, com IA.
++        </p>
++      </section>
++
++      {/* Plans grid */}
++      <section className="max-w-5xl mx-auto px-4 pb-16">
++        <div className="grid md:grid-cols-3 gap-6">
++          {PLANS.map((plan) => (
++            <div
++              key={plan.tier}
++              className={`relative rounded-2xl border p-6 flex flex-col ${
++                plan.badge
++                  ? "border-blue-500 shadow-lg shadow-blue-100 ring-2 ring-blue-500"
++                  : "border-slate-200 shadow-sm"
++              }`}
++            >
++              {plan.badge && (
++                <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-xs font-semibold px-3 py-1 rounded-full">
++                  {plan.badge}
++                </span>
++              )}
++
++              <h3 className="text-xl font-bold text-slate-900">{plan.name}</h3>
++              <p className="text-sm text-slate-500 mt-1">{plan.description}</p>
++
++              <div className="mt-4 flex items-baseline gap-1">
++                <span className="text-4xl font-extrabold text-slate-900">R${plan.price}</span>
++                <span className="text-slate-500">/mês</span>
++              </div>
++              <p className="text-sm text-slate-500 mt-1">{plan.books} book{plan.books > 1 ? "s" : ""}/mês</p>
++
++              <ul className="mt-6 space-y-2 flex-1">
++                {plan.features.map((f) => (
++                  <li key={f} className="flex items-start gap-2 text-sm text-slate-700">
++                    <span className="text-emerald-500 mt-0.5 shrink-0">&#10003;</span>
++                    {f}
++                  </li>
++                ))}
++                {plan.notIncluded.map((f) => (
++                  <li key={f} className="flex items-start gap-2 text-sm text-slate-400">
++                    <span className="mt-0.5 shrink-0">&#10007;</span>
++                    {f}
++                  </li>
++                ))}
++              </ul>
++
++              <a
++                href={plan.hotmartUrl}
++                className={`mt-6 block text-center rounded-lg py-3 px-4 text-sm font-semibold transition-colors ${
++                  plan.badge
++                    ? "bg-blue-600 text-white hover:bg-blue-700"
++                    : "bg-slate-900 text-white hover:bg-slate-800"
++                }`}
++              >
++                {plan.cta}
++              </a>
++            </div>
++          ))}
++        </div>
++      </section>
++
++      {/* Benchmark */}
++      <section className="bg-slate-50 border-y">
++        <div className="max-w-4xl mx-auto px-4 py-16">
++          <h2 className="text-2xl font-bold text-slate-900 text-center mb-2">
++            Quanto você economiza por book?
++          </h2>
++          <p className="text-center text-slate-500 mb-8">
++            Comparação com produção manual (freelancers + agência)
++          </p>
++
++          <div className="overflow-x-auto">
++            <table className="w-full text-sm">
++              <thead>
++                <tr className="border-b text-left">
++                  <th className="py-3 pr-4 font-medium text-slate-500">Entregável</th>
++                  <th className="py-3 px-4 font-medium text-slate-500">Manual</th>
++                  <th className="py-3 px-4 font-medium text-slate-500">BookAgent</th>
++                  <th className="py-3 pl-4 font-medium text-emerald-600">Economia</th>
++                </tr>
++              </thead>
++              <tbody>
++                {BENCHMARK.map((row) => (
++                  <tr key={row.label} className="border-b border-slate-100">
++                    <td className="py-3 pr-4 text-slate-700">{row.label}</td>
++                    <td className="py-3 px-4 text-slate-500 line-through">{row.manual}</td>
++                    <td className="py-3 px-4 font-medium text-slate-900">{row.bookagent}</td>
++                    <td className="py-3 pl-4 font-semibold text-emerald-600">{row.saved}</td>
++                  </tr>
++                ))}
++              </tbody>
++              <tfoot>
++                <tr className="font-bold">
++                  <td className="py-3 pr-4 text-slate-900">Total por book</td>
++                  <td className="py-3 px-4 text-slate-500 line-through">R${totalManual.toLocaleString("pt-BR")}+</td>
++                  <td className="py-3 px-4 text-blue-600">A partir de R$47</td>
++                  <td className="py-3 pl-4 text-emerald-600">até R${(totalManual - 47).toLocaleString("pt-BR")}</td>
++                </tr>
++              </tfoot>
++            </table>
++          </div>
++        </div>
++      </section>
++
++      {/* FAQ */}
++      <section className="max-w-3xl mx-auto px-4 py-16">
++        <h2 className="text-2xl font-bold text-slate-900 text-center mb-8">
++          Perguntas frequentes
++        </h2>
++        <div className="space-y-3">
++          {FAQ.map((item, i) => (
++            <div
++              key={i}
++              className="border rounded-lg overflow-hidden"
++            >
++              <button
++                onClick={() => setOpenFaq(openFaq === i ? null : i)}
++                className="w-full text-left px-5 py-4 flex justify-between items-center hover:bg-slate-50 transition-colors"
++              >
++                <span className="font-medium text-slate-900">{item.q}</span>
++                <span className="text-slate-400 ml-4 shrink-0">{openFaq === i ? "−" : "+"}</span>
++              </button>
++              {openFaq === i && (
++                <div className="px-5 pb-4 text-sm text-slate-600">
++                  {item.a}
++                </div>
++              )}
++            </div>
++          ))}
++        </div>
++      </section>
++
++      {/* CTA final */}
++      <section className="bg-slate-900 text-white">
++        <div className="max-w-3xl mx-auto px-4 py-16 text-center">
++          <h2 className="text-3xl font-bold">Pronto para automatizar?</h2>
++          <p className="mt-3 text-slate-300">
++            Suba seu primeiro book e veja o resultado em 5 minutos.
++          </p>
++          <div className="mt-8 flex justify-center gap-4">
++            <Link
++              href="/upload"
++              className="bg-white text-slate-900 font-semibold px-6 py-3 rounded-lg hover:bg-slate-100 transition-colors"
++            >
++              Testar grátis
++            </Link>
++            <a
++              href="#"
++              className="border border-slate-600 text-white font-semibold px-6 py-3 rounded-lg hover:bg-slate-800 transition-colors"
++            >
++              Falar com vendas
++            </a>
++          </div>
++        </div>
++      </section>
++    </div>
++  );
++}
+diff --git a/web/vercel.json b/web/vercel.json
+new file mode 100644
+index 0000000..a48b63b
+--- /dev/null
++++ b/web/vercel.json
+@@ -0,0 +1,10 @@
++{
++  "framework": "nextjs",
++  "buildCommand": "npm run build",
++  "outputDirectory": ".next",
++  "installCommand": "npm install",
++  "rewrites": [
++    { "source": "/api/v1/:path*", "destination": "https://api-bookagent.db8intelligence.com.br/api/v1/:path*" }
++  ],
++  "regions": ["gru1"]
++}
+--
+2.43.0
+
