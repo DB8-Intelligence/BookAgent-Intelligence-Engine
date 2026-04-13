@@ -25,10 +25,15 @@ import { PipelineStage, InputType } from '../../domain/value-objects/index.js';
 import type { IModule } from '../../domain/interfaces/module.js';
 import type { ProcessingContext } from '../../core/context.js';
 import { AssetExtractor } from './extractor.js';
-import { PDFParseAdapter } from '../../adapters/pdf/index.js';
+import { PopplerPDFAdapter } from '../../adapters/pdf/poppler.js';
 import { LocalStorageAdapter } from '../../adapters/storage/index.js';
+import { SupabaseStorageUploader } from '../../adapters/storage/supabase.js';
 import { logger } from '../../utils/logger.js';
 import type { ExtractionOptions } from './types.js';
+
+const SUPABASE_URL = process.env.SUPABASE_URL ?? 'https://xhfiyukhjzwhqbacuyxq.supabase.co';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const PAGE_ASSETS_BUCKET = process.env.BOOK_ASSETS_BUCKET ?? 'book-assets';
 
 export class AssetExtractionModule implements IModule {
   readonly stage = PipelineStage.EXTRACTION;
@@ -63,8 +68,22 @@ export class AssetExtractionModule implements IModule {
       );
     }
 
-    const pdfAdapter = new PDFParseAdapter();
+    const pdfAdapter = new PopplerPDFAdapter();
     const storage = new LocalStorageAdapter();
+
+    const pageUploader = SUPABASE_SERVICE_ROLE_KEY
+      ? new SupabaseStorageUploader({
+          supabaseUrl: SUPABASE_URL,
+          serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+          bucket: PAGE_ASSETS_BUCKET,
+        })
+      : undefined;
+
+    if (!pageUploader) {
+      logger.warn(
+        'Asset Extraction: SUPABASE_SERVICE_ROLE_KEY ausente — pageFormats não serão enviados ao Storage',
+      );
+    }
 
     const options: ExtractionOptions = {
       outputDir: `storage/assets/${context.jobId}`,
@@ -75,15 +94,16 @@ export class AssetExtractionModule implements IModule {
       renderDpi: 200,
     };
 
-    const extractor = new AssetExtractor(options, pdfAdapter, storage);
+    const extractor = new AssetExtractor(options, pdfAdapter, storage, pageUploader);
     const result = await extractor.extractFromPDF(filePath, context.jobId);
 
     logger.info(
-      `Asset Extraction: ${result.assets.length} assets extraídos de ${result.totalPages} páginas em ${result.processingTimeMs}ms (strategy=${strategy})`,
+      `Asset Extraction: ${result.assets.length} assets extraídos de ${result.totalPages} páginas em ${result.processingTimeMs}ms (strategy=${strategy}); pageFormats=${result.pageFormats?.png_pages.length ?? 0} PNG / ${result.pageFormats?.svg_pages.length ?? 0} SVG`,
     );
 
     return {
       ...context,
+      pageFormats: result.pageFormats,
       assets: result.assets.map((asset) => ({
         id: asset.id,
         filePath: asset.filePath,

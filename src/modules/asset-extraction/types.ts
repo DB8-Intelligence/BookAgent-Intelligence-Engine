@@ -18,10 +18,19 @@ export interface ExtractedAsset {
   hash?: string;
 }
 
+export interface PageFormats {
+  /** URLs públicas (CDN) dos PNGs 300dpi por página, indexadas por ordem de página */
+  png_pages: string[];
+  /** URLs públicas (CDN) dos SVGs vetoriais por página, indexadas por ordem de página */
+  svg_pages: string[];
+}
+
 export interface ExtractionResult {
   assets: ExtractedAsset[];
   totalPages: number;
   processingTimeMs: number;
+  /** Renderizações por página (PNG 300dpi + SVG). Populado quando upload está habilitado. */
+  pageFormats?: PageFormats;
 }
 
 export interface ExtractionOptions {

@@ -14,8 +14,11 @@ export interface IPDFAdapter {
   /** Extrai imagens embutidas no PDF */
   extractImages(filePath: string): Promise<PDFImageResult[]>;
 
-  /** Renderiza uma página como imagem */
+  /** Renderiza uma página como imagem PNG */
   renderPage(filePath: string, pageNumber: number, dpi?: number): Promise<Buffer>;
+
+  /** Renderiza uma página como SVG vetorial (opcional — nem todo adapter suporta) */
+  renderPageSvg?(filePath: string, pageNumber: number): Promise<Buffer>;
 
   /** Retorna o número total de páginas */
   getPageCount(filePath: string): Promise<number>;

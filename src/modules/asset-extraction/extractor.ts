@@ -25,13 +25,21 @@ import sharp from 'sharp';
 import type { IPDFAdapter } from '../../domain/interfaces/pdf-adapter.js';
 import type { IStorageAdapter } from '../../domain/interfaces/storage-adapter.js';
 import { AssetOrigin } from '../../domain/value-objects/index.js';
-import type { ExtractedAsset, ExtractionOptions, ExtractionResult } from './types.js';
+import type { SupabaseStorageUploader } from '../../adapters/storage/supabase.js';
+import { logger } from '../../utils/logger.js';
+import type {
+  ExtractedAsset,
+  ExtractionOptions,
+  ExtractionResult,
+  PageFormats,
+} from './types.js';
 
 export class AssetExtractor {
   constructor(
     private options: ExtractionOptions,
     private pdfAdapter: IPDFAdapter,
     private storage: IStorageAdapter,
+    private pageUploader?: SupabaseStorageUploader,
   ) {}
 
   /**
@@ -46,26 +54,84 @@ export class AssetExtractor {
 
     const totalPages = await this.pdfAdapter.getPageCount(filePath);
 
-    let assets: ExtractedAsset[];
+    const assetsPromise: Promise<ExtractedAsset[]> = (() => {
+      switch (strategy) {
+        case 'page-render':
+          return this.extractViaPageRender(filePath, jobId, totalPages);
+        case 'hybrid':
+          return this.extractHybrid(filePath, jobId, totalPages);
+        case 'manual-review':
+        case 'embedded-extraction':
+        default:
+          return this.extractEmbedded(filePath, jobId);
+      }
+    })();
 
-    switch (strategy) {
-      case 'page-render':
-        assets = await this.extractViaPageRender(filePath, jobId, totalPages);
-        break;
-      case 'hybrid':
-        assets = await this.extractHybrid(filePath, jobId, totalPages);
-        break;
-      case 'manual-review':
-      case 'embedded-extraction':
-      default:
-        assets = await this.extractEmbedded(filePath, jobId);
-        break;
-    }
+    // Page-format rendering (PNG 300dpi + SVG) roda em paralelo — sempre,
+    // independente da estratégia de extração de assets embarcados.
+    const pageFormatsPromise = this.extractPageFormats(filePath, jobId, totalPages);
+
+    const [assets, pageFormats] = await Promise.all([assetsPromise, pageFormatsPromise]);
 
     return {
       assets,
       totalPages,
       processingTimeMs: Date.now() - startTime,
+      pageFormats,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Page Formats: PNG 300dpi + SVG por página (sempre executado)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Renderiza cada página como PNG (300dpi) e SVG vetorial, faz upload
+   * ao Supabase Storage e retorna URLs públicas. Se o uploader não estiver
+   * configurado, retorna arrays vazios (graceful no-op).
+   *
+   * Paths no bucket:
+   *   {jobId}/pages/png/page-{n}.png
+   *   {jobId}/pages/svg/page-{n}.svg
+   */
+  async extractPageFormats(
+    filePath: string,
+    jobId: string,
+    totalPages: number,
+  ): Promise<PageFormats> {
+    if (!this.pageUploader) {
+      return { png_pages: [], svg_pages: [] };
+    }
+
+    const supportsSvg = typeof this.pdfAdapter.renderPageSvg === 'function';
+    const png_pages: string[] = new Array(totalPages).fill('');
+    const svg_pages: string[] = new Array(totalPages).fill('');
+
+    for (let page = 1; page <= totalPages; page++) {
+      try {
+        const pngBuffer = await this.pdfAdapter.renderPage(filePath, page, 300);
+        const pngPath = `${jobId}/pages/png/page-${page}.png`;
+        png_pages[page - 1] = await this.pageUploader.upload(pngPath, pngBuffer, 'image/png');
+      } catch (err) {
+        logger.warn(`Asset Extraction: falha ao gerar PNG da página ${page}`, err);
+      }
+
+      if (supportsSvg) {
+        try {
+          const svgBuffer = await this.pdfAdapter.renderPageSvg!(filePath, page);
+          const svgPath = `${jobId}/pages/svg/page-${page}.svg`;
+          svg_pages[page - 1] = await this.pageUploader.upload(
+            svgPath, svgBuffer, 'image/svg+xml',
+          );
+        } catch (err) {
+          logger.warn(`Asset Extraction: falha ao gerar SVG da página ${page}`, err);
+        }
+      }
+    }
+
+    return {
+      png_pages: png_pages.filter((u) => u !== ''),
+      svg_pages: svg_pages.filter((u) => u !== ''),
     };
   }
 

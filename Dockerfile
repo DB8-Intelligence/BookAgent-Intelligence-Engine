@@ -1,6 +1,15 @@
+# BookAgent Intelligence Engine — Railway runtime image
+#
+# Alpine Node 20 com:
+#   - poppler-utils (pdftoppm + pdftocairo) para Module 04 (PNG 300dpi + SVG)
+#   - ffmpeg + python3 para rendering/encoding de vídeo
+#   - libc6-compat para prebuilt binaries do sharp
+
 FROM node:20-alpine AS builder
 
 WORKDIR /app
+
+RUN apk add --no-cache libc6-compat
 
 COPY package*.json ./
 RUN npm ci --only=production=false
@@ -14,7 +23,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache ffmpeg python3
+RUN apk add --no-cache ffmpeg python3 poppler-utils libc6-compat
 
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
