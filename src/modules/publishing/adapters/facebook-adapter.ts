@@ -55,6 +55,17 @@ export class FacebookAdapter implements ISocialAdapter {
   }
 
   async publish(payload: PublishPayload): Promise<PublishResult> {
+    if (process.env.SOCIAL_PUBLISH_MODE === 'mock') {
+      const fakeId = `facebook-mock-${Date.now()}`;
+      logger.info(`[FacebookAdapter] MOCK: simulating publish caption="${payload.caption.slice(0, 40)}..." id=${fakeId}`);
+      return {
+        success: true,
+        platformPostId: fakeId,
+        postUrl: `https://facebook.com/${fakeId}`,
+        publishedAt: new Date(),
+      };
+    }
+
     if (!this.isConfigured()) {
       return {
         success: false,

@@ -98,7 +98,7 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
       apiAccess: false,
       webhookOnCompletion: false,
       requestsPerMinute: 10,
-      jobsPerHour: 1,
+      jobsPerHour: 10,
     },
   },
 

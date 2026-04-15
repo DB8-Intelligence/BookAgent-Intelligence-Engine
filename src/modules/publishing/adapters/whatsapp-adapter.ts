@@ -81,6 +81,16 @@ export class WhatsAppAdapter implements ISocialAdapter {
   }
 
   async publish(payload: PublishPayload): Promise<PublishResult> {
+    if (process.env.SOCIAL_PUBLISH_MODE === 'mock') {
+      const fakeId = `whatsapp-mock-${Date.now()}`;
+      logger.info(`[WhatsAppAdapter] MOCK: simulating send caption="${payload.caption.slice(0, 40)}..." id=${fakeId}`);
+      return {
+        success: true,
+        platformPostId: fakeId,
+        publishedAt: new Date(),
+      };
+    }
+
     if (!this.isConfigured()) {
       return {
         success: false,
