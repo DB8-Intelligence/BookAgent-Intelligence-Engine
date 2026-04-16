@@ -27,7 +27,7 @@ export interface POIResult {
   /** Confiança da detecção 0..1 */
   readonly confidence: number;
   /** Método que produziu o resultado */
-  readonly method: 'edge-detection' | 'color-variance' | 'default';
+  readonly method: 'edge-detection' | 'color-variance' | 'clip' | 'default';
 }
 
 // ---------------------------------------------------------------------------
