@@ -31,6 +31,7 @@
  * de geometria para aquela página (graceful degradation).
  */
 
+// @ts-ignore — pdfjs-dist legacy ESM build has no type declarations in some envs
 import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import type { CTM, PDFGeometry } from '../../domain/interfaces/geometry.js';
 import { logger } from '../../utils/logger.js';
