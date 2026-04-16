@@ -1,10 +1,10 @@
-# BookAgent Intelligence Engine — Railway runtime image
-#
-# Alpine Node 20 com:
-#   - poppler-utils (pdftoppm + pdftocairo) para Module 04 (PNG 300dpi + SVG)
-#   - ffmpeg + python3 para rendering/encoding de vídeo
-#   - libc6-compat para prebuilt binaries do sharp
+# ============================================================================
+# BookAgent Intelligence Engine — Dockerfile (API Server)
+# ============================================================================
+# Multi-stage build: compile TypeScript → lightweight runtime with ffmpeg
+# ============================================================================
 
+# --- Stage 1: Build ---
 FROM node:20-alpine AS builder
 
 WORKDIR /app
@@ -12,24 +12,29 @@ WORKDIR /app
 RUN apk add --no-cache libc6-compat
 
 COPY package*.json ./
-RUN npm ci --only=production=false
+RUN npm ci
 
 COPY . .
 RUN npm run build
 
-# ---
-
+# --- Stage 2: Runtime ---
 FROM node:20-alpine
+
+RUN apk add --no-cache ffmpeg python3 py3-pip poppler-utils libc6-compat \
+    && mkdir -p /tmp/videos
 
 WORKDIR /app
 
-RUN apk add --no-cache ffmpeg python3 poppler-utils libc6-compat
-
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json .
 
-RUN mkdir -p storage/assets storage/outputs storage/temp musics
+# Video generation: Python modules + music files
+COPY video/ ./video/
+COPY musics/ ./musics/
+
+# Storage directories (created at runtime by StorageManager)
+RUN mkdir -p storage/assets storage/outputs storage/temp
 
 EXPOSE 3000
 

@@ -3,20 +3,17 @@
  *
  * Adapter para publicação no Facebook via Graph API v19.
  *
- * Fluxo de publicação de vídeo (Reels):
- *   1. POST /{pageId}/video_reels — inicializa upload, recebe video_id
- *   2. POST ao upload_url com o binário do vídeo
- *   3. POST /{pageId}/video_reels com video_id + status=PUBLISHED — publica
+ * Fluxo de publicação (Facebook Graph API):
+ *   - Texto/link → POST /{page-id}/feed   (message + link opcional)
+ *   - Imagem    → POST /{page-id}/photos  (url + message)
+ *   - Vídeo     → POST /{page-id}/videos  (file_url + description)
  *
- * Fluxo de publicação de imagem/post:
- *   1. POST /{pageId}/photos com url= + published=false — recebe photo_id
- *   2. POST /{pageId}/feed com attached_media + message — publica
+ * Variáveis de ambiente (META_* preferencial, fallback para FACEBOOK_*):
+ *   - META_ACCESS_TOKEN / FACEBOOK_PAGE_ACCESS_TOKEN
+ *   - META_FACEBOOK_PAGE_ID / FACEBOOK_PAGE_ID
  *
- * Variáveis de ambiente:
- *   - FACEBOOK_PAGE_ACCESS_TOKEN: token de acesso da página (long-lived)
- *   - FACEBOOK_PAGE_ID: ID numérico da página
- *
- * Parte 67 (revisão): Facebook Graph API real
+ * Parte 67: Publishing Adapter Layer
+ * Ativação real: Graph API v19.0
  */
 
 import type { ISocialAdapter, PublishPayload, PublishResult } from '../../../domain/entities/publication.js';
@@ -24,21 +21,50 @@ import { SocialPlatform, PublishContentType } from '../../../domain/entities/pub
 import { logger } from '../../../utils/logger.js';
 
 // ---------------------------------------------------------------------------
-// Constants
+// Config
 // ---------------------------------------------------------------------------
 
 const GRAPH_API_VERSION = 'v19.0';
 const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
+const REQUEST_TIMEOUT_MS = 30_000;
 
 function getConfig() {
   return {
-    accessToken: process.env.FACEBOOK_PAGE_ACCESS_TOKEN ?? '',
-    pageId: process.env.FACEBOOK_PAGE_ID ?? '',
+    accessToken: process.env.META_ACCESS_TOKEN ?? process.env.FACEBOOK_PAGE_ACCESS_TOKEN ?? '',
+    pageId: process.env.META_FACEBOOK_PAGE_ID ?? process.env.FACEBOOK_PAGE_ID ?? '',
   };
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatCaption(payload: PublishPayload): string {
+  const parts: string[] = [payload.caption.trim()];
+  if (payload.hashtags?.length) {
+    const tags = payload.hashtags
+      .map((h) => (h.startsWith('#') ? h : `#${h}`))
+      .join(' ');
+    parts.push(tags);
+  }
+  return parts.join('\n\n');
+}
+
+async function fetchGraph(
+  url: string,
+  init: RequestInit,
+): Promise<{ ok: boolean; status: number; body: Record<string, unknown> }> {
+  const res = await fetch(url, {
+    ...init,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  let body: Record<string, unknown>;
+  try {
+    body = (await res.json()) as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+  return { ok: res.ok, status: res.status, body };
 }
 
 // ---------------------------------------------------------------------------
@@ -69,18 +95,25 @@ export class FacebookAdapter implements ISocialAdapter {
     if (!this.isConfigured()) {
       return {
         success: false,
-        error: 'Facebook adapter não configurado — defina FACEBOOK_PAGE_ACCESS_TOKEN e FACEBOOK_PAGE_ID',
+        error: 'Facebook adapter not configured — set META_ACCESS_TOKEN and META_FACEBOOK_PAGE_ID',
       };
     }
 
-    const isVideo = payload.contentType === PublishContentType.VIDEO
-      || payload.contentType === PublishContentType.REEL;
+    const cfg = getConfig();
 
     try {
-      if (isVideo) {
-        return await this.publishReel(payload);
+      // Route by content type
+      const isVideo = payload.contentType === PublishContentType.VIDEO
+        || payload.contentType === PublishContentType.REEL;
+      const hasImage = !!(payload.thumbnailUrl || payload.videoUrl) && !isVideo;
+
+      if (isVideo && payload.videoUrl) {
+        return await this.publishVideo(cfg, payload);
       }
-      return await this.publishPhoto(payload);
+      if (hasImage && payload.thumbnailUrl) {
+        return await this.publishPhoto(cfg, payload);
+      }
+      return await this.publishFeed(cfg, payload);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[FacebookAdapter] Publish failed: ${message}`);
@@ -89,179 +122,34 @@ export class FacebookAdapter implements ISocialAdapter {
   }
 
   // ---------------------------------------------------------------------------
-  // Reel / Vídeo
-  // ---------------------------------------------------------------------------
-
-  private async publishReel(payload: PublishPayload): Promise<PublishResult> {
-    const cfg = getConfig();
-    const videoUrl = payload.videoUrl;
-
-    if (!videoUrl) {
-      return { success: false, error: 'videoUrl é obrigatório para publicar Reel no Facebook' };
-    }
-
-    // Step 1: Inicializar upload
-    const initEndpoint = `${GRAPH_API_BASE}/${cfg.pageId}/video_reels`;
-    const initRes = await fetch(initEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        upload_phase: 'start',
-        access_token: cfg.accessToken,
-      }),
-    });
-
-    const initData = await initRes.json() as Record<string, unknown>;
-
-    if (!initRes.ok || !initData.video_id) {
-      return {
-        success: false,
-        statusCode: initRes.status,
-        error: (initData.error as Record<string, unknown>)?.message as string
-          ?? `FB Reel init falhou: HTTP ${initRes.status}`,
-      };
-    }
-
-    const videoId = initData.video_id as string;
-    const uploadUrl = initData.upload_url as string;
-
-    logger.info(`[FacebookAdapter] Reel init OK: video_id=${videoId}`);
-
-    // Step 2: Upload do binário via URL pública (FB baixa diretamente)
-    // Quando o vídeo está no Supabase Storage público, usamos a URL direta
-    const uploadRes = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `OAuth ${cfg.accessToken}`,
-        'file_url': videoUrl,
-      },
-    });
-
-    if (!uploadRes.ok) {
-      return {
-        success: false,
-        statusCode: uploadRes.status,
-        error: `FB Reel upload falhou: HTTP ${uploadRes.status}`,
-      };
-    }
-
-    logger.info(`[FacebookAdapter] Reel upload OK: video_id=${videoId}`);
-
-    // Step 3: Publicar
-    const caption = this.buildCaption(payload);
-    const publishRes = await fetch(initEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        video_id: videoId,
-        upload_phase: 'finish',
-        video_state: 'PUBLISHED',
-        description: caption,
-        title: payload.title ?? '',
-        access_token: cfg.accessToken,
-      }),
-    });
-
-    const publishData = await publishRes.json() as Record<string, unknown>;
-
-    if (publishRes.ok && (publishData.success || publishData.id)) {
-      const postId = (publishData.post_id_fbid ?? publishData.id) as string | undefined;
-      logger.info(`[FacebookAdapter] Reel publicado: ${postId ?? 'ok'}`);
-
-      return {
-        success: true,
-        platformPostId: postId,
-        statusCode: publishRes.status,
-        publishedAt: new Date(),
-        rawResponse: publishData,
-      };
-    }
-
-    return {
-      success: false,
-      statusCode: publishRes.status,
-      error: (publishData.error as Record<string, unknown>)?.message as string
-        ?? `FB Reel publish falhou: HTTP ${publishRes.status}`,
-    };
-  }
-
-  // ---------------------------------------------------------------------------
-  // Foto / Imagem
-  // ---------------------------------------------------------------------------
-
-  private async publishPhoto(payload: PublishPayload): Promise<PublishResult> {
-    const cfg = getConfig();
-    const imageUrl = payload.thumbnailUrl ?? payload.videoUrl;
-
-    if (!imageUrl) {
-      return { success: false, error: 'thumbnailUrl é obrigatório para publicar imagem no Facebook' };
-    }
-
-    const caption = this.buildCaption(payload);
-
-    // Upload da foto + publicação direta
-    const endpoint = `${GRAPH_API_BASE}/${cfg.pageId}/photos`;
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: imageUrl,
-        message: caption,
-        access_token: cfg.accessToken,
-      }),
-    });
-
-    const data = await res.json() as Record<string, unknown>;
-
-    if (res.ok && data.id) {
-      const postId = data.post_id as string | undefined ?? data.id as string;
-      logger.info(`[FacebookAdapter] Foto publicada: ${postId}`);
-
-      return {
-        success: true,
-        platformPostId: postId,
-        postUrl: `https://www.facebook.com/${cfg.pageId}/posts/${postId}`,
-        statusCode: res.status,
-        publishedAt: new Date(),
-        rawResponse: data,
-      };
-    }
-
-    return {
-      success: false,
-      statusCode: res.status,
-      error: (data.error as Record<string, unknown>)?.message as string
-        ?? `FB Photo publish falhou: HTTP ${res.status}`,
-    };
-  }
-
-  // ---------------------------------------------------------------------------
   // Check status
   // ---------------------------------------------------------------------------
 
   async checkStatus(platformPostId: string): Promise<PublishResult> {
     const cfg = getConfig();
-
     try {
-      const res = await fetch(
-        `${GRAPH_API_BASE}/${platformPostId}?fields=id,created_time,permalink_url,message&access_token=${cfg.accessToken}`,
+      const res = await fetchGraph(
+        `${GRAPH_API_BASE}/${platformPostId}?fields=id,message,created_time,permalink_url&access_token=${cfg.accessToken}`,
+        { method: 'GET' },
       );
-      const data = await res.json() as Record<string, unknown>;
 
-      if (res.ok && data.id) {
+      if (res.ok && res.body['id']) {
         return {
           success: true,
-          platformPostId: data.id as string,
-          postUrl: data.permalink_url as string | undefined,
-          publishedAt: data.created_time ? new Date(data.created_time as string) : undefined,
-          rawResponse: data,
+          platformPostId: res.body['id'] as string,
+          postUrl: (res.body['permalink_url'] as string) ?? undefined,
+          statusCode: res.status,
+          publishedAt: res.body['created_time']
+            ? new Date(res.body['created_time'] as string)
+            : undefined,
         };
       }
 
+      const apiError = res.body['error'] as Record<string, unknown> | undefined;
       return {
         success: false,
         statusCode: res.status,
-        error: (data.error as Record<string, unknown>)?.message as string ?? 'Post não encontrado',
+        error: (apiError?.['message'] as string) ?? 'Unknown error',
       };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -269,11 +157,129 @@ export class FacebookAdapter implements ISocialAdapter {
   }
 
   // ---------------------------------------------------------------------------
-  // Helpers
+  // Feed post (texto + link opcional)
   // ---------------------------------------------------------------------------
 
-  private buildCaption(payload: PublishPayload): string {
-    const tags = payload.hashtags?.join(' ') ?? '';
-    return tags ? `${payload.caption}\n\n${tags}` : payload.caption;
+  private async publishFeed(
+    cfg: { accessToken: string; pageId: string },
+    payload: PublishPayload,
+  ): Promise<PublishResult> {
+    const message = formatCaption(payload);
+    const endpoint = `${GRAPH_API_BASE}/${cfg.pageId}/feed`;
+
+    const body: Record<string, string> = {
+      message,
+      access_token: cfg.accessToken,
+    };
+
+    if (payload.platformMeta?.['link']) {
+      body['link'] = payload.platformMeta['link'] as string;
+    }
+
+    logger.info(`[FacebookAdapter] Publishing feed post to page=${cfg.pageId}`);
+
+    const res = await fetchGraph(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    return this.parseResponse(res, body);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Photo post (imagem + caption)
+  // ---------------------------------------------------------------------------
+
+  private async publishPhoto(
+    cfg: { accessToken: string; pageId: string },
+    payload: PublishPayload,
+  ): Promise<PublishResult> {
+    const message = formatCaption(payload);
+    const endpoint = `${GRAPH_API_BASE}/${cfg.pageId}/photos`;
+
+    const body: Record<string, string> = {
+      url: payload.thumbnailUrl!,
+      message,
+      access_token: cfg.accessToken,
+    };
+
+    logger.info(`[FacebookAdapter] Publishing photo to page=${cfg.pageId}`);
+
+    const res = await fetchGraph(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    return this.parseResponse(res, body);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Video post
+  // ---------------------------------------------------------------------------
+
+  private async publishVideo(
+    cfg: { accessToken: string; pageId: string },
+    payload: PublishPayload,
+  ): Promise<PublishResult> {
+    const description = formatCaption(payload);
+    const endpoint = `${GRAPH_API_BASE}/${cfg.pageId}/videos`;
+
+    const body: Record<string, string> = {
+      file_url: payload.videoUrl!,
+      description,
+      access_token: cfg.accessToken,
+    };
+
+    if (payload.title) {
+      body['title'] = payload.title;
+    }
+
+    logger.info(`[FacebookAdapter] Publishing video to page=${cfg.pageId}`);
+
+    const res = await fetchGraph(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    return this.parseResponse(res, body);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Response parser
+  // ---------------------------------------------------------------------------
+
+  private parseResponse(
+    res: { ok: boolean; status: number; body: Record<string, unknown> },
+    _sentPayload: Record<string, string>,
+  ): PublishResult {
+    const apiError = res.body['error'] as Record<string, unknown> | undefined;
+
+    if (!res.ok || apiError) {
+      const errorMsg = (apiError?.['message'] as string) ?? `HTTP ${res.status}`;
+      logger.warn(`[FacebookAdapter] Publish failed: ${errorMsg}`);
+      return {
+        success: false,
+        statusCode: res.status,
+        error: errorMsg,
+        rawResponse: res.body,
+      };
+    }
+
+    // Facebook returns { id: "page-id_post-id" } or { post_id: "..." }
+    const rawId = (res.body['id'] ?? res.body['post_id']) as string | undefined;
+
+    logger.info(`[FacebookAdapter] Published successfully. postId=${rawId}`);
+
+    return {
+      success: true,
+      platformPostId: rawId,
+      postUrl: rawId ? `https://www.facebook.com/${rawId}` : undefined,
+      statusCode: res.status,
+      publishedAt: new Date(),
+      rawResponse: res.body,
+    };
   }
 }

@@ -278,6 +278,8 @@ export interface CustomerPublicationView {
   jobId: string;
   platform: string;
   status: string;
+  /** ID do post na plataforma (ex: Instagram media_id) */
+  platformPostId: string | null;
   /** URL do post (se publicado) */
   postUrl: string | null;
   /** Erro (se falhou) */

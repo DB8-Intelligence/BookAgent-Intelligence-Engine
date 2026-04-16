@@ -118,16 +118,17 @@ export class SocialPublisherService {
   // --------------------------------------------------------------------------
 
   /**
-   * Publica uma imagem no Instagram Business.
+   * Publica imagem ou vídeo/reel no Instagram Business.
    *
-   * Fluxo (3 steps):
-   *   1. POST /{ig-user-id}/media         → cria container
-   *   2. POST /{ig-user-id}/media_publish → publica o container
-   *   3. GET  /{media-id}?fields=permalink → busca URL real da publicação
+   * Fluxo (3-4 steps):
+   *   1. POST /{ig-user-id}/media         → cria container (image ou REELS)
+   *   2. Poll status_code até FINISHED    → (somente vídeo, até 60s)
+   *   3. POST /{ig-user-id}/media_publish → publica o container
+   *   4. GET  /{media-id}?fields=permalink → busca URL real da publicação
    *
    * Requer:
    *   - credentials.instagramAccountId
-   *   - content.imageUrl (publicamente acessível)
+   *   - content.imageUrl (imagem) OU content.videoUrl (reel/vídeo)
    *   - Token com instagram_basic + instagram_content_publish
    */
   async publishToInstagram(
@@ -143,12 +144,14 @@ export class SocialPublisherService {
       };
     }
 
-    if (!content.imageUrl) {
+    const isVideo = !!content.videoUrl;
+
+    if (!content.imageUrl && !content.videoUrl) {
       return {
         platform: 'instagram',
         success: false,
         skipped: true,
-        skipReason: 'Instagram requer imageUrl — forneça uma URL pública de imagem',
+        skipReason: 'Instagram requer imageUrl ou videoUrl — forneça uma URL pública',
       };
     }
 
@@ -156,11 +159,20 @@ export class SocialPublisherService {
     const igUserId = credentials.instagramAccountId;
 
     // Step 1: Create media container
-    const createPayload = {
-      image_url: content.imageUrl,
+    const createPayload: Record<string, string> = {
       caption,
       access_token: credentials.accessToken,
     };
+
+    if (isVideo) {
+      createPayload['media_type'] = 'REELS';
+      createPayload['video_url'] = content.videoUrl!;
+      if (content.coverUrl) {
+        createPayload['cover_url'] = content.coverUrl;
+      }
+    } else {
+      createPayload['image_url'] = content.imageUrl!;
+    }
 
     logger.info(`[SocialPublisher] Instagram: criando container (ig_user=${igUserId})`);
 
@@ -198,7 +210,40 @@ export class SocialPublisherService {
       };
     }
 
-    // Step 2: Publish container
+    // Step 2 (video only): Wait for processing
+    if (isVideo) {
+      logger.info(`[SocialPublisher] Instagram: aguardando processamento do vídeo (container=${containerId})`);
+      const maxWaitMs = 60_000;
+      const intervalMs = 5_000;
+      const start = Date.now();
+
+      while (Date.now() - start < maxWaitMs) {
+        try {
+          const statusRes = await fetchMeta(
+            `${META_GRAPH_BASE}/${containerId}?fields=status_code&access_token=${credentials.accessToken}`,
+            { method: 'GET' },
+          );
+          const statusData = statusRes.body as Record<string, unknown>;
+          const statusCode = statusData['status_code'] as string;
+
+          if (statusCode === 'FINISHED') break;
+          if (statusCode === 'ERROR') {
+            return {
+              platform: 'instagram',
+              success: false,
+              error: 'Instagram media processing failed (status=ERROR)',
+              responseData: statusData,
+            };
+          }
+          logger.debug(`[SocialPublisher] Instagram container ${containerId} status: ${statusCode}`);
+        } catch {
+          // polling error — continue trying
+        }
+        await delay(intervalMs);
+      }
+    }
+
+    // Step 3: Publish container
     const publishPayload = {
       creation_id: containerId,
       access_token: credentials.accessToken,
@@ -275,8 +320,9 @@ export class SocialPublisherService {
   /**
    * Publica no feed de uma Facebook Page.
    *
-   * Sem imagem → POST /{page-id}/feed (texto + link opcional)
+   * Sem imagem → POST /{page-id}/feed   (texto + link opcional)
    * Com imagem → POST /{page-id}/photos (imagem + caption)
+   * Com vídeo  → POST /{page-id}/videos (file_url + description)
    *
    * Requer:
    *   - credentials.facebookPageId
@@ -298,25 +344,37 @@ export class SocialPublisherService {
     const pageId = credentials.facebookPageId;
     const message = formatCaption(content);
 
-    const usePhotos = Boolean(content.imageUrl);
-    const endpoint = usePhotos
-      ? `${META_GRAPH_BASE}/${pageId}/photos`
-      : `${META_GRAPH_BASE}/${pageId}/feed`;
+    const useVideo = !!content.videoUrl;
+    const usePhotos = !useVideo && !!content.imageUrl;
+
+    let endpoint: string;
+    if (useVideo) {
+      endpoint = `${META_GRAPH_BASE}/${pageId}/videos`;
+    } else if (usePhotos) {
+      endpoint = `${META_GRAPH_BASE}/${pageId}/photos`;
+    } else {
+      endpoint = `${META_GRAPH_BASE}/${pageId}/feed`;
+    }
 
     const payload: Record<string, string> = {
-      message,
       access_token: credentials.accessToken,
     };
 
-    if (usePhotos && content.imageUrl) {
-      payload['url'] = content.imageUrl;
-    } else if (content.linkUrl) {
-      payload['link'] = content.linkUrl;
+    if (useVideo) {
+      payload['file_url'] = content.videoUrl!;
+      payload['description'] = message;
+    } else {
+      payload['message'] = message;
+      if (usePhotos && content.imageUrl) {
+        payload['url'] = content.imageUrl;
+      } else if (content.linkUrl) {
+        payload['link'] = content.linkUrl;
+      }
     }
 
+    const mediaType = useVideo ? 'vídeo' : usePhotos ? 'foto' : 'texto';
     logger.info(
-      `[SocialPublisher] Facebook: postando em page=${pageId} ` +
-      `(${usePhotos ? 'foto' : 'texto'})`,
+      `[SocialPublisher] Facebook: postando em page=${pageId} (${mediaType})`,
     );
 
     try {

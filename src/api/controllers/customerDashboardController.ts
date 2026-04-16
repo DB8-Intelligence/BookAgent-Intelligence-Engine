@@ -22,6 +22,8 @@ import {
   getUsageView,
   getBillingView,
   getInsightsView,
+  getPublicationsOverview,
+  getCampaignsOverview,
 } from '../../modules/customer-dashboard/index.js';
 import { createDefaultTenantContext } from '../../core/tenant-resolver.js';
 import { logger } from '../../utils/logger.js';
@@ -130,5 +132,32 @@ export async function getDashboardInsights(req: Request, res: Response): Promise
     sendSuccess(res, insights);
   } catch (err) {
     sendError(res, 'INTERNAL_ERROR', 'Falha ao gerar insights', 500, err);
+  }
+}
+
+// ============================================================================
+// GET /dashboard/publications
+// ============================================================================
+
+export async function getDashboardPublications(req: Request, res: Response): Promise<void> {
+  try {
+    const limit = req.query.limit ? Math.min(Number(req.query.limit), 100) : 50;
+    const overview = await getPublicationsOverview(getTenantCtx(req), supabaseClient, limit);
+    sendSuccess(res, overview);
+  } catch (err) {
+    sendError(res, 'INTERNAL_ERROR', 'Falha ao listar publicações', 500, err);
+  }
+}
+
+// ============================================================================
+// GET /dashboard/campaigns
+// ============================================================================
+
+export async function getDashboardCampaigns(req: Request, res: Response): Promise<void> {
+  try {
+    const campaigns = await getCampaignsOverview(getTenantCtx(req), supabaseClient);
+    sendSuccess(res, campaigns);
+  } catch (err) {
+    sendError(res, 'INTERNAL_ERROR', 'Falha ao listar campanhas', 500, err);
   }
 }

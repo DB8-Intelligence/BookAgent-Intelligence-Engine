@@ -30,8 +30,8 @@ const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
 function getConfig() {
   return {
-    accessToken: process.env.INSTAGRAM_ACCESS_TOKEN ?? '',
-    accountId: process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID ?? '',
+    accessToken: process.env.META_ACCESS_TOKEN ?? process.env.INSTAGRAM_ACCESS_TOKEN ?? '',
+    accountId: process.env.META_INSTAGRAM_ACCOUNT_ID ?? process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID ?? '',
   };
 }
 

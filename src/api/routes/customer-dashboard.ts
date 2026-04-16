@@ -23,17 +23,38 @@ import {
   getDashboardUsage,
   getDashboardBilling,
   getDashboardInsights,
+  getDashboardPublications,
+  getDashboardCampaigns,
 } from '../controllers/customerDashboardController.js';
 import { getCustomerAnalytics } from '../controllers/analyticsController.js';
+import {
+  approveJob,
+  rejectJob,
+  commentJob,
+  publishJob,
+  socialPublishJob,
+  getJobPublications,
+} from '../controllers/approvalController.js';
 
 const router = Router();
 
-router.get('/overview',      getDashboardOverview);
-router.get('/jobs',          getDashboardJobs);
-router.get('/jobs/:jobId',   getDashboardJobDetail);
-router.get('/usage',         getDashboardUsage);
-router.get('/billing',       getDashboardBilling);
-router.get('/insights',      getDashboardInsights);
-router.get('/analytics',     getCustomerAnalytics);
+// --- Read endpoints ---
+router.get('/overview',         getDashboardOverview);
+router.get('/jobs',             getDashboardJobs);
+router.get('/jobs/:jobId',      getDashboardJobDetail);
+router.get('/usage',            getDashboardUsage);
+router.get('/billing',          getDashboardBilling);
+router.get('/insights',         getDashboardInsights);
+router.get('/analytics',        getCustomerAnalytics);
+router.get('/publications',     getDashboardPublications);
+router.get('/campaigns',        getDashboardCampaigns);
+
+// --- Action endpoints (proxied from approval controller) ---
+router.post('/jobs/:jobId/approve',        approveJob);
+router.post('/jobs/:jobId/reject',         rejectJob);
+router.post('/jobs/:jobId/comment',        commentJob);
+router.post('/jobs/:jobId/publish',        publishJob);
+router.post('/jobs/:jobId/social-publish', socialPublishJob);
+router.get('/jobs/:jobId/publications',    getJobPublications);
 
 export default router;

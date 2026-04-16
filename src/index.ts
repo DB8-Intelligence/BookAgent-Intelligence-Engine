@@ -30,8 +30,18 @@
  */
 
 import express from 'express';
+import cors from 'cors';
 import { config } from './config/index.js';
 import { logger } from './utils/logger.js';
+
+// --- Process-level error handling ---
+process.on('uncaughtException', (err) => {
+  logger.fatal(`[Process] Uncaught exception: ${err.message}`, err.stack);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  logger.error(`[Process] Unhandled rejection: ${reason}`);
+});
 import { Orchestrator } from './core/orchestrator.js';
 import { SupabaseClient } from './persistence/supabase-client.js';
 import { PersistentOrchestrator } from './persistence/persistent-orchestrator.js';
@@ -43,6 +53,8 @@ import { setOrchestrator as setProcessOrch, setProcessJobRepository } from './ap
 import { setOrchestrator as setJobsOrch, setJobRepository } from './api/controllers/jobsController.js';
 import { setOrchestrator as setArtifactsOrch } from './api/controllers/artifactsController.js';
 import { setSupabaseClientForApproval } from './api/controllers/approvalController.js';
+import { setSupabaseClientForReview } from './api/controllers/reviewController.js';
+import { setSupabaseClientForRevision } from './api/controllers/revisionController.js';
 import { setSupabaseClientForExperiments } from './api/controllers/experimentController.js';
 import { setSupabaseClientForBilling } from './api/controllers/billingController.js';
 import { setSupabaseClientForAdmin } from './api/controllers/adminController.js';
@@ -63,6 +75,15 @@ import { setSupabaseClientForKnowledgeGraph } from './api/controllers/knowledgeG
 import { setSupabaseClientForSimulation } from './api/controllers/simulationController.js';
 import { setSupabaseClientForDecisions } from './api/controllers/decisionController.js';
 import { setSupabaseClientForCoPilot } from './api/controllers/copilotController.js';
+import { setSupabaseClientForExplainability } from './api/controllers/explainabilityController.js';
+import { setSupabaseClientForMetaOptimization } from './api/controllers/metaOptimizationController.js';
+import { setSupabaseClientForTenants } from './api/controllers/tenantController.js';
+import { setSupabaseClientForWhatsAppFunnel, setOrchestratorForWhatsAppFunnel } from './api/controllers/whatsappFunnelController.js';
+import { setSupabaseClientForPublicApi } from './api/controllers/publicApiController.js';
+import { setSupabaseClientForPartners } from './api/controllers/partnerController.js';
+import { setSupabaseClientForAcquisition } from './api/controllers/acquisitionController.js';
+import { setSupabaseClientForIntegrationHub } from './api/controllers/integrationHubController.js';
+import { setSupabaseClientForDistribution } from './api/controllers/distributionController.js';
 import { setTenantGuardSupabaseClient, tenantGuard } from './api/middleware/tenant-guard.js';
 import { setVideoRenderSupabaseClient } from './api/controllers/videoRenderController.js';
 import { setPlanGuardSupabaseClient } from './api/middleware/plan-guard.js';
@@ -80,6 +101,8 @@ import { JobRepository } from './persistence/job-repository.js';
 import processRoutes from './api/routes/process.js';
 import jobsRoutes from './api/routes/jobs.js';
 import approvalRoutes from './api/routes/approval.js';
+import reviewRoutes from './api/routes/reviews.js';
+import revisionRoutes from './api/routes/revisions.js';
 import leadsRoutes from './api/routes/leads.js';
 import opsRoutes from './api/routes/ops.js';
 import experimentRoutes from './api/routes/experiments.js';
@@ -102,7 +125,17 @@ import knowledgeGraphRoutes from './api/routes/knowledge-graph.js';
 import simulationRoutes from './api/routes/simulation.js';
 import decisionRoutes from './api/routes/decisions.js';
 import copilotRoutes from './api/routes/copilot.js';
+import explainabilityRoutes from './api/routes/explainability.js';
+import metaOptimizationRoutes from './api/routes/meta-optimization.js';
+import tenantRoutes, { planRouter as planRoutes } from './api/routes/tenants.js';
+import funnelRoutes from './api/routes/funnel.js';
+import publicApiRoutes from './api/routes/public-api.js';
+import partnerRoutes from './api/routes/partners.js';
+import acquisitionRoutes from './api/routes/acquisition.js';
+import integrationHubRoutes from './api/routes/integration-hub.js';
+import distributionRoutes from './api/routes/distribution.js';
 import customerDashboardRoutes from './api/routes/customer-dashboard.js';
+import videoRoutes from './api/routes/video.js';
 
 // --- Middleware ---
 import { errorHandler } from './api/middleware/error-handler.js';
@@ -133,7 +166,8 @@ import { PerformanceMonitoringModule } from './modules/performance/index.js';
 // Garantir diretórios de storage ao iniciar
 const storageManager = new StorageManager();
 storageManager.ensureDirectories().catch((err) => {
-  logger.warn(`[Bootstrap] Failed to create storage directories: ${err}`);
+  logger.error(`[Bootstrap] CRITICAL: Failed to create storage directories: ${err}`);
+  logger.error('[Bootstrap] Pipeline file operations will fail. Check disk permissions.');
 });
 
 // Criar orchestrator base
@@ -153,35 +187,50 @@ if (supabaseClient) {
   logger.info('[Bootstrap] Persistence mode: in-memory (configure SUPABASE_URL to enable persistence)');
 }
 
-// Registrar todos os 15 módulos no pipeline (ordem definida em pipeline.ts)
-orchestrator.registerModule(new IngestionModule());
-orchestrator.registerModule(new BookCompatibilityAnalysisModule());
-orchestrator.registerModule(new BookReverseEngineeringModule());
-orchestrator.registerModule(new AssetExtractionModule());
-orchestrator.registerModule(new BrandingModule());
-orchestrator.registerModule(new CorrelationModule());
-orchestrator.registerModule(new SourceIntelligenceModule());
-orchestrator.registerModule(new NarrativeModule());
-orchestrator.registerModule(new OutputSelectionModule());
-orchestrator.registerModule(new MediaGenerationModule());
-orchestrator.registerModule(new BlogModule());
-orchestrator.registerModule(new LandingPageModule());
-orchestrator.registerModule(new PersonalizationModule());
-orchestrator.registerModule(new ContentScoringModule());
-orchestrator.registerModule(new RenderExportModule());
-orchestrator.registerModule(new DeliveryModule());
-orchestrator.registerModule(new PerformanceMonitoringModule());
+// Registrar todos os 17 módulos no pipeline (ordem definida em pipeline.ts)
+const pipelineModules = [
+  new IngestionModule(),
+  new BookCompatibilityAnalysisModule(),
+  new BookReverseEngineeringModule(),
+  new AssetExtractionModule(),
+  new BrandingModule(),
+  new CorrelationModule(),
+  new SourceIntelligenceModule(),
+  new NarrativeModule(),
+  new OutputSelectionModule(),
+  new MediaGenerationModule(),
+  new BlogModule(),
+  new LandingPageModule(),
+  new PersonalizationModule(),
+  new ContentScoringModule(),
+  new RenderExportModule(),
+  new DeliveryModule(),
+  new PerformanceMonitoringModule(),
+];
+
+for (const mod of pipelineModules) {
+  try {
+    orchestrator.registerModule(mod);
+  } catch (err) {
+    logger.error(`[Bootstrap] Failed to register module ${mod.constructor.name}: ${err}`);
+    process.exit(1);
+  }
+}
+logger.info(`[Bootstrap] ${pipelineModules.length} pipeline modules registered`);
 
 // Compartilhar orchestrator com todos os controllers
 setProcessOrch(orchestrator);
 setJobsOrch(orchestrator);
 setArtifactsOrch(orchestrator);
+setOrchestratorForWhatsAppFunnel(orchestrator);
 
 // Injetar JobRepository no jobsController (fallback para leitura no Supabase)
 if (supabaseClient) {
   setJobRepository(new JobRepository(supabaseClient));
   setProcessJobRepository(new JobRepository(supabaseClient));
   setSupabaseClientForApproval(supabaseClient);
+  setSupabaseClientForReview(supabaseClient);
+  setSupabaseClientForRevision(supabaseClient);
   setSupabaseClientForExperiments(supabaseClient);
   setSupabaseClientForBilling(supabaseClient);
   setSupabaseClientForAdmin(supabaseClient);
@@ -202,6 +251,15 @@ if (supabaseClient) {
   setSupabaseClientForSimulation(supabaseClient);
   setSupabaseClientForDecisions(supabaseClient);
   setSupabaseClientForCoPilot(supabaseClient);
+  setSupabaseClientForExplainability(supabaseClient);
+  setSupabaseClientForMetaOptimization(supabaseClient);
+  setSupabaseClientForTenants(supabaseClient);
+  setSupabaseClientForWhatsAppFunnel(supabaseClient);
+  setSupabaseClientForPublicApi(supabaseClient);
+  setSupabaseClientForPartners(supabaseClient);
+  setSupabaseClientForAcquisition(supabaseClient);
+  setSupabaseClientForIntegrationHub(supabaseClient);
+  setSupabaseClientForDistribution(supabaseClient);
   setTenantGuardSupabaseClient(supabaseClient);
   setVideoRenderSupabaseClient(supabaseClient);
   setPlanGuardSupabaseClient(supabaseClient);
@@ -230,6 +288,15 @@ if (queueMode) {
 
 const app = express();
 
+// CORS — allow frontend and configured origins
+app.use(cors({
+  origin: process.env.CORS_ORIGIN?.split(',') ?? [
+    'http://localhost:3001',
+    'http://localhost:3000',
+  ],
+  credentials: true,
+}));
+
 app.use(express.json({ limit: '10mb' }));
 
 // Tenant resolution — resolve TenantContext em cada request (Parte 74)
@@ -242,7 +309,7 @@ app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     engine: 'bookagent-intelligence-engine',
-    version: '0.2.0',
+    version: '1.0.0',
     uptime: process.uptime(),
     persistence: {
       mode: persistenceMode,
@@ -256,9 +323,28 @@ app.get('/health', (_req, res) => {
       ai: providers.ai,
       tts: providers.tts,
     },
+    socialPublish: {
+      metaCredentials: !!process.env.META_ACCESS_TOKEN,
+      instagram: !!(process.env.META_ACCESS_TOKEN && process.env.META_INSTAGRAM_ACCOUNT_ID),
+      facebook: !!(process.env.META_ACCESS_TOKEN && process.env.META_FACEBOOK_PAGE_ID),
+    },
     plans: {
       available: ['starter', 'pro', 'agency'],
       enforcement: 'active',
+    },
+    pipeline: {
+      modules: pipelineModules.length,
+      stages: pipelineModules.map((m) => m.constructor.name),
+    },
+    routes: {
+      total: 30,
+      prefixes: [
+        'process', 'jobs', 'leads', 'ops', 'experiments', 'billing',
+        'admin', 'analytics', 'insights', 'templates', 'strategy',
+        'campaigns', 'calendar', 'governance', 'goals', 'memory',
+        'recovery', 'knowledge-graph', 'simulation', 'decisions',
+        'copilot', 'explainability', 'optimization/meta', 'dashboard',
+      ],
     },
   });
 });
@@ -268,6 +354,8 @@ const prefix = config.api.prefix;
 app.use(`${prefix}/process`, processRoutes);
 app.use(`${prefix}/jobs`, jobsRoutes);
 app.use(`${prefix}/jobs`, approvalRoutes);
+app.use(`${prefix}/jobs`, reviewRoutes);
+app.use(`${prefix}/jobs`, revisionRoutes);
 app.use(`${prefix}/leads`, leadsRoutes);
 app.use(`${prefix}/ops`, opsRoutes);
 app.use(`${prefix}/experiments`, experimentRoutes);
@@ -290,10 +378,26 @@ app.use(`${prefix}/knowledge-graph`, knowledgeGraphRoutes);
 app.use(`${prefix}/simulation`, simulationRoutes);
 app.use(`${prefix}/decisions`, decisionRoutes);
 app.use(`${prefix}/copilot`, copilotRoutes);
+app.use(`${prefix}/explainability`, explainabilityRoutes);
+app.use(`${prefix}/optimization/meta`, metaOptimizationRoutes);
+app.use(`${prefix}/tenants`, tenantRoutes);
+app.use(`${prefix}/plans`, planRoutes);
+app.use(`${prefix}/funnel`, funnelRoutes);
 app.use(`${prefix}/dashboard`, customerDashboardRoutes);
+
+app.use(`${prefix}/partners`, partnerRoutes);
+app.use(`${prefix}/acquisition`, acquisitionRoutes);
+app.use(`${prefix}/integrations`, integrationHubRoutes);
+app.use(`${prefix}/distribution`, distributionRoutes);
 
 // Webhooks externos (Kiwify, Hotmart) — sem tenant guard
 app.use('/webhooks', webhooksRoutes);
+
+// Video Generation
+app.use('/generate-video', videoRoutes);
+
+// Public API (separate prefix, API key auth)
+app.use('/api/public/v1', publicApiRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);
