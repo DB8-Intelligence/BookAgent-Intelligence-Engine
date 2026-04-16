@@ -186,6 +186,14 @@ const SPATIAL_TEXT_PAGE_2: SpatialTextBlock[] = [
   { id: 'st-4', page: 2, x: 60, y: 380, width: 200, height: 20, text: 'Sauna exclusiva com vista para a cidade' },
 ];
 
+const SPATIAL_TEXT_PAGE_3: SpatialTextBlock[] = [
+  { id: 'st-5', page: 3, x: 20, y: 580, width: 300, height: 25, text: 'Planta tipo duplex com 4 dormitórios e 280m² de área privativa' },
+];
+
+const SPATIAL_TEXT_PAGE_4: SpatialTextBlock[] = [
+  { id: 'st-6', page: 4, x: 100, y: 550, width: 280, height: 30, text: 'Agende sua visita ao decorado e conheça as condições de lançamento' },
+];
+
 // ==========================================================================
 // Tests
 // ==========================================================================
@@ -294,6 +302,8 @@ describe('Staging Validation — Sprint 2 Pipeline', () => {
       const spatialTextByPage = new Map<number, readonly SpatialTextBlock[]>([
         [1, SPATIAL_TEXT_PAGE_1],
         [2, SPATIAL_TEXT_PAGE_2],
+        [3, SPATIAL_TEXT_PAGE_3],
+        [4, SPATIAL_TEXT_PAGE_4],
       ]);
 
       const elevated = elevateBlocksWithSpatialMatch(BLOCKS, ASSET_MAP, spatialTextByPage);
@@ -303,27 +313,69 @@ describe('Staging Validation — Sprint 2 Pipeline', () => {
       const withSpatial = elevated.filter((b) =>
         b.methods.includes(CorrelationMethod.SPATIAL_ADJACENCY),
       );
+      const elevationRate = withSpatial.length / elevated.length;
+
       console.log(
-        `  Elevated: ${withSpatial.length}/${elevated.length} blocks gained SPATIAL_ADJACENCY`,
+        `  Elevated: ${withSpatial.length}/${elevated.length} blocks gained SPATIAL_ADJACENCY (${(elevationRate * 100).toFixed(0)}%)`,
       );
 
-      // Pages 1 and 2 have spatial text — those blocks should be elevated
+      // With full spatial coverage, expect >= 75% elevation
+      expect(elevationRate).toBeGreaterThanOrEqual(0.75);
+
+      // Confidence should never be downgraded
       for (const block of elevated) {
-        if (block.page <= 2) {
-          // May or may not be elevated depending on proximity thresholds,
-          // but confidence should never be downgraded
-          const original = BLOCKS.find((b) => b.id === block.id)!;
-          const confOrder = [
-            CorrelationConfidence.INFERRED,
-            CorrelationConfidence.LOW,
-            CorrelationConfidence.MEDIUM,
-            CorrelationConfidence.HIGH,
-          ];
-          expect(confOrder.indexOf(block.confidence)).toBeGreaterThanOrEqual(
-            confOrder.indexOf(original.confidence),
+        const original = BLOCKS.find((b) => b.id === block.id)!;
+        const confOrder = [
+          CorrelationConfidence.INFERRED,
+          CorrelationConfidence.LOW,
+          CorrelationConfidence.MEDIUM,
+          CorrelationConfidence.HIGH,
+        ];
+        expect(confOrder.indexOf(block.confidence)).toBeGreaterThanOrEqual(
+          confOrder.indexOf(original.confidence),
+        );
+      }
+    });
+
+    it('should log detailed proximity diagnostics per block', () => {
+      const calc = new ProximityCalculator();
+      const allSpatialText = new Map<number, readonly SpatialTextBlock[]>([
+        [1, SPATIAL_TEXT_PAGE_1],
+        [2, SPATIAL_TEXT_PAGE_2],
+        [3, SPATIAL_TEXT_PAGE_3],
+        [4, SPATIAL_TEXT_PAGE_4],
+      ]);
+
+      console.log('\n  ┌─ PROXIMITY DIAGNOSTICS ─────────────────────────');
+      for (const block of BLOCKS) {
+        const spatialTexts = allSpatialText.get(block.page) ?? [];
+        const scores: { assetId: string; method: string; conf: number; dist: number }[] = [];
+
+        for (const assetId of block.assetIds) {
+          const asset = ASSET_MAP.get(assetId);
+          if (!asset) continue;
+          const best = calc.findBestMatch(asset, spatialTexts);
+          scores.push({
+            assetId,
+            method: best?.method ?? 'none',
+            conf: best?.confidence ?? 0,
+            dist: best?.distance ?? Infinity,
+          });
+        }
+
+        const maxConf = Math.max(...scores.map((s) => s.conf), 0);
+        const willElevate = maxConf >= 30; // matches SPATIAL_ELEVATION_MIN_CONFIDENCE
+        console.log(
+          `  │ Block p${block.page} "${(block.headline ?? '').slice(0, 25)}": ` +
+            `max_conf=${maxConf} will_elevate=${willElevate}`,
+        );
+        for (const s of scores) {
+          console.log(
+            `  │   └─ ${s.assetId}: ${s.method} conf=${s.conf} dist=${s.dist === Infinity ? '∞' : s.dist.toFixed(1)}`,
           );
         }
       }
+      console.log('  └─────────────────────────────────────────────────\n');
     });
   });
 
