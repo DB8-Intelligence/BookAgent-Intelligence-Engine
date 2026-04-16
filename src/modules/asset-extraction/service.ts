@@ -31,6 +31,7 @@ import { ColorSpaceManager } from '../../adapters/pdf/color-manager.js';
 import { LocalStorageAdapter } from '../../adapters/storage/index.js';
 import { SupabaseStorageUploader } from '../../adapters/storage/supabase.js';
 import { logger } from '../../utils/logger.js';
+import { POIDetector } from './poi-detector.js';
 import type { ExtractionOptions } from './types.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL ?? 'https://xhfiyukhjzwhqbacuyxq.supabase.co';
@@ -130,23 +131,45 @@ export class AssetExtractionModule implements IModule {
       `Asset Extraction: ${result.assets.length} assets extraídos de ${result.totalPages} páginas em ${result.processingTimeMs}ms (strategy=${strategy}); pageFormats=${result.pageFormats?.png_pages.length ?? 0} PNG / ${result.pageFormats?.svg_pages.length ?? 0} SVG`,
     );
 
+    // POI detection — enrich assets with point-of-interest coordinates.
+    // Controlled by env POI_DETECTION_METHOD (clip | heuristic).
+    const poiDetector = new POIDetector();
+    const assetsWithPOI = await Promise.all(
+      result.assets.map(async (asset) => {
+        let position: { x: number; y: number } | undefined;
+        try {
+          const { readFile } = await import('fs/promises');
+          const imgBuf = await readFile(asset.filePath);
+          const poi = await poiDetector.detectPOI(imgBuf);
+          position = { x: poi.x, y: poi.y };
+          logger.debug(
+            `POI [${asset.id}]: (${poi.x.toFixed(2)}, ${poi.y.toFixed(2)}) method=${poi.method} conf=${(poi.confidence * 100).toFixed(0)}%`,
+          );
+        } catch {
+          // File may not exist yet (e.g. in test environment) — skip POI
+        }
+        return {
+          id: asset.id,
+          filePath: asset.filePath,
+          thumbnailPath: asset.thumbnailPath,
+          dimensions: asset.dimensions,
+          page: asset.page,
+          position,
+          format: asset.format,
+          sizeBytes: asset.sizeBytes,
+          origin: asset.origin,
+          hash: asset.hash,
+          isOriginal: true as const,
+          geometry: asset.geometry,
+          imageMetadata: asset.imageMetadata,
+        };
+      }),
+    );
+
     return {
       ...context,
       pageFormats: result.pageFormats,
-      assets: result.assets.map((asset) => ({
-        id: asset.id,
-        filePath: asset.filePath,
-        thumbnailPath: asset.thumbnailPath,
-        dimensions: asset.dimensions,
-        page: asset.page,
-        format: asset.format,
-        sizeBytes: asset.sizeBytes,
-        origin: asset.origin,
-        hash: asset.hash,
-        isOriginal: true as const,
-        geometry: asset.geometry,
-        imageMetadata: asset.imageMetadata,
-      })),
+      assets: assetsWithPOI,
     };
   }
 }
