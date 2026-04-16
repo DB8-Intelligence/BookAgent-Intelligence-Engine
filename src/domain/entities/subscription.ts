@@ -33,10 +33,12 @@ export enum SubscriptionStatus {
 
 /** Provider de billing suportado */
 export enum BillingProvider {
-  STRIPE = 'stripe',
-  ASAAS = 'asaas',
-  MANUAL = 'manual',
-  NONE = 'none',
+  STRIPE  = 'stripe',
+  ASAAS   = 'asaas',
+  HOTMART = 'hotmart',
+  KIWIFY  = 'kiwify',
+  MANUAL  = 'manual',
+  NONE    = 'none',
 }
 
 /** Tipo de evento de webhook do gateway */

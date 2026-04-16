@@ -53,7 +53,7 @@ export function setSupabaseClientForBilling(client: SupabaseClientInstance): voi
 
 const CreateSubscriptionSchema = z.object({
   tenantId: z.string().min(1),
-  planTier: z.enum(['basic', 'pro', 'business']),
+  planTier: z.enum(['starter', 'pro', 'agency']),
   trial: z.boolean().optional().default(false),
   trialDays: z.number().positive().optional(),
   customerEmail: z.string().email().optional(),
@@ -61,7 +61,7 @@ const CreateSubscriptionSchema = z.object({
 });
 
 const ChangePlanSchema = z.object({
-  toPlan: z.enum(['basic', 'pro', 'business']),
+  toPlan: z.enum(['starter', 'pro', 'agency']),
   immediate: z.boolean().optional().default(true),
   requestedBy: z.string().min(1),
 });
@@ -310,7 +310,7 @@ export async function reactivateSubscriptionEndpoint(req: Request, res: Response
 export async function getUsageEndpoint(req: Request, res: Response): Promise<void> {
   const { tenantId } = req.params;
 
-  const tenantContext = req.tenantContext ?? createDefaultTenantContext(undefined, 'basic');
+  const tenantContext = req.tenantContext ?? createDefaultTenantContext(undefined, 'starter');
   // Override tenantId for the query
   const ctx = { ...tenantContext, tenantId };
 

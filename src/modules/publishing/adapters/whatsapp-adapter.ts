@@ -1,20 +1,24 @@
 /**
  * WhatsApp Adapter — Publishing Adapter Layer
  *
- * Adapter para envio de mídia via WhatsApp Business API / n8n webhook.
+ * Adapter para envio de mídia via Evolution API (padrão DB8 Intelligence)
+ * ou WhatsApp Business Cloud API (fallback).
  *
- * Estratégia de integração:
- *   - Opção 1: WhatsApp Business Cloud API (direto)
- *   - Opção 2: Webhook para n8n (recomendado — BookAgent já usa n8n)
+ * Estratégia de integração (em ordem de prioridade):
+ *   1. Evolution API (self-hosted em evolution-api.db8intelligence.com.br)
+ *      — já usada em todo ecossistema DB8, sem custo por mensagem
+ *   2. n8n Webhook (delega ao Fluxo 4 do BookAgent)
+ *   3. WhatsApp Business Cloud API (direto — fallback futuro)
  *
  * Variáveis de ambiente:
- *   - WHATSAPP_WEBHOOK_URL: URL do webhook n8n para envio
- *   - WHATSAPP_API_TOKEN: token da Business API (alternativo)
- *   - WHATSAPP_PHONE_NUMBER_ID: ID do número (alternativo)
+ *   - EVOLUTION_API_URL:      https://evolution-api.db8intelligence.com.br
+ *   - EVOLUTION_API_KEY:      global key da Evolution API
+ *   - EVOLUTION_INSTANCE:     nome da instância (ex: bookagent)
+ *   - WHATSAPP_WEBHOOK_URL:   URL do webhook n8n (alternativo)
+ *   - WHATSAPP_API_TOKEN:     token Business API (fallback)
+ *   - WHATSAPP_PHONE_NUMBER_ID: ID do número Business (fallback)
  *
- * Status: Stub funcional via webhook.
- *
- * Parte 67: Publishing Adapter Layer
+ * Parte 67 (revisão): Evolution API + Business API
  */
 
 import type { ISocialAdapter, PublishPayload, PublishResult } from '../../../domain/entities/publication.js';
@@ -27,9 +31,35 @@ import { logger } from '../../../utils/logger.js';
 
 function getConfig() {
   return {
+    // Evolution API (DB8 standard)
+    evolutionUrl: (process.env.EVOLUTION_API_URL ?? '').replace(/\/$/, ''),
+    evolutionKey: process.env.EVOLUTION_API_KEY ?? '',
+    evolutionInstance: process.env.EVOLUTION_INSTANCE ?? 'bookagent',
+    // n8n webhook fallback
     webhookUrl: process.env.WHATSAPP_WEBHOOK_URL ?? '',
+    // Business API fallback
     apiToken: process.env.WHATSAPP_API_TOKEN ?? '',
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ?? '',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Evolution API payloads
+// ---------------------------------------------------------------------------
+
+interface EvolutionTextPayload {
+  number: string;
+  options: { delay: number; presence: string };
+  textMessage: { text: string };
+}
+
+interface EvolutionMediaPayload {
+  number: string;
+  options: { delay: number; presence: string };
+  mediaMessage: {
+    mediatype: 'video' | 'image' | 'audio' | 'document';
+    caption?: string;
+    media: string; // URL pública
   };
 }
 
@@ -39,34 +69,149 @@ function getConfig() {
 
 export class WhatsAppAdapter implements ISocialAdapter {
   readonly platform = SocialPlatform.WHATSAPP;
-  readonly name = 'WhatsApp Business';
+  readonly name = 'WhatsApp (Evolution API)';
 
   isConfigured(): boolean {
     const cfg = getConfig();
-    return !!(cfg.webhookUrl || (cfg.apiToken && cfg.phoneNumberId));
+    return !!(
+      (cfg.evolutionUrl && cfg.evolutionKey) ||
+      cfg.webhookUrl ||
+      (cfg.apiToken && cfg.phoneNumberId)
+    );
   }
 
   async publish(payload: PublishPayload): Promise<PublishResult> {
+    if (process.env.SOCIAL_PUBLISH_MODE === 'mock') {
+      const fakeId = `whatsapp-mock-${Date.now()}`;
+      logger.info(`[WhatsAppAdapter] MOCK: simulating send caption="${payload.caption.slice(0, 40)}..." id=${fakeId}`);
+      return {
+        success: true,
+        platformPostId: fakeId,
+        publishedAt: new Date(),
+      };
+    }
+
     if (!this.isConfigured()) {
       return {
         success: false,
-        error: 'WhatsApp adapter not configured — set WHATSAPP_WEBHOOK_URL or WHATSAPP_API_TOKEN + WHATSAPP_PHONE_NUMBER_ID',
+        error: 'WhatsApp adapter não configurado — defina EVOLUTION_API_URL + EVOLUTION_API_KEY ou WHATSAPP_WEBHOOK_URL',
       };
     }
 
     const cfg = getConfig();
 
-    // Strategy: prefer n8n webhook (simpler, already in BookAgent infra)
+    // Número destino: campo phone do userContext, ou whatsapp do payload
+    const phone = payload.recipientPhone;
+    if (!phone) {
+      return { success: false, error: 'recipientPhone não informado no payload' };
+    }
+
+    // Estratégia 1: Evolution API (padrão DB8)
+    if (cfg.evolutionUrl && cfg.evolutionKey) {
+      return this.publishViaEvolution(cfg, phone, payload);
+    }
+
+    // Estratégia 2: n8n webhook
     if (cfg.webhookUrl) {
       return this.publishViaWebhook(cfg.webhookUrl, payload);
     }
 
-    // Fallback: direct WhatsApp Business Cloud API
-    return this.publishViaBAPI(cfg, payload);
+    // Estratégia 3: Business Cloud API
+    return this.publishViaBAPI(cfg, phone, payload);
   }
 
   // ---------------------------------------------------------------------------
-  // Webhook (n8n)
+  // Evolution API
+  // ---------------------------------------------------------------------------
+
+  private async publishViaEvolution(
+    cfg: ReturnType<typeof getConfig>,
+    phone: string,
+    payload: PublishPayload,
+  ): Promise<PublishResult> {
+    const baseUrl = `${cfg.evolutionUrl}/message`;
+    const headers = {
+      'Content-Type': 'application/json',
+      'apikey': cfg.evolutionKey,
+    };
+
+    const hasMedia = !!(payload.videoUrl || payload.thumbnailUrl);
+
+    try {
+      if (hasMedia) {
+        // Enviar mídia + caption
+        const mediaUrl = payload.videoUrl ?? payload.thumbnailUrl!;
+        const mediaType = payload.videoUrl ? 'video' : 'image';
+        const caption = this.buildCaption(payload);
+
+        const body: EvolutionMediaPayload = {
+          number: this.normalizePhone(phone),
+          options: { delay: 1000, presence: 'composing' },
+          mediaMessage: {
+            mediatype: mediaType,
+            caption,
+            media: mediaUrl,
+          },
+        };
+
+        const res = await fetch(`${baseUrl}/sendMedia/${cfg.evolutionInstance}`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+
+        const data = await res.json() as Record<string, unknown>;
+
+        if (res.ok && (data.key || data.status === 'success' || data.id)) {
+          const msgId = this.extractMsgId(data);
+          logger.info(`[WhatsAppAdapter] Evolution mídia enviada: ${msgId}`);
+          return { success: true, platformPostId: msgId, statusCode: res.status, publishedAt: new Date(), rawResponse: data };
+        }
+
+        return {
+          success: false,
+          statusCode: res.status,
+          error: (data.error ?? data.message ?? `Evolution API HTTP ${res.status}`) as string,
+        };
+
+      } else {
+        // Enviar apenas texto
+        const body: EvolutionTextPayload = {
+          number: this.normalizePhone(phone),
+          options: { delay: 1000, presence: 'composing' },
+          textMessage: { text: this.buildCaption(payload) },
+        };
+
+        const res = await fetch(`${baseUrl}/sendText/${cfg.evolutionInstance}`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+
+        const data = await res.json() as Record<string, unknown>;
+
+        if (res.ok && (data.key || data.status === 'success' || data.id)) {
+          const msgId = this.extractMsgId(data);
+          logger.info(`[WhatsAppAdapter] Evolution texto enviado: ${msgId}`);
+          return { success: true, platformPostId: msgId, statusCode: res.status, publishedAt: new Date(), rawResponse: data };
+        }
+
+        return {
+          success: false,
+          statusCode: res.status,
+          error: (data.error ?? data.message ?? `Evolution API HTTP ${res.status}`) as string,
+        };
+      }
+
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`[WhatsAppAdapter] Evolution API error: ${message}`);
+      return { success: false, error: message };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // n8n Webhook
   // ---------------------------------------------------------------------------
 
   private async publishViaWebhook(
@@ -80,11 +225,9 @@ export class WhatsAppAdapter implements ISocialAdapter {
         contentType: payload.contentType,
         jobId: payload.jobId,
         videoUrl: payload.videoUrl,
-        videoPath: payload.videoPath,
         thumbnailUrl: payload.thumbnailUrl,
-        caption: payload.caption,
-        hashtags: payload.hashtags,
-        variantId: payload.variantId,
+        caption: this.buildCaption(payload),
+        recipientPhone: payload.recipientPhone,
         timestamp: new Date().toISOString(),
       };
 
@@ -96,45 +239,117 @@ export class WhatsAppAdapter implements ISocialAdapter {
 
       if (response.ok) {
         const data = await response.json().catch(() => ({})) as Record<string, unknown>;
-        logger.info(`[WhatsAppAdapter] Webhook delivered: ${webhookUrl}`);
-
-        return {
-          success: true,
-          statusCode: response.status,
-          publishedAt: new Date(),
-          rawResponse: data,
-        };
+        logger.info(`[WhatsAppAdapter] Webhook n8n entregue: ${webhookUrl}`);
+        return { success: true, statusCode: response.status, publishedAt: new Date(), rawResponse: data };
       }
 
-      return {
-        success: false,
-        statusCode: response.status,
-        error: `Webhook returned ${response.status}`,
-      };
+      return { success: false, statusCode: response.status, error: `Webhook retornou ${response.status}` };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.error(`[WhatsAppAdapter] Webhook failed: ${message}`);
       return { success: false, error: message };
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Business Cloud API (stub)
+  // WhatsApp Business Cloud API
   // ---------------------------------------------------------------------------
 
   private async publishViaBAPI(
-    _cfg: { apiToken: string; phoneNumberId: string },
+    cfg: ReturnType<typeof getConfig>,
+    phone: string,
     payload: PublishPayload,
   ): Promise<PublishResult> {
-    // TODO: Implement WhatsApp Business Cloud API media upload + send
-    logger.info(
-      `[WhatsAppAdapter] BAPI publish requested: type=${payload.contentType} ` +
-      `job=${payload.jobId}`,
-    );
+    const BAPI_BASE = 'https://graph.facebook.com/v19.0';
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${cfg.apiToken}`,
+    };
 
+    try {
+      const hasMedia = !!(payload.videoUrl || payload.thumbnailUrl);
+
+      let body: Record<string, unknown>;
+
+      if (hasMedia) {
+        const mediaUrl = payload.videoUrl ?? payload.thumbnailUrl!;
+        const mediaType = payload.videoUrl ? 'video' : 'image';
+
+        body = {
+          messaging_product: 'whatsapp',
+          to: this.normalizePhone(phone),
+          type: mediaType,
+          [mediaType]: {
+            link: mediaUrl,
+            caption: this.buildCaption(payload),
+          },
+        };
+      } else {
+        body = {
+          messaging_product: 'whatsapp',
+          to: this.normalizePhone(phone),
+          type: 'text',
+          text: { body: this.buildCaption(payload) },
+        };
+      }
+
+      const res = await fetch(`${BAPI_BASE}/${cfg.phoneNumberId}/messages`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json() as Record<string, unknown>;
+
+      if (res.ok) {
+        const msgId = (data.messages as Array<{ id: string }>)?.[0]?.id;
+        logger.info(`[WhatsAppAdapter] BAPI enviado: ${msgId}`);
+        return { success: true, platformPostId: msgId, statusCode: res.status, publishedAt: new Date(), rawResponse: data };
+      }
+
+      return {
+        success: false,
+        statusCode: res.status,
+        error: (data.error as Record<string, unknown>)?.message as string ?? `BAPI HTTP ${res.status}`,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, error: message };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check status (Evolution API)
+  // ---------------------------------------------------------------------------
+
+  async checkStatus(platformPostId: string): Promise<PublishResult> {
+    // Evolution API não expõe endpoint de status por message_id publicamente
+    // Registramos como entregue se temos um platformPostId
     return {
-      success: false,
-      error: 'WhatsApp Business API direct publishing not yet implemented — use webhook instead',
+      success: !!platformPostId,
+      platformPostId,
+      ...(platformPostId ? { publishedAt: new Date() } : { error: 'Message ID não disponível' }),
     };
   }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  /** Normaliza telefone: remove +, spaces, etc. Ex: +55 71 99973-3883 → 5571999733883 */
+  private normalizePhone(phone: string): string {
+    return phone.replace(/\D/g, '');
+  }
+
+  private buildCaption(payload: PublishPayload): string {
+    const tags = payload.hashtags?.join(' ') ?? '';
+    return tags ? `${payload.caption}\n\n${tags}` : payload.caption;
+  }
+
+  private extractMsgId(data: Record<string, unknown>): string | undefined {
+    if (data.key && typeof data.key === 'object') {
+      return (data.key as Record<string, unknown>).id as string | undefined;
+    }
+    return data.id as string | undefined ?? data.messageId as string | undefined;
+  }
 }
+

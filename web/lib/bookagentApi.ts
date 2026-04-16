@@ -331,11 +331,34 @@ export interface DashboardInsights {
   generatedAt: string;
 }
 
+export interface AnalyticsTimeSeriesPoint {
+  period: string;
+  value: number;
+  label?: string;
+}
+
+export interface AnalyticsTimeSeries {
+  name: string;
+  unit: string;
+  points: AnalyticsTimeSeriesPoint[];
+  total: number;
+  average: number;
+}
+
+export interface AnalyticsPlatformBreakdown {
+  platform: string;
+  total: number;
+  succeeded: number;
+  failed: number;
+  rate: number;
+}
+
 export interface DashboardAnalytics {
   period: { from: string; to: string };
   granularity: string;
-  jobs: { total: number; successRate: number; throughput: Array<{ date: string; count: number }> };
+  jobs: { total: number; successRate: number; throughput: { date: string; count: number }[] };
   publications: { total: number; successRate: number; byPlatform: Record<string, number> };
+  generatedAt: string;
 }
 
 export interface DashboardPublications {
@@ -463,19 +486,43 @@ export const bookagent = {
       const qs = p.toString();
       return request<DashboardAnalytics>(`/dashboard/analytics${qs ? `?${qs}` : ""}`);
     },
-    publications: (limit?: number) => request<DashboardPublications>(`/dashboard/publications${limit ? `?limit=${limit}` : ""}`),
-    campaigns: () => request<DashboardCampaigns>("/dashboard/campaigns"),
-    jobPublications: (jobId: string) => request<{ jobId: string; publications: DashboardPublication[]; published_count: number; failed_count: number }>(`/dashboard/jobs/${jobId}/publications`),
+    /**
+     * Lista global de publicações.
+     * NOTA: Endpoint não exposto pelo backend customer-dashboard atualmente.
+     * Retornamos shape vazio safe para que a página não quebre.
+     * Para ver publicações use jobPublications(jobId) ou abra o detalhe do job.
+     */
+    publications: async (_limit?: number): Promise<DashboardPublications> => ({
+      total: 0,
+      published: 0,
+      failed: 0,
+      pending: 0,
+      publications: [],
+      generatedAt: new Date().toISOString(),
+    }),
+    /**
+     * Lista de campanhas.
+     * NOTA: Endpoint /dashboard/campaigns não existe; /campaigns retorna 500.
+     * Retornamos shape vazio safe.
+     */
+    campaigns: async (): Promise<DashboardCampaigns> => ({
+      total: 0,
+      active: 0,
+      campaigns: [],
+      generatedAt: new Date().toISOString(),
+    }),
+    // Action endpoints — backend mounta em /jobs/:id/..., NÃO em /dashboard/jobs/:id/...
+    jobPublications: (jobId: string) => request<{ jobId: string; publications: DashboardPublication[]; published_count: number; failed_count: number }>(`/jobs/${jobId}/publications`),
     approve: (jobId: string, data: { userId: string; comment?: string; approvalType?: "intermediate" | "final" }) =>
-      request<{ jobId: string; decision: string; status: string; message: string; n8nTriggered: boolean }>(`/dashboard/jobs/${jobId}/approve`, { method: "POST", body: JSON.stringify(data) }),
+      request<{ jobId: string; decision: string; status: string; message: string; n8nTriggered: boolean }>(`/jobs/${jobId}/approve`, { method: "POST", body: JSON.stringify(data) }),
     reject: (jobId: string, data: { userId: string; comment: string; approvalType?: "intermediate" | "final" }) =>
-      request<{ jobId: string; decision: string; status: string; message: string; n8nTriggered: boolean }>(`/dashboard/jobs/${jobId}/reject`, { method: "POST", body: JSON.stringify(data) }),
+      request<{ jobId: string; decision: string; status: string; message: string; n8nTriggered: boolean }>(`/jobs/${jobId}/reject`, { method: "POST", body: JSON.stringify(data) }),
     comment: (jobId: string, data: { userId: string; comment: string }) =>
-      request<{ jobId: string; decision: string; status: string; message: string }>(`/dashboard/jobs/${jobId}/comment`, { method: "POST", body: JSON.stringify(data) }),
+      request<{ jobId: string; decision: string; status: string; message: string }>(`/jobs/${jobId}/comment`, { method: "POST", body: JSON.stringify(data) }),
     publish: (jobId: string, data: { userId: string; platforms?: string[] }) =>
-      request<{ jobId: string; decision: string; status: string; message: string; n8nTriggered: boolean }>(`/dashboard/jobs/${jobId}/publish`, { method: "POST", body: JSON.stringify(data) }),
+      request<{ jobId: string; decision: string; status: string; message: string; n8nTriggered: boolean }>(`/jobs/${jobId}/publish`, { method: "POST", body: JSON.stringify(data) }),
     socialPublish: (jobId: string, data: { userId: string; platforms?: string[]; caption?: string; hashtags?: string[]; imageUrl?: string }) =>
-      request<{ jobId: string; results: DashboardPublication[]; successCount: number; failureCount: number; finalStatus: string }>(`/dashboard/jobs/${jobId}/social-publish`, { method: "POST", body: JSON.stringify(data) }),
+      request<{ jobId: string; results: DashboardPublication[]; successCount: number; failureCount: number; finalStatus: string }>(`/jobs/${jobId}/social-publish`, { method: "POST", body: JSON.stringify(data) }),
   },
 
   // ---------- Co-Pilot ----------

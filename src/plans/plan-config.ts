@@ -4,36 +4,54 @@
  * Define os limites, capacidades e custos por plano.
  * Fonte única de verdade para planos — usada por middlewares, workers e analytics.
  *
- * Parte 55: Escala Real e Monetização
+ * Planos (revisão 2026-04):
+ *   starter  — 1 book/mês · R$ 47 · corretor individual
+ *   pro      — 3 books/mês · R$ 97 · corretor ativo
+ *   agency   — 10 books/mês · R$ 247 · imobiliária / agência
  *
- * Planos:
- *   basic    — Produto standalone com execução manual
- *   pro      — Automação completa + publicação social
- *   business — API + multi-tenant (fase futura)
+ * Composição de output por book:
+ *   - 3 reels com narração (TTS) 30–60s
+ *   - 1 podcast estilo NotebookLM (2 vozes, até 60s)
+ *   - 3 carrosséis com até 10 imagens cada (IA)
+ *   - 3 stories com texto e CTA
+ *   - 1 landing page HTML
+ *   - 1 blog post SEO
+ *
+ * Custo operacional por book (stack completa): ~R$ 5,61
+ *   Creatomate 3× = R$0,84 | Fal.ai 30 imgs = R$3,60
+ *   ElevenLabs 3×+podcast = R$0,90 | Claude = R$0,12 | Infra = R$0,15
  */
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type PlanTier = 'basic' | 'pro' | 'business';
+export type PlanTier = 'starter' | 'pro' | 'agency';
 
 export interface PlanLimits {
-  /** Máximo de jobs criados por mês por usuário */
+  /** Máximo de books processados por mês */
   jobsPerMonth: number;
   /** Máximo de jobs simultâneos (in processing) */
   concurrentJobs: number;
   /** Prioridade na fila BullMQ (menor = maior prioridade) */
   queuePriority: number;
+  /** Reels gerados por book (com narração TTS) */
+  reelsPerBook: number;
+  /** Podcasts gerados por book (2 vozes, estilo NotebookLM) */
+  podcastsPerBook: number;
+  /** Carrosséis gerados por book (até 10 imagens cada) */
+  carouselsPerBook: number;
+  /** Stories gerados por book (com texto e CTA) */
+  storiesPerBook: number;
   /** Acesso a publicação automática nas redes sociais */
   autoPublish: boolean;
-  /** Acesso a aprovação intermediária (prévia antes do pacote final) */
-  intermediateApproval: boolean;
+  /** Aprovação via WhatsApp antes da entrega final */
+  whatsappApproval: boolean;
   /** Número máximo de plataformas de publicação simultâneas */
   maxPublishPlatforms: number;
   /** Tamanho máximo de arquivo em MB */
   maxFileSizeMB: number;
-  /** Acesso à API programática (sem n8n) */
+  /** Acesso à API programática */
   apiAccess: boolean;
   /** Webhook customizado ao finalizar job */
   webhookOnCompletion: boolean;
@@ -59,66 +77,78 @@ export interface PlanDefinition {
 // ============================================================================
 
 export const PLANS: Record<PlanTier, PlanDefinition> = {
-  basic: {
-    tier: 'basic',
-    name: 'BookAgent Básico',
-    description: 'Processamento manual de PDF → conteúdo. Sem automação de publicação.',
-    priceMonthlyBRL: 9700, // R$ 97,00
-    estimatedCostPerJobBRL: 850, // R$ 8,50 (IA + storage + worker)
+  starter: {
+    tier: 'starter',
+    name: 'Starter',
+    description: 'Ideal para o corretor que quer experimentar. 1 book por mês com o pacote completo de conteúdo.',
+    priceMonthlyBRL: 4700, // R$ 47,00
+    estimatedCostPerJobBRL: 561, // R$ 5,61 / book (stack completa)
     limits: {
-      jobsPerMonth: 10,
+      jobsPerMonth: 1,
       concurrentJobs: 1,
-      queuePriority: 10,       // baixa prioridade na fila
+      queuePriority: 10,
+      reelsPerBook: 3,
+      podcastsPerBook: 1,
+      carouselsPerBook: 3,
+      storiesPerBook: 3,
       autoPublish: false,
-      intermediateApproval: false,
+      whatsappApproval: false,
       maxPublishPlatforms: 0,
       maxFileSizeMB: 50,
       apiAccess: false,
       webhookOnCompletion: false,
-      requestsPerMinute: 20,
-      jobsPerHour: 3,
+      requestsPerMinute: 10,
+      jobsPerHour: 10,
     },
   },
 
   pro: {
     tier: 'pro',
-    name: 'BookAgent Pro',
-    description: 'Automação completa via WhatsApp + dashboard. Publicação social integrada.',
-    priceMonthlyBRL: 24700, // R$ 247,00
-    estimatedCostPerJobBRL: 1200, // R$ 12,00 (IA + storage + worker + Meta API)
+    name: 'Pro',
+    description: 'Para o corretor ativo. 3 books por mês com aprovação via WhatsApp e publicação automática.',
+    priceMonthlyBRL: 9700, // R$ 97,00
+    estimatedCostPerJobBRL: 561, // R$ 5,61 / book
     limits: {
-      jobsPerMonth: 50,
-      concurrentJobs: 3,
-      queuePriority: 5,        // prioridade média na fila
+      jobsPerMonth: 3,
+      concurrentJobs: 2,
+      queuePriority: 5,
+      reelsPerBook: 3,
+      podcastsPerBook: 1,
+      carouselsPerBook: 3,
+      storiesPerBook: 3,
       autoPublish: true,
-      intermediateApproval: true,
-      maxPublishPlatforms: 2,  // Instagram + Facebook
+      whatsappApproval: true,
+      maxPublishPlatforms: 2, // Instagram + Facebook
       maxFileSizeMB: 100,
       apiAccess: false,
       webhookOnCompletion: true,
-      requestsPerMinute: 60,
-      jobsPerHour: 10,
+      requestsPerMinute: 30,
+      jobsPerHour: 3,
     },
   },
 
-  business: {
-    tier: 'business',
-    name: 'BookAgent Business',
-    description: 'API programática, multi-tenant, SLA definido. Para integradores e parceiros.',
-    priceMonthlyBRL: 99700, // R$ 997,00
-    estimatedCostPerJobBRL: 1500, // R$ 15,00 (IA + storage + worker + suporte + SLA)
+  agency: {
+    tier: 'agency',
+    name: 'Agência',
+    description: 'Para imobiliárias e agências. 10 books por mês com máxima prioridade e API programática.',
+    priceMonthlyBRL: 24700, // R$ 247,00
+    estimatedCostPerJobBRL: 561, // R$ 5,61 / book
     limits: {
-      jobsPerMonth: 500,
-      concurrentJobs: 10,
-      queuePriority: 1,        // máxima prioridade na fila
+      jobsPerMonth: 10,
+      concurrentJobs: 5,
+      queuePriority: 1,
+      reelsPerBook: 3,
+      podcastsPerBook: 1,
+      carouselsPerBook: 3,
+      storiesPerBook: 3,
       autoPublish: true,
-      intermediateApproval: true,
-      maxPublishPlatforms: 4,  // Instagram + Facebook + LinkedIn + Twitter (futuro)
+      whatsappApproval: true,
+      maxPublishPlatforms: 3, // Instagram + Facebook + WhatsApp
       maxFileSizeMB: 200,
       apiAccess: true,
       webhookOnCompletion: true,
-      requestsPerMinute: 200,
-      jobsPerHour: 50,
+      requestsPerMinute: 60,
+      jobsPerHour: 10,
     },
   },
 };
@@ -127,10 +157,10 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
 // Helpers
 // ============================================================================
 
-/** Retorna a definição do plano. Fallback para 'basic' se desconhecido. */
+/** Retorna a definição do plano. Fallback para 'starter' se desconhecido. */
 export function getPlan(tier: string | null | undefined): PlanDefinition {
   const t = tier as PlanTier | undefined;
-  return PLANS[t ?? 'basic'] ?? PLANS.basic;
+  return PLANS[t ?? 'starter'] ?? PLANS.starter;
 }
 
 /** Margem bruta estimada por job em centavos de BRL. */
@@ -140,9 +170,20 @@ export function estimatedMargin(tier: PlanTier, jobsConsumedThisMonth: number): 
   return revenuePerJob - plan.estimatedCostPerJobBRL;
 }
 
-/**
- * Verifica se o usuário pode iniciar mais um job com base no uso do mês.
- */
+/** Verifica se o usuário pode iniciar mais um job com base no uso do mês. */
 export function canCreateJob(tier: PlanTier, jobsThisMonth: number): boolean {
   return jobsThisMonth < PLANS[tier].limits.jobsPerMonth;
+}
+
+/** Descrição legível dos outputs inclusos por book. */
+export function planOutputSummary(tier: PlanTier): string {
+  const l = PLANS[tier].limits;
+  return [
+    `${l.reelsPerBook} reels com narração`,
+    `${l.podcastsPerBook} podcast (2 vozes)`,
+    `${l.carouselsPerBook} carrosséis (10 imagens cada)`,
+    `${l.storiesPerBook} stories com CTA`,
+    '1 landing page',
+    '1 blog post',
+  ].join(' · ');
 }

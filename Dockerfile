@@ -9,6 +9,8 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+RUN apk add --no-cache libc6-compat
+
 COPY package*.json ./
 RUN npm ci
 
@@ -18,7 +20,7 @@ RUN npm run build
 # --- Stage 2: Runtime ---
 FROM node:20-alpine
 
-RUN apk add --no-cache ffmpeg python3 py3-pip \
+RUN apk add --no-cache ffmpeg python3 py3-pip poppler-utils libc6-compat \
     && mkdir -p /tmp/videos
 
 WORKDIR /app
@@ -35,5 +37,8 @@ COPY musics/ ./musics/
 RUN mkdir -p storage/assets storage/outputs storage/temp
 
 EXPOSE 3000
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s \
+  CMD wget -qO- http://localhost:3000/health || exit 1
 
 CMD ["node", "dist/index.js"]

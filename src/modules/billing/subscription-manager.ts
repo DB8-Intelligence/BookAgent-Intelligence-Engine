@@ -501,7 +501,7 @@ function isValidTransition(
 }
 
 function planDirection(from: PlanTier, to: PlanTier): 'upgrade' | 'downgrade' {
-  const order: Record<PlanTier, number> = { basic: 0, pro: 1, business: 2 };
+  const order: Record<PlanTier, number> = { starter: 0, pro: 1, agency: 2 };
   return order[to] > order[from] ? 'upgrade' : 'downgrade';
 }
 

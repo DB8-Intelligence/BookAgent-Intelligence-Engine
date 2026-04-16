@@ -93,7 +93,7 @@ setInterval(() => {
  */
 export function requestRateLimiter(req: Request, res: Response, next: NextFunction): void {
   const id = req.resolvedUserId ?? req.ip ?? 'unknown';
-  const tier: PlanTier = req.resolvedPlanTier ?? 'basic';
+  const tier: PlanTier = req.resolvedPlanTier ?? 'starter';
   const limit = getPlan(tier).limits.requestsPerMinute;
 
   const count = minuteCounter.increment(id);
@@ -119,7 +119,7 @@ export function requestRateLimiter(req: Request, res: Response, next: NextFuncti
  */
 export function jobRateLimiter(req: Request, res: Response, next: NextFunction): void {
   const id = req.resolvedUserId ?? req.ip ?? 'unknown';
-  const tier: PlanTier = req.resolvedPlanTier ?? 'basic';
+  const tier: PlanTier = req.resolvedPlanTier ?? 'starter';
   const limit = getPlan(tier).limits.jobsPerHour;
 
   const key = `job:${id}`;

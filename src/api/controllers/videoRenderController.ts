@@ -189,7 +189,7 @@ export async function renderVideo(req: Request, res: Response): Promise<void> {
     // Track metric
     metrics.track('job_started', {
       userId: req.resolvedUserId ?? 'unknown',
-      planTier: req.resolvedPlanTier ?? 'basic',
+      planTier: req.resolvedPlanTier ?? 'starter',
       jobId,
       metadata: { type: 'video_render', scenes: sceneCount },
     });

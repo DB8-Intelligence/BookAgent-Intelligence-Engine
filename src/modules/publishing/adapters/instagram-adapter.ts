@@ -49,6 +49,17 @@ export class InstagramAdapter implements ISocialAdapter {
   }
 
   async publish(payload: PublishPayload): Promise<PublishResult> {
+    if (process.env.SOCIAL_PUBLISH_MODE === 'mock') {
+      const fakeId = `instagram-mock-${Date.now()}`;
+      logger.info(`[InstagramAdapter] MOCK: simulating Reel upload caption="${payload.caption.slice(0, 40)}..." id=${fakeId}`);
+      return {
+        success: true,
+        platformPostId: fakeId,
+        postUrl: `https://instagram.com/p/${fakeId}`,
+        publishedAt: new Date(),
+      };
+    }
+
     if (!this.isConfigured()) {
       return {
         success: false,

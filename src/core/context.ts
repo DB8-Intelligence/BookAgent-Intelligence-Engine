@@ -55,6 +55,11 @@ export interface ProcessingContext {
 
   // --- Populado pelo Asset Extraction ---
   assets?: Asset[];
+  /** Renderizações por página (PNG 300dpi + SVG) — URLs públicas em Supabase Storage */
+  pageFormats?: {
+    png_pages: string[];
+    svg_pages: string[];
+  };
 
   // --- Populado pelo Correlation ---
   correlations?: CorrelationBlock[];

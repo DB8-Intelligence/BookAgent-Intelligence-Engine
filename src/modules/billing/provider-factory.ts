@@ -12,6 +12,8 @@ import { BillingProvider } from '../../domain/entities/subscription.js';
 import type { IBillingProvider } from './billing-provider.js';
 import { ManualBillingProvider } from './providers/manual-provider.js';
 import { StripeBillingProvider } from './providers/stripe-provider.js';
+import { HotmartBillingProvider } from './providers/hotmart-provider.js';
+import { KiwifyBillingProvider } from './providers/kiwify-provider.js';
 import { logger } from '../../utils/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -21,6 +23,8 @@ import { logger } from '../../utils/logger.js';
 const providers = new Map<BillingProvider, IBillingProvider>();
 providers.set(BillingProvider.MANUAL, new ManualBillingProvider());
 providers.set(BillingProvider.STRIPE, new StripeBillingProvider());
+providers.set(BillingProvider.HOTMART, new HotmartBillingProvider());
+providers.set(BillingProvider.KIWIFY, new KiwifyBillingProvider());
 
 // ---------------------------------------------------------------------------
 // Factory

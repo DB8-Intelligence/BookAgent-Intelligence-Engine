@@ -52,7 +52,7 @@ export async function createTenant(
   supabase: SupabaseClient | null,
 ): Promise<Tenant> {
   const now = new Date();
-  const planTier: PlanTier = input.planTier ?? 'basic';
+  const planTier: PlanTier = input.planTier ?? 'starter';
   const isTrial = input.trial ?? true;
   const slug = input.slug ?? input.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
@@ -275,9 +275,9 @@ export async function buildTenantContext(
       tenantId,
       userId,
       userRole: TenantRole.MEMBER,
-      planTier: 'basic',
-      features: PLAN_FEATURES['basic'],
-      limits: PLAN_TENANT_LIMITS['basic'],
+      planTier: 'starter',
+      features: PLAN_FEATURES['starter'],
+      limits: PLAN_TENANT_LIMITS['starter'],
       learningScope: LearningScope.TENANT,
     };
   }
@@ -308,9 +308,9 @@ function mapRow(r: Record<string, unknown>): Tenant {
 
   const rawPlan = pj<Record<string, unknown>>(r['plan'], {});
   const plan: TenantPlan = {
-    tier: (rawPlan['tier'] as PlanTier) ?? 'basic',
-    features: (rawPlan['features'] as TenantPlan['features']) ?? PLAN_FEATURES['basic'],
-    limits: (rawPlan['limits'] as TenantPlan['limits']) ?? PLAN_TENANT_LIMITS['basic'],
+    tier: (rawPlan['tier'] as PlanTier) ?? 'starter',
+    features: (rawPlan['features'] as TenantPlan['features']) ?? PLAN_FEATURES['starter'],
+    limits: (rawPlan['limits'] as TenantPlan['limits']) ?? PLAN_TENANT_LIMITS['starter'],
     startedAt: rawPlan['startedAt'] ? new Date(rawPlan['startedAt'] as string) : new Date(r['created_at'] as string),
     expiresAt: rawPlan['expiresAt'] ? new Date(rawPlan['expiresAt'] as string) : null,
     isTrial: (rawPlan['isTrial'] as boolean) ?? false,

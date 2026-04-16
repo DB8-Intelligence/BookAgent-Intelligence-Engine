@@ -1,7 +1,7 @@
 /**
  * Facebook Adapter — Publishing Adapter Layer
  *
- * Adapter para publicação no Facebook via Graph API.
+ * Adapter para publicação no Facebook via Graph API v19.
  *
  * Fluxo de publicação (Facebook Graph API):
  *   - Texto/link → POST /{page-id}/feed   (message + link opcional)
@@ -81,6 +81,17 @@ export class FacebookAdapter implements ISocialAdapter {
   }
 
   async publish(payload: PublishPayload): Promise<PublishResult> {
+    if (process.env.SOCIAL_PUBLISH_MODE === 'mock') {
+      const fakeId = `facebook-mock-${Date.now()}`;
+      logger.info(`[FacebookAdapter] MOCK: simulating publish caption="${payload.caption.slice(0, 40)}..." id=${fakeId}`);
+      return {
+        success: true,
+        platformPostId: fakeId,
+        postUrl: `https://facebook.com/${fakeId}`,
+        publishedAt: new Date(),
+      };
+    }
+
     if (!this.isConfigured()) {
       return {
         success: false,
@@ -109,6 +120,10 @@ export class FacebookAdapter implements ISocialAdapter {
       return { success: false, error: message };
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Check status
+  // ---------------------------------------------------------------------------
 
   async checkStatus(platformPostId: string): Promise<PublishResult> {
     const cfg = getConfig();

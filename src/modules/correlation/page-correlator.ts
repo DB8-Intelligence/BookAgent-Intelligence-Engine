@@ -24,6 +24,10 @@ import {
   CorrelationConfidence,
   CorrelationMethod,
 } from '../../domain/entities/correlation.js';
+import {
+  ProximityCalculator,
+  type SpatialTextBlock,
+} from './proximity-calculator.js';
 
 /**
  * Correlaciona text blocks e assets por proximidade de página.
@@ -180,4 +184,103 @@ function generateSummary(textBlocks: TextBlock[]): string {
     .filter((s) => s.length > 5);
 
   return firstSentences.slice(0, 2).join(' ').trim();
+}
+
+// ============================================================================
+// Sprint 2B Phase 1 — Elevação por proximidade espacial
+//
+// Quando a extração foi feita pelo caminho `enhanced-extraction`, os assets
+// carregam `Asset.geometry` (coordenadas PDF via CTM). Nesse caso, podemos
+// rodar um segundo passo OPCIONAL e ADITIVO sobre os `CorrelationBlock[]`
+// já produzidos por `correlateByPage()`, elevando a confidence quando há
+// match espacial concreto entre um asset e um text block da mesma página.
+//
+// Design:
+//   - Função pura. Recebe blocks + catálogos de asset e spatial text blocks.
+//     Retorna um novo array — nunca muta o input.
+//   - No-op se nenhum asset do block tiver `geometry` populado.
+//   - Elevação conservadora: LOW→MEDIUM, MEDIUM→HIGH, HIGH→HIGH.
+//     Nunca rebaixa.
+//   - Adiciona `CorrelationMethod.SPATIAL_ADJACENCY` aos `methods[]`
+//     quando encontra pelo menos um match com `method !== 'none'`.
+//   - Mínima confidence para elevar: 50 (corresponde a 'adjacent' no
+//     `ProximityCalculator`).
+//
+// NÃO substitui `correlateByPage`. O caminho padrão (sem geometry) continua
+// idêntico, inclusive para PDFs processados pelas estratégias antigas.
+// ============================================================================
+
+const SPATIAL_ELEVATION_MIN_CONFIDENCE = 50;
+
+/**
+ * Eleva a confidence dos blocks com base em proximidade espacial real.
+ * Chame este passo APÓS `correlateByPage()` quando tiver dados espaciais
+ * disponíveis (ex: text content do pdfjs-dist + assets com `geometry`).
+ */
+export function elevateBlocksWithSpatialMatch(
+  blocks: readonly CorrelationBlock[],
+  assetById: ReadonlyMap<string, Asset>,
+  spatialTextByPage: ReadonlyMap<number, readonly SpatialTextBlock[]>,
+): CorrelationBlock[] {
+  const calculator = new ProximityCalculator();
+  const result: CorrelationBlock[] = [];
+
+  for (const block of blocks) {
+    const spatialTexts = spatialTextByPage.get(block.page) ?? [];
+    if (spatialTexts.length === 0) {
+      result.push(block);
+      continue;
+    }
+
+    let bestConfidence = 0;
+    let anyMatch = false;
+
+    for (const assetId of block.assetIds) {
+      const asset = assetById.get(assetId);
+      if (!asset || !asset.geometry) continue;
+
+      const best = calculator.findBestMatch(asset, spatialTexts);
+      if (best && best.confidence >= SPATIAL_ELEVATION_MIN_CONFIDENCE) {
+        anyMatch = true;
+        if (best.confidence > bestConfidence) bestConfidence = best.confidence;
+      }
+    }
+
+    if (!anyMatch) {
+      result.push(block);
+      continue;
+    }
+
+    const elevated: CorrelationBlock = {
+      ...block,
+      confidence: promoteConfidence(block.confidence, bestConfidence),
+      methods: block.methods.includes(CorrelationMethod.SPATIAL_ADJACENCY)
+        ? block.methods
+        : [...block.methods, CorrelationMethod.SPATIAL_ADJACENCY],
+    };
+    result.push(elevated);
+  }
+
+  return result;
+}
+
+/**
+ * Regra de promoção:
+ *   - confidence ≥ 80 (collision forte): INFERRED/LOW → HIGH; MEDIUM → HIGH
+ *   - confidence 50-79 (adjacent/strong contextual): LOW → MEDIUM; MEDIUM/HIGH inalterado
+ *   - Nunca rebaixa.
+ */
+function promoteConfidence(
+  current: CorrelationConfidence,
+  spatialConfidence: number,
+): CorrelationConfidence {
+  if (spatialConfidence >= 80) {
+    if (current === CorrelationConfidence.INFERRED) return CorrelationConfidence.HIGH;
+    if (current === CorrelationConfidence.LOW) return CorrelationConfidence.HIGH;
+    if (current === CorrelationConfidence.MEDIUM) return CorrelationConfidence.HIGH;
+    return current;
+  }
+  if (current === CorrelationConfidence.INFERRED) return CorrelationConfidence.LOW;
+  if (current === CorrelationConfidence.LOW) return CorrelationConfidence.MEDIUM;
+  return current;
 }

@@ -167,7 +167,7 @@ async function getCostAnalysis() {
     const userCosts = rows.map(row =>
       estimateUserMonthlyCost(
         row.user_id,
-        (row.plan_tier as PlanTier) || 'basic',
+        (row.plan_tier as PlanTier) || 'starter',
         parseInt(row.jobs_count || '0', 10),
       ),
     );

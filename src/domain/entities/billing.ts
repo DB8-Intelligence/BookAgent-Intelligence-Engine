@@ -246,50 +246,50 @@ export interface BillingPlanLimits {
 }
 
 export const BILLING_PLAN_LIMITS: Record<PlanTier, BillingPlanLimits> = {
-  basic: {
-    jobsPerMonth: 10,
-    videoRendersPerMonth: 10,
-    variantsPerMonth: 20,
-    thumbnailsPerMonth: 30,
+  starter: {
+    jobsPerMonth: 1,
+    videoRendersPerMonth: 3,    // 3 reels / book × 1 book
+    variantsPerMonth: 10,
+    thumbnailsPerMonth: 30,     // 10 imagens × 3 carrosséis
     autoPublishPerMonth: 0,
     experimentsPerMonth: 0,
-    blogsPerMonth: 10,
-    landingPagesPerMonth: 0,
-    revisionsPerMonth: 5,
-    ttsCallsPerMonth: 10,
-    aiCallsPerMonth: 30,
+    blogsPerMonth: 1,
+    landingPagesPerMonth: 1,
+    revisionsPerMonth: 2,
+    ttsCallsPerMonth: 4,        // 3 reels + 1 podcast
+    aiCallsPerMonth: 20,
     storageBytesTotal: 500 * 1024 * 1024, // 500MB
-    maxMonthlyCostUsd: 5.00,
+    maxMonthlyCostUsd: 1.50,
   },
   pro: {
-    jobsPerMonth: 50,
-    videoRendersPerMonth: 50,
-    variantsPerMonth: 300,
-    thumbnailsPerMonth: 200,
+    jobsPerMonth: 3,
+    videoRendersPerMonth: 9,    // 3 reels / book × 3 books
+    variantsPerMonth: 50,
+    thumbnailsPerMonth: 90,     // 10 imagens × 3 carrosséis × 3 books
+    autoPublishPerMonth: 20,
+    experimentsPerMonth: 5,
+    blogsPerMonth: 3,
+    landingPagesPerMonth: 3,
+    revisionsPerMonth: 10,
+    ttsCallsPerMonth: 12,       // (3 reels + 1 podcast) × 3 books
+    aiCallsPerMonth: 100,
+    storageBytesTotal: 2 * 1024 * 1024 * 1024, // 2GB
+    maxMonthlyCostUsd: 5.00,
+  },
+  agency: {
+    jobsPerMonth: 10,
+    videoRendersPerMonth: 30,   // 3 reels / book × 10 books
+    variantsPerMonth: 200,
+    thumbnailsPerMonth: 300,    // 10 imagens × 3 carrosséis × 10 books
     autoPublishPerMonth: 100,
     experimentsPerMonth: 20,
-    blogsPerMonth: 50,
-    landingPagesPerMonth: 20,
-    revisionsPerMonth: 50,
-    ttsCallsPerMonth: 50,
-    aiCallsPerMonth: 500,
-    storageBytesTotal: 5 * 1024 * 1024 * 1024, // 5GB
-    maxMonthlyCostUsd: 50.00,
-  },
-  business: {
-    jobsPerMonth: 500,
-    videoRendersPerMonth: 500,
-    variantsPerMonth: 5000,
-    thumbnailsPerMonth: 2000,
-    autoPublishPerMonth: 1000,
-    experimentsPerMonth: 200,
-    blogsPerMonth: 500,
-    landingPagesPerMonth: 200,
-    revisionsPerMonth: 500,
-    ttsCallsPerMonth: 500,
-    aiCallsPerMonth: 5000,
-    storageBytesTotal: 50 * 1024 * 1024 * 1024, // 50GB
-    maxMonthlyCostUsd: 500.00,
+    blogsPerMonth: 10,
+    landingPagesPerMonth: 10,
+    revisionsPerMonth: 30,
+    ttsCallsPerMonth: 40,       // (3 reels + 1 podcast) × 10 books
+    aiCallsPerMonth: 400,
+    storageBytesTotal: 10 * 1024 * 1024 * 1024, // 10GB
+    maxMonthlyCostUsd: 20.00,
   },
 };
 

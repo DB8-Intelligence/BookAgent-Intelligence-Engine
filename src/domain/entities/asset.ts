@@ -15,6 +15,7 @@
  */
 
 import type { SourceType, Position, Dimensions, AssetOrigin } from '../value-objects/index.js';
+import type { PDFGeometry, PDFImageMetadata } from '../interfaces/geometry.js';
 
 export interface Asset {
   /** Identificador único do asset */
@@ -59,4 +60,18 @@ export interface Asset {
    * modifique o conteúdo do arquivo referenciado por filePath.
    */
   readonly isOriginal: true;
+
+  /**
+   * Geometria estruturada vinda da extração enhanced (pdfjs-dist).
+   * Opcional — assets extraídos apenas via poppler não têm este campo.
+   * Consumidores do pipeline visual devem tratar ausência como
+   * "geometria desconhecida" e degradar graciosamente.
+   */
+  readonly geometry?: PDFGeometry;
+
+  /**
+   * Metadados de cor e alpha do asset. Complementa `geometry` e idem:
+   * opcional, populado apenas no fluxo enhanced.
+   */
+  readonly imageMetadata?: PDFImageMetadata;
 }

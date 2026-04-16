@@ -82,7 +82,7 @@ export function estimateJobCost(input: CostEstimationInput): JobCost {
   const usage = buildUsageMetrics(input, items);
 
   // --- Plan limits ---
-  const planLimits = PLAN_LIMITS[input.planType] ?? PLAN_LIMITS['basic']!;
+  const planLimits = PLAN_LIMITS[input.planType] ?? PLAN_LIMITS['starter']!;
   const limitUsagePercent = planLimits.maxCostUsd > 0
     ? Math.round((totalCostUsd / planLimits.maxCostUsd) * 100)
     : 0;

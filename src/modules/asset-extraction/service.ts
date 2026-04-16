@@ -25,10 +25,23 @@ import { PipelineStage, InputType } from '../../domain/value-objects/index.js';
 import type { IModule } from '../../domain/interfaces/module.js';
 import type { ProcessingContext } from '../../core/context.js';
 import { AssetExtractor } from './extractor.js';
-import { PDFParseAdapter } from '../../adapters/pdf/index.js';
+import { PopplerPDFAdapter } from '../../adapters/pdf/poppler.js';
+import { PDFJSEnhancedAdapter } from '../../adapters/pdf/pdfjs-enhanced.js';
+import { ColorSpaceManager } from '../../adapters/pdf/color-manager.js';
 import { LocalStorageAdapter } from '../../adapters/storage/index.js';
+import { SupabaseStorageUploader } from '../../adapters/storage/supabase.js';
 import { logger } from '../../utils/logger.js';
 import type { ExtractionOptions } from './types.js';
+
+const SUPABASE_URL = process.env.SUPABASE_URL ?? 'https://xhfiyukhjzwhqbacuyxq.supabase.co';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const PAGE_ASSETS_BUCKET = process.env.BOOK_ASSETS_BUCKET ?? 'book-assets';
+
+// Feature flag: quando ativa, força strategy=enhanced-extraction e injeta
+// PDFJSEnhancedAdapter + ColorSpaceManager no extractor. Opt-in via env var —
+// default (unset/false) preserva comportamento anterior (embedded/hybrid).
+const ENHANCED_EXTRACTION_ENABLED =
+  process.env.ENHANCED_EXTRACTION === 'true' || process.env.ENHANCED_EXTRACTION === '1';
 
 export class AssetExtractionModule implements IModule {
   readonly stage = PipelineStage.EXTRACTION;
@@ -49,11 +62,19 @@ export class AssetExtractionModule implements IModule {
 
     // Ler estratégia do Book Compatibility Analysis (se executou antes)
     const compatibility = context.bookCompatibility;
-    const strategy = compatibility?.recommendedStrategy ?? 'embedded-extraction';
+    const heuristicStrategy = compatibility?.recommendedStrategy ?? 'embedded-extraction';
     const confidence = compatibility?.confidence ?? 'unknown';
 
+    // Feature flag override: ENHANCED_EXTRACTION=true força enhanced-extraction
+    // independente da heurística. Preserva 'manual-review' para não mascarar o warning.
+    const strategy =
+      ENHANCED_EXTRACTION_ENABLED && heuristicStrategy !== 'manual-review'
+        ? 'enhanced-extraction'
+        : heuristicStrategy;
+
     logger.info(
-      `Asset Extraction: strategy="${strategy}" (confidence=${confidence})`,
+      `Asset Extraction: strategy="${strategy}" (confidence=${confidence}, ` +
+        `enhancedFlag=${ENHANCED_EXTRACTION_ENABLED})`,
     );
 
     if (strategy === 'manual-review') {
@@ -63,8 +84,22 @@ export class AssetExtractionModule implements IModule {
       );
     }
 
-    const pdfAdapter = new PDFParseAdapter();
+    const pdfAdapter = new PopplerPDFAdapter();
     const storage = new LocalStorageAdapter();
+
+    const pageUploader = SUPABASE_SERVICE_ROLE_KEY
+      ? new SupabaseStorageUploader({
+          supabaseUrl: SUPABASE_URL,
+          serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+          bucket: PAGE_ASSETS_BUCKET,
+        })
+      : undefined;
+
+    if (!pageUploader) {
+      logger.warn(
+        'Asset Extraction: SUPABASE_SERVICE_ROLE_KEY ausente — pageFormats não serão enviados ao Storage',
+      );
+    }
 
     const options: ExtractionOptions = {
       outputDir: `storage/assets/${context.jobId}`,
@@ -75,15 +110,29 @@ export class AssetExtractionModule implements IModule {
       renderDpi: 200,
     };
 
-    const extractor = new AssetExtractor(options, pdfAdapter, storage);
+    // Opt-in: só instancia adapters enhanced quando a flag está ativa.
+    // Zero overhead quando desligada — imports são tree-shaken em runtime apenas
+    // pelo fato de o construtor não tocar nos módulos.
+    const pdfjsEnhanced = ENHANCED_EXTRACTION_ENABLED ? new PDFJSEnhancedAdapter() : undefined;
+    const colorManager = ENHANCED_EXTRACTION_ENABLED ? new ColorSpaceManager() : undefined;
+
+    const extractor = new AssetExtractor(
+      options,
+      pdfAdapter,
+      storage,
+      pageUploader,
+      pdfjsEnhanced,
+      colorManager,
+    );
     const result = await extractor.extractFromPDF(filePath, context.jobId);
 
     logger.info(
-      `Asset Extraction: ${result.assets.length} assets extraídos de ${result.totalPages} páginas em ${result.processingTimeMs}ms (strategy=${strategy})`,
+      `Asset Extraction: ${result.assets.length} assets extraídos de ${result.totalPages} páginas em ${result.processingTimeMs}ms (strategy=${strategy}); pageFormats=${result.pageFormats?.png_pages.length ?? 0} PNG / ${result.pageFormats?.svg_pages.length ?? 0} SVG`,
     );
 
     return {
       ...context,
+      pageFormats: result.pageFormats,
       assets: result.assets.map((asset) => ({
         id: asset.id,
         filePath: asset.filePath,
@@ -95,6 +144,8 @@ export class AssetExtractionModule implements IModule {
         origin: asset.origin,
         hash: asset.hash,
         isOriginal: true as const,
+        geometry: asset.geometry,
+        imageMetadata: asset.imageMetadata,
       })),
     };
   }

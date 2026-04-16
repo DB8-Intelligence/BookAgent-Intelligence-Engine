@@ -49,7 +49,7 @@ import { StorageManager } from './persistence/storage-manager.js';
 import { checkProviderStatus } from './adapters/provider-factory.js';
 
 // --- Controllers (dependency injection) ---
-import { setOrchestrator as setProcessOrch } from './api/controllers/processController.js';
+import { setOrchestrator as setProcessOrch, setProcessJobRepository } from './api/controllers/processController.js';
 import { setOrchestrator as setJobsOrch, setJobRepository } from './api/controllers/jobsController.js';
 import { setOrchestrator as setArtifactsOrch } from './api/controllers/artifactsController.js';
 import { setSupabaseClientForApproval } from './api/controllers/approvalController.js';
@@ -89,6 +89,7 @@ import { setVideoRenderSupabaseClient } from './api/controllers/videoRenderContr
 import { setPlanGuardSupabaseClient } from './api/middleware/plan-guard.js';
 import { setLeadsSupabaseClient } from './api/controllers/leadsController.js';
 import { setOpsSupabaseClient } from './api/controllers/opsController.js';
+import { setKiwifyWebhookClient } from './api/controllers/kiwifyWebhookController.js';
 import { metrics } from './observability/metrics.js';
 
 // --- Queue ---
@@ -106,6 +107,7 @@ import leadsRoutes from './api/routes/leads.js';
 import opsRoutes from './api/routes/ops.js';
 import experimentRoutes from './api/routes/experiments.js';
 import billingRoutes from './api/routes/billing.js';
+import webhooksRoutes from './api/routes/webhooks.js';
 import adminRoutes from './api/routes/admin.js';
 import analyticsRoutes from './api/routes/analytics.js';
 import insightsRoutes from './api/routes/insights.js';
@@ -225,6 +227,7 @@ setOrchestratorForWhatsAppFunnel(orchestrator);
 // Injetar JobRepository no jobsController (fallback para leitura no Supabase)
 if (supabaseClient) {
   setJobRepository(new JobRepository(supabaseClient));
+  setProcessJobRepository(new JobRepository(supabaseClient));
   setSupabaseClientForApproval(supabaseClient);
   setSupabaseClientForReview(supabaseClient);
   setSupabaseClientForRevision(supabaseClient);
@@ -262,6 +265,7 @@ if (supabaseClient) {
   setPlanGuardSupabaseClient(supabaseClient);
   setLeadsSupabaseClient(supabaseClient);
   setOpsSupabaseClient(supabaseClient);
+  setKiwifyWebhookClient(supabaseClient);
   metrics.setSupabaseClient(supabaseClient);
 }
 
@@ -325,7 +329,7 @@ app.get('/health', (_req, res) => {
       facebook: !!(process.env.META_ACCESS_TOKEN && process.env.META_FACEBOOK_PAGE_ID),
     },
     plans: {
-      available: ['basic', 'pro', 'business'],
+      available: ['starter', 'pro', 'agency'],
       enforcement: 'active',
     },
     pipeline: {
@@ -385,6 +389,9 @@ app.use(`${prefix}/partners`, partnerRoutes);
 app.use(`${prefix}/acquisition`, acquisitionRoutes);
 app.use(`${prefix}/integrations`, integrationHubRoutes);
 app.use(`${prefix}/distribution`, distributionRoutes);
+
+// Webhooks externos (Kiwify, Hotmart) — sem tenant guard
+app.use('/webhooks', webhooksRoutes);
 
 // Video Generation
 app.use('/generate-video', videoRoutes);

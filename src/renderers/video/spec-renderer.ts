@@ -83,10 +83,22 @@ const DEFAULT_SCENE_TIMEOUT = 60_000;          // 60 seconds
  * This is the ONLY entry point for video rendering.
  * It does NOT accept MediaPlan — only RenderSpec.
  */
+// ---------------------------------------------------------------------------
+// Provider: Shotstack (cloud) tem prioridade sobre FFmpeg (local)
+// ---------------------------------------------------------------------------
+import { isShotstackConfigured, renderWithShotstack } from './shotstack-adapter.js';
+
 export async function renderFromSpec(
   spec: RenderSpec,
   options: SpecRenderOptions,
 ): Promise<VideoRenderResult> {
+  // Shotstack cloud render tem prioridade — sem FFmpeg, sem CPU local
+  if (isShotstackConfigured()) {
+    logger.info('[renderFromSpec] Provider: Shotstack cloud');
+    return renderWithShotstack(spec, options);
+  }
+  logger.info('[renderFromSpec] Provider: FFmpeg local (SHOTSTACK_API_KEY não configurado)');
+
   const startTime = Date.now();
   const globalTimeout = options.globalTimeoutMs ?? DEFAULT_GLOBAL_TIMEOUT;
   const sceneTimeout = options.sceneTimeoutMs ?? DEFAULT_SCENE_TIMEOUT;
@@ -96,7 +108,7 @@ export async function renderFromSpec(
   // Check ffmpeg
   const hasFFmpeg = await checkFFmpeg();
   if (!hasFFmpeg) {
-    throw new Error('ffmpeg not found in PATH. Install ffmpeg to enable video rendering.');
+    throw new Error('ffmpeg not found in PATH — configure SHOTSTACK_API_KEY para usar cloud render.');
   }
 
   // Setup directories
