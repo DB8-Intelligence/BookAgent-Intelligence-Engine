@@ -3,6 +3,7 @@
  */
 
 import type { SourceType, Dimensions, BoundingBox, AssetOrigin } from '../../domain/value-objects/index.js';
+import type { PDFGeometry, PDFImageMetadata } from '../../domain/interfaces/geometry.js';
 
 export interface ExtractedAsset {
   id: string;
@@ -16,6 +17,10 @@ export interface ExtractedAsset {
   classification?: SourceType;
   origin: AssetOrigin;
   hash?: string;
+  /** Geometria extraída por `PDFJSEnhancedAdapter` — opcional. */
+  geometry?: PDFGeometry;
+  /** Metadados de cor/alpha (color space, bits, alpha). Opcional. */
+  imageMetadata?: PDFImageMetadata;
 }
 
 export interface PageFormats {
@@ -39,7 +44,7 @@ export interface ExtractionOptions {
   minWidth?: number;
   minHeight?: number;
   /** Estratégia de extração decidida pelo BookCompatibilityAnalysis */
-  strategy?: 'embedded-extraction' | 'page-render' | 'hybrid' | 'manual-review';
+  strategy?: 'embedded-extraction' | 'page-render' | 'hybrid' | 'manual-review' | 'enhanced-extraction';
   /** DPI para renderização de página (usado em page-render e hybrid) */
   renderDpi?: number;
 }

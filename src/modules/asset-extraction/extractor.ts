@@ -26,6 +26,8 @@ import type { IPDFAdapter } from '../../domain/interfaces/pdf-adapter.js';
 import type { IStorageAdapter } from '../../domain/interfaces/storage-adapter.js';
 import { AssetOrigin } from '../../domain/value-objects/index.js';
 import type { SupabaseStorageUploader } from '../../adapters/storage/supabase.js';
+import { PDFJSEnhancedAdapter } from '../../adapters/pdf/pdfjs-enhanced.js';
+import { ColorSpaceManager } from '../../adapters/pdf/color-manager.js';
 import { logger } from '../../utils/logger.js';
 import type {
   ExtractedAsset,
@@ -35,12 +37,25 @@ import type {
 } from './types.js';
 
 export class AssetExtractor {
+  /**
+   * Adapter opcional de geometria (pdfjs-dist). Se ausente, `enhanced-extraction`
+   * cai para `embedded-extraction`. Mantemos opcional para preservar
+   * retrocompatibilidade com consumidores que não injetam.
+   */
+  private readonly pdfjsEnhanced: PDFJSEnhancedAdapter | null;
+  private readonly colorManager: ColorSpaceManager | null;
+
   constructor(
     private options: ExtractionOptions,
     private pdfAdapter: IPDFAdapter,
     private storage: IStorageAdapter,
     private pageUploader?: SupabaseStorageUploader,
-  ) {}
+    pdfjsEnhanced?: PDFJSEnhancedAdapter,
+    colorManager?: ColorSpaceManager,
+  ) {
+    this.pdfjsEnhanced = pdfjsEnhanced ?? null;
+    this.colorManager = colorManager ?? null;
+  }
 
   /**
    * Extrai todos os assets de um arquivo PDF.
@@ -56,6 +71,8 @@ export class AssetExtractor {
 
     const assetsPromise: Promise<ExtractedAsset[]> = (() => {
       switch (strategy) {
+        case 'enhanced-extraction':
+          return this.extractEnhanced(filePath, jobId);
         case 'page-render':
           return this.extractViaPageRender(filePath, jobId, totalPages);
         case 'hybrid':
@@ -179,6 +196,134 @@ export class AssetExtractor {
         });
       } catch {
         continue;
+      }
+    }
+
+    return assets;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Strategy: Enhanced (pdfjs-dist geometry + pareamento com bytes do poppler)
+  //
+  // Sprint 2A close-out (DEV-14 → DEV-15):
+  //   1. Usa `PDFJSEnhancedAdapter` para obter geometria por página (CTM stack)
+  //   2. Usa o `pdfAdapter` existente (poppler `pdfimages`) para obter os bytes
+  //   3. Pareia as duas listas por ordem DENTRO da página — tanto poppler quanto
+  //      o operator list do pdfjs iteram imagens na ordem do stream PDF.
+  //   4. Normaliza color space via `ColorSpaceManager` quando disponível.
+  //   5. Cada asset sai com `geometry` e `imageMetadata` populados.
+  //
+  // Degradação graciosa:
+  //   - Se `pdfjsEnhanced` não foi injetado: cai para `extractEmbedded`.
+  //   - Se o pareamento diverge em contagem: usa `Math.min(raws, ops)` e loga.
+  //   - Se a normalização de cor falha: preserva buffer original.
+  // ---------------------------------------------------------------------------
+
+  private async extractEnhanced(
+    filePath: string,
+    jobId: string,
+  ): Promise<ExtractedAsset[]> {
+    if (!this.pdfjsEnhanced) {
+      logger.info(
+        '[AssetExtractor] enhanced-extraction requested but PDFJSEnhancedAdapter ' +
+        'not injected — falling back to embedded-extraction',
+      );
+      return this.extractEmbedded(filePath, jobId);
+    }
+
+    const [reports, rawImages] = await Promise.all([
+      this.pdfjsEnhanced.extractPageGeometries(filePath),
+      this.pdfAdapter.extractImages(filePath),
+    ]);
+
+    // Group raw images by page, preservando ordem original do stream
+    const rawByPage = new Map<number, typeof rawImages>();
+    for (const img of rawImages) {
+      const bucket = rawByPage.get(img.pageNumber);
+      if (bucket) {
+        bucket.push(img);
+      } else {
+        rawByPage.set(img.pageNumber, [img]);
+      }
+    }
+
+    const assets: ExtractedAsset[] = [];
+
+    for (const report of reports) {
+      const pageRaws = rawByPage.get(report.pageNumber) ?? [];
+      const ops = report.imageOps;
+      const pairCount = Math.min(pageRaws.length, ops.length);
+
+      if (pageRaws.length !== ops.length) {
+        logger.warn(
+          `[AssetExtractor] enhanced: page ${report.pageNumber} has ${pageRaws.length} raw ` +
+          `images but ${ops.length} paint ops — pairing min=${pairCount}`,
+        );
+      }
+
+      for (let i = 0; i < pairCount; i++) {
+        const raw = pageRaws[i];
+        const op = ops[i];
+        if (!raw || !op) continue;
+
+        try {
+          let buffer: Buffer = raw.data;
+          if (this.colorManager) {
+            const normalized = await this.colorManager.normalizeToSrgb(buffer);
+            buffer = normalized.buffer;
+          }
+
+          const metadata = await sharp(buffer).metadata();
+          const width = metadata.width ?? 0;
+          const height = metadata.height ?? 0;
+          if (
+            width < (this.options.minWidth ?? 100) ||
+            height < (this.options.minHeight ?? 100)
+          ) {
+            continue;
+          }
+
+          const id = uuidv4();
+          const format = raw.format === 'png' ? 'png' : 'jpeg';
+          const fileName =
+            `enhanced/page${String(raw.pageNumber).padStart(2, '0')}` +
+            `_img${String(i + 1).padStart(2, '0')}.${format}`;
+
+          const fileSavePath = await this.storage.save(jobId, fileName, buffer);
+          const hash = createHash('sha256').update(buffer).digest('hex');
+          const thumbnailPath = await this.saveThumbnail(
+            jobId,
+            buffer,
+            raw.pageNumber,
+            i + 1,
+          );
+
+          assets.push({
+            id,
+            filePath: fileSavePath,
+            thumbnailPath,
+            page: raw.pageNumber,
+            dimensions: { width, height },
+            format,
+            sizeBytes: buffer.length,
+            origin: AssetOrigin.PDF_EXTRACTED,
+            hash,
+            geometry: op.geometry,
+            imageMetadata: {
+              geometry: op.geometry,
+              colorSpace: 'Unknown',
+              bitsPerComponent: null,
+              hasAlpha: false,
+              interpolate: true,
+            },
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.warn(
+            `[AssetExtractor] enhanced: failed to process image ${i} on page ${report.pageNumber}: ${msg}`,
+          );
+          continue;
+        }
       }
     }
 
