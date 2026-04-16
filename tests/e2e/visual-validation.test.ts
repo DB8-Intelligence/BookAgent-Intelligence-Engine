@@ -234,10 +234,12 @@ describe('Visual Validation — FFmpeg Filter Chain', () => {
     const filterComplex = cmd[filterIdx + 1];
 
     // Each frame gets [N:v]...filters...[outN] separated by ;
+    // Plus one concat segment at the end
     const segments = filterComplex.split(';');
-    expect(segments.length).toBe(storyboard.frames.length);
+    expect(segments.length).toBe(storyboard.frames.length + 1);
 
-    for (let i = 0; i < segments.length; i++) {
+    // Frame segments (exclude last concat segment)
+    for (let i = 0; i < storyboard.frames.length; i++) {
       const seg = segments[i];
       // Must start with [N:v] input reference
       expect(seg).toMatch(new RegExp(`^\\[${i}:v\\]`));
@@ -245,10 +247,14 @@ describe('Visual Validation — FFmpeg Filter Chain', () => {
       expect(seg).toMatch(new RegExp(`\\[out${i}\\]$`));
       // Must contain crop=
       expect(seg).toContain('crop=');
-      // Must contain scale+pad
-      expect(seg).toContain('scale=1080:1920');
-      expect(seg).toContain('pad=1080:1920');
+      // Must target 1080x1920 output (via scale+pad for static, or zoompan s= for motion)
+      expect(seg).toMatch(/1080.*1920/);
     }
+
+    // Last segment is the concat filter
+    const concatSeg = segments[segments.length - 1];
+    expect(concatSeg).toContain('concat=');
+    expect(concatSeg).toContain('[final]');
   });
 
   it('should include zoompan only for non-static frames', () => {
