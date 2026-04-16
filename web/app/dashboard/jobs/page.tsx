@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
-  bookagent,
   type DashboardJob,
   DASHBOARD_STATUS_CONFIG,
 } from "@/lib/bookagentApi";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { EmptyState } from "@/components/dashboard/EmptyState";
+import { useRealtimeJobs } from "@/hooks/useRealtimeJobs";
 
 type FilterKey = "ALL" | "PROCESSING" | "AWAITING_REVIEW" | "APPROVED" | "PUBLISHED" | "FAILED";
 
@@ -23,29 +23,8 @@ const FILTER_OPTIONS: { key: FilterKey; label: string }[] = [
 ];
 
 export default function JobsListPage() {
-  const [jobs, setJobs] = useState<DashboardJob[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { jobs, total, loading, error, isRealtime } = useRealtimeJobs();
   const [filter, setFilter] = useState<FilterKey>("ALL");
-
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      const result = await bookagent.dashboard.jobs(100);
-      setJobs(result.jobs);
-      setTotal(result.total);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar jobs");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const filtered = filter === "ALL"
     ? jobs
@@ -75,6 +54,14 @@ export default function JobsListPage() {
       <PageHeader
         title="Jobs"
         description={`${total} job${total !== 1 ? "s" : ""} no total`}
+        action={
+          isRealtime ? (
+            <span className="flex items-center gap-1.5 text-xs text-emerald-600">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Ao vivo
+            </span>
+          ) : undefined
+        }
       />
 
       {/* Filter buttons */}
