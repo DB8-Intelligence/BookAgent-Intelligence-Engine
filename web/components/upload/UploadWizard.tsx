@@ -25,6 +25,8 @@ interface WizardState {
   fileSize: number;
   uploadStatus: UploadStatus;
   uploadProgress: number;
+  authorizationAcknowledged: boolean;
+  authorizationTimestamp: string | null;
   inputType: InputType | null;
   userContext: UserContext;
   webhookUrl: string;
@@ -40,6 +42,8 @@ const INITIAL: WizardState = {
   fileSize: 0,
   uploadStatus: 'idle',
   uploadProgress: 0,
+  authorizationAcknowledged: false,
+  authorizationTimestamp: null,
   inputType: null,
   userContext: {},
   webhookUrl: "",
@@ -87,7 +91,7 @@ export function UploadWizard() {
   function canNext(): boolean {
     switch (state.step) {
       case 0: return state.inputType !== null;
-      case 1: return state.uploadStatus === 'success' && state.fileUrl.length > 0;
+      case 1: return state.uploadStatus === 'success' && state.fileUrl.length > 0 && state.authorizationAcknowledged;
       case 2: return true; // optional
       case 3: return true; // optional
       case 4: return true;
@@ -180,6 +184,8 @@ export function UploadWizard() {
         type: state.inputType,
         user_context: Object.keys(state.userContext).length > 0 ? state.userContext : undefined,
         webhook_url: state.webhookUrl || undefined,
+        authorization_acknowledged: state.authorizationAcknowledged || undefined,
+        authorization_timestamp: state.authorizationTimestamp || undefined,
       });
       router.push(`/pipeline/${result.job_id}`);
     } catch (err) {
@@ -361,6 +367,7 @@ export function UploadWizard() {
                     </div>
                   </div>
                   <Button
+                    type="button"
                     variant="outline"
                     size="sm"
                     className="mt-3"
@@ -369,6 +376,36 @@ export function UploadWizard() {
                     Tentar novamente
                   </Button>
                 </div>
+              )}
+
+              {/* Authorization checkbox */}
+              {(state.uploadStatus === 'success' || state.uploadStatus === 'selected') && (
+                <label className="flex items-start gap-3 mt-6 p-4 rounded-lg border border-amber-200 bg-amber-50 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={state.authorizationAcknowledged}
+                    onChange={(e) => update({
+                      authorizationAcknowledged: e.target.checked,
+                      authorizationTimestamp: e.target.checked ? new Date().toISOString() : null,
+                    })}
+                    className="mt-1 h-4 w-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500 shrink-0"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-900 mb-1">
+                      Declaracao de autorizacao
+                    </p>
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      Declaro que possuo autorizacao do proprietario deste material (imobiliaria,
+                      construtora ou detentor dos direitos) para utiliza-lo na geracao de conteudo
+                      digital para fins de divulgacao profissional. Assumo total responsabilidade
+                      pelo uso do material enviado e pelo conteudo gerado a partir dele.
+                    </p>
+                    <p className="text-xs text-amber-700 mt-2 leading-relaxed">
+                      Entendo que a BookReel processa o material com base nesta declaracao e nao
+                      verifica independentemente a titularidade dos direitos autorais.
+                    </p>
+                  </div>
+                </label>
               )}
             </div>
           )}

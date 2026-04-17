@@ -72,17 +72,24 @@ export async function createProcess(req: Request, res: Response): Promise<void> 
     return;
   }
 
-  const { file_url, type, user_context, webhook_url } = parsed.data;
+  const { file_url, type, user_context, webhook_url, authorization_acknowledged, authorization_timestamp } = parsed.data;
+
+  // Merge authorization into user_context for persistence
+  const enrichedContext = {
+    ...user_context,
+    ...(authorization_acknowledged !== undefined && { authorization_acknowledged: String(authorization_acknowledged) }),
+    ...(authorization_timestamp !== undefined && { authorization_timestamp }),
+  };
 
   // Queue mode — Redis disponível
   const queue = getQueue();
   if (queue) {
-    await handleQueueMode(res, { file_url, type, user_context, webhook_url });
+    await handleQueueMode(res, { file_url, type, user_context: enrichedContext, webhook_url });
     return;
   }
 
   // Sync mode — fallback (sem Redis)
-  await handleSyncMode(res, { file_url, type, user_context });
+  await handleSyncMode(res, { file_url, type, user_context: enrichedContext });
 }
 
 // ---------------------------------------------------------------------------
