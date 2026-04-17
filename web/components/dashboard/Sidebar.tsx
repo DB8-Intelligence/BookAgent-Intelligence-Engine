@@ -22,7 +22,7 @@ export function Sidebar() {
     <aside className="w-56 shrink-0 border-r bg-white hidden md:block">
       <div className="p-4 border-b">
         <Link href="/" className="flex items-center gap-2 font-bold text-lg">
-          <span>📘</span> BookAgent
+          <span>📘</span> BookReel
         </Link>
       </div>
       <nav className="p-2 space-y-0.5">
