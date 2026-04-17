@@ -103,7 +103,7 @@ export default function LandingPage() {
       {/* ── HERO ─────────────────────────────────────────────────── */}
       <section className="max-w-5xl mx-auto px-4 pt-20 pb-16 text-center">
         <Badge variant="secondary" className="mb-4 text-xs">
-          Usado por +200 corretores no Brasil
+          Em beta fechado — acesso por convite
         </Badge>
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-foreground leading-tight">
           Transforme qualquer book de imovel em{" "}
