@@ -91,7 +91,7 @@ const PAIN_POINTS = [
   { before: "Publica 1x por semana", after: "Cadencia diaria no piloto automatico" },
 ];
 
-const WHATSAPP_CTA = "https://wa.me/5571999733883?text=Quero%20testar%20o%20BookAgent";
+const WHATSAPP_CTA = "https://wa.me/5571999733883?text=Quero%20testar%20o%20BookReel";
 
 // ---------------------------------------------------------------------------
 // Page
@@ -103,7 +103,7 @@ export default function LandingPage() {
       {/* ── HERO ─────────────────────────────────────────────────── */}
       <section className="max-w-5xl mx-auto px-4 pt-20 pb-16 text-center">
         <Badge variant="secondary" className="mb-4 text-xs">
-          Usado por +200 corretores no Brasil
+          Em beta fechado — acesso por convite
         </Badge>
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-foreground leading-tight">
           Transforme qualquer book de imovel em{" "}
@@ -134,7 +134,7 @@ export default function LandingPage() {
       <section className="bg-muted/50 py-16">
         <div className="max-w-4xl mx-auto px-4">
           <h2 className="text-2xl sm:text-3xl font-bold text-center mb-10">
-            Antes vs Depois do BookAgent
+            Antes vs Depois do BookReel
           </h2>
           <div className="space-y-3">
             {PAIN_POINTS.map((p, i) => (
@@ -178,7 +178,7 @@ export default function LandingPage() {
       <section className="bg-muted/50 py-16">
         <div className="max-w-5xl mx-auto px-4">
           <h2 className="text-2xl sm:text-3xl font-bold text-center mb-10">
-            Por que corretores escolhem o BookAgent
+            Por que corretores escolhem o BookReel
           </h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
@@ -283,7 +283,7 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
             <span className="text-base">📘</span>
-            <span className="font-semibold text-foreground">BookAgent</span>
+            <span className="font-semibold text-foreground">BookReel</span>
             <span>by DB8 Intelligence</span>
           </div>
           <div className="flex items-center gap-4">

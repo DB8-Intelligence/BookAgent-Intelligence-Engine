@@ -81,6 +81,8 @@ export interface ProcessInput {
   type: InputType;
   user_context?: UserContext;
   webhook_url?: string;
+  authorization_acknowledged?: boolean;
+  authorization_timestamp?: string | null;
 }
 
 export interface ProcessResult {

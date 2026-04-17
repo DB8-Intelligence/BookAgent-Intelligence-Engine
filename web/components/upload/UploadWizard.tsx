@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { bookagent, type InputType, type UserContext } from "@/lib/bookagentApi";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,9 +15,18 @@ import { cn } from "@/lib/utils";
 // Types
 // ---------------------------------------------------------------------------
 
+type UploadStatus = 'idle' | 'selected' | 'uploading' | 'success' | 'error';
+
 interface WizardState {
   step: number;
   fileUrl: string;
+  filePath: string;
+  fileName: string;
+  fileSize: number;
+  uploadStatus: UploadStatus;
+  uploadProgress: number;
+  authorizationAcknowledged: boolean;
+  authorizationTimestamp: string | null;
   inputType: InputType | null;
   userContext: UserContext;
   webhookUrl: string;
@@ -27,6 +37,13 @@ interface WizardState {
 const INITIAL: WizardState = {
   step: 0,
   fileUrl: "",
+  filePath: "",
+  fileName: "",
+  fileSize: 0,
+  uploadStatus: 'idle',
+  uploadProgress: 0,
+  authorizationAcknowledged: false,
+  authorizationTimestamp: null,
   inputType: null,
   userContext: {},
   webhookUrl: "",
@@ -69,16 +86,93 @@ export function UploadWizard() {
     }));
   }
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   function canNext(): boolean {
     switch (state.step) {
       case 0: return state.inputType !== null;
-      case 1: return state.fileUrl.trim().length > 0;
+      case 1: return state.uploadStatus === 'success' && state.fileUrl.length > 0 && state.authorizationAcknowledged;
       case 2: return true; // optional
       case 3: return true; // optional
       case 4: return true;
       default: return false;
     }
   }
+
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  function handleFileSelect(file: File | null) {
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      update({ error: 'Apenas arquivos PDF sao aceitos.' });
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      update({ error: 'Arquivo muito grande. Maximo: 100MB.' });
+      return;
+    }
+    update({
+      fileName: file.name,
+      fileSize: file.size,
+      uploadStatus: 'selected',
+      error: null,
+    });
+    // Store file reference for upload
+    (window as unknown as Record<string, File>).__pendingUploadFile = file;
+  }
+
+  const handleUpload = useCallback(async () => {
+    const file = (window as unknown as Record<string, File>).__pendingUploadFile;
+    if (!file) return;
+
+    update({ uploadStatus: 'uploading', uploadProgress: 10, error: null });
+
+    try {
+      const supabase = getSupabaseBrowser();
+      const path = `pending/${crypto.randomUUID()}-${file.name}`;
+
+      update({ uploadProgress: 30 });
+
+      const { error: uploadError } = await supabase.storage
+        .from('uploads')
+        .upload(path, file, { contentType: 'application/pdf', upsert: false });
+
+      if (uploadError) {
+        update({ uploadStatus: 'error', error: uploadError.message, uploadProgress: 0 });
+        return;
+      }
+
+      update({ uploadProgress: 70 });
+
+      const { data: signed, error: signError } = await supabase.storage
+        .from('uploads')
+        .createSignedUrl(path, 7200); // 2h
+
+      if (signError || !signed) {
+        update({ uploadStatus: 'error', error: 'Falha ao gerar link seguro', uploadProgress: 0 });
+        return;
+      }
+
+      update({
+        fileUrl: signed.signedUrl,
+        filePath: path,
+        uploadStatus: 'success',
+        uploadProgress: 100,
+      });
+
+      delete (window as unknown as Record<string, File>).__pendingUploadFile;
+    } catch (err) {
+      update({
+        uploadStatus: 'error',
+        error: err instanceof Error ? err.message : 'Erro no upload',
+        uploadProgress: 0,
+      });
+    }
+  }, []);
 
   async function handleSubmit() {
     if (!state.inputType || !state.fileUrl) return;
@@ -90,6 +184,8 @@ export function UploadWizard() {
         type: state.inputType,
         user_context: Object.keys(state.userContext).length > 0 ? state.userContext : undefined,
         webhook_url: state.webhookUrl || undefined,
+        authorization_acknowledged: state.authorizationAcknowledged || undefined,
+        authorization_timestamp: state.authorizationTimestamp || undefined,
       });
       router.push(`/pipeline/${result.job_id}`);
     } catch (err) {
@@ -165,25 +261,152 @@ export function UploadWizard() {
             </div>
           )}
 
-          {/* Step 1: File URL */}
+          {/* Step 1: File Upload */}
           {state.step === 1 && (
             <div>
-              <h2 className="text-lg font-semibold mb-1">URL do Material</h2>
+              <h2 className="text-lg font-semibold mb-1">Enviar Material</h2>
               <p className="text-sm text-muted-foreground mb-6">
-                Insira a URL publica do arquivo {state.inputType?.toUpperCase()}.
-                O arquivo deve estar acessivel via HTTPS.
+                Arraste seu arquivo {state.inputType?.toUpperCase()} ou clique para selecionar.
+                Maximo 100MB.
               </p>
-              <Input
-                type="url"
-                placeholder="https://exemplo.com/material.pdf"
-                value={state.fileUrl}
-                onChange={(e) => update({ fileUrl: e.target.value })}
-                className="text-sm"
+
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,application/pdf"
+                className="hidden"
+                title="Selecionar arquivo PDF"
+                onChange={(e) => handleFileSelect(e.target.files?.[0] ?? null)}
               />
-              <p className="text-xs text-muted-foreground mt-2">
-                Suportamos URLs do Google Drive (compartilhamento publico), Supabase Storage,
-                S3, ou qualquer link direto.
-              </p>
+
+              {/* Drop zone */}
+              {state.uploadStatus === 'idle' && (
+                <div
+                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-primary', 'bg-primary/5'); }}
+                  onDragLeave={(e) => { e.currentTarget.classList.remove('border-primary', 'bg-primary/5'); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove('border-primary', 'bg-primary/5');
+                    handleFileSelect(e.dataTransfer.files[0] ?? null);
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-border rounded-lg p-10 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-all"
+                >
+                  <div className="text-3xl mb-3">📄</div>
+                  <p className="text-sm font-medium text-foreground">Arraste o PDF aqui</p>
+                  <p className="text-xs text-muted-foreground mt-1">ou clique para selecionar</p>
+                </div>
+              )}
+
+              {/* File selected — show info + upload button */}
+              {state.uploadStatus === 'selected' && (
+                <div className="border rounded-lg p-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">📄</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{state.fileName}</p>
+                      <p className="text-xs text-muted-foreground">{formatFileSize(state.fileSize)}</p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => update({ uploadStatus: 'idle', fileName: '', fileSize: 0 })}
+                    >
+                      Trocar
+                    </Button>
+                  </div>
+                  <Button onClick={handleUpload} className="w-full">
+                    Enviar arquivo
+                  </Button>
+                </div>
+              )}
+
+              {/* Uploading */}
+              {state.uploadStatus === 'uploading' && (
+                <div className="border rounded-lg p-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl animate-pulse">📤</span>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{state.fileName}</p>
+                      <p className="text-xs text-muted-foreground">Enviando...</p>
+                    </div>
+                  </div>
+                  <Progress value={state.uploadProgress} className="h-2" />
+                </div>
+              )}
+
+              {/* Success */}
+              {state.uploadStatus === 'success' && (
+                <div className="border border-emerald-200 bg-emerald-50 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">✅</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-emerald-800">{state.fileName}</p>
+                      <p className="text-xs text-emerald-600">{formatFileSize(state.fileSize)} — Enviado com sucesso</p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => update({ uploadStatus: 'idle', fileName: '', fileSize: 0, fileUrl: '', filePath: '' })}
+                    >
+                      Trocar
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Error */}
+              {state.uploadStatus === 'error' && (
+                <div className="border border-red-200 bg-red-50 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">❌</span>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-red-800">Erro no upload</p>
+                      <p className="text-xs text-red-600">{state.error}</p>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => update({ uploadStatus: 'idle', error: null })}
+                  >
+                    Tentar novamente
+                  </Button>
+                </div>
+              )}
+
+              {/* Authorization checkbox */}
+              {(state.uploadStatus === 'success' || state.uploadStatus === 'selected') && (
+                <label className="flex items-start gap-3 mt-6 p-4 rounded-lg border border-amber-200 bg-amber-50 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={state.authorizationAcknowledged}
+                    onChange={(e) => update({
+                      authorizationAcknowledged: e.target.checked,
+                      authorizationTimestamp: e.target.checked ? new Date().toISOString() : null,
+                    })}
+                    className="mt-1 h-4 w-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500 shrink-0"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-900 mb-1">
+                      Declaracao de autorizacao
+                    </p>
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      Declaro que possuo autorizacao do proprietario deste material (imobiliaria,
+                      construtora ou detentor dos direitos) para utiliza-lo na geracao de conteudo
+                      digital para fins de divulgacao profissional. Assumo total responsabilidade
+                      pelo uso do material enviado e pelo conteudo gerado a partir dele.
+                    </p>
+                    <p className="text-xs text-amber-700 mt-2 leading-relaxed">
+                      Entendo que a BookReel processa o material com base nesta declaracao e nao
+                      verifica independentemente a titularidade dos direitos autorais.
+                    </p>
+                  </div>
+                </label>
+              )}
             </div>
           )}
 

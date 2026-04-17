@@ -18,6 +18,8 @@ export const ProcessRequestSchema = z.object({
     region: z.string().optional(),
     logo_url: z.string().url().optional(),
   }).optional().default({}),
+  authorization_acknowledged: z.boolean().optional(),
+  authorization_timestamp: z.string().datetime().optional(),
   /**
    * URL para receber notificação POST quando o job finalizar.
    * Payload: { source, timestamp, jobId, status, artifacts_count?, duration_ms?, error? }
