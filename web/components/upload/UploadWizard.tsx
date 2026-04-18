@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 // Types
 // ---------------------------------------------------------------------------
 
-type UploadStatus = 'idle' | 'selected' | 'uploading' | 'success' | 'error';
+type UploadStatus = "idle" | "selected" | "uploading" | "success" | "error";
 
 interface WizardState {
   step: number;
@@ -29,7 +29,6 @@ interface WizardState {
   authorizationTimestamp: string | null;
   inputType: InputType | null;
   userContext: UserContext;
-  webhookUrl: string;
   submitting: boolean;
   error: string | null;
 }
@@ -40,31 +39,54 @@ const INITIAL: WizardState = {
   filePath: "",
   fileName: "",
   fileSize: 0,
-  uploadStatus: 'idle',
+  uploadStatus: "idle",
   uploadProgress: 0,
   authorizationAcknowledged: false,
   authorizationTimestamp: null,
   inputType: null,
   userContext: {},
-  webhookUrl: "",
   submitting: false,
   error: null,
 };
 
 const STEPS = [
-  { label: "Tipo", icon: "📋" },
   { label: "Material", icon: "📎" },
+  { label: "Upload", icon: "📤" },
   { label: "Personalizacao", icon: "🎨" },
-  { label: "Opcoes", icon: "⚙️" },
-  { label: "Confirmar", icon: "🚀" },
+  { label: "Processar", icon: "🚀" },
 ];
 
-const INPUT_TYPES: { id: InputType; label: string; icon: string; desc: string }[] = [
-  { id: "pdf", label: "PDF", icon: "📄", desc: "Book digital, apresentacao imobiliaria, folheto" },
-  { id: "video", label: "Video", icon: "🎬", desc: "Tour virtual, video institucional, drone" },
-  { id: "audio", label: "Audio", icon: "🎧", desc: "Podcast, narração, entrevista" },
-  { id: "pptx", label: "Apresentacao", icon: "📊", desc: "PowerPoint, Keynote, Google Slides" },
-  { id: "document", label: "Documento", icon: "📝", desc: "Word, texto, descritivo do empreendimento" },
+const INPUT_TYPES: {
+  id: InputType;
+  label: string;
+  icon: string;
+  desc: string;
+  accept: string;
+}[] = [
+  {
+    id: "pdf",
+    label: "Book PDF",
+    icon: "📄",
+    desc: "Book digital, apresentacao imobiliaria, folheto",
+    accept: ".pdf,application/pdf",
+  },
+  {
+    id: "video",
+    label: "Video",
+    icon: "🎬",
+    desc: "Tour virtual, video institucional, drone",
+    accept: "video/*",
+  },
+];
+
+// Outputs que o sistema pode gerar
+const POSSIBLE_OUTPUTS = [
+  { icon: "🎬", label: "Reels para Instagram/TikTok", desc: "Videos curtos 9:16 com Ken Burns e narracao" },
+  { icon: "📱", label: "Carrossel de imagens", desc: "8-10 slides para feed do Instagram" },
+  { icon: "📝", label: "Artigo para blog", desc: "Post SEO-otimizado com 1500+ palavras" },
+  { icon: "🌐", label: "Landing page", desc: "Pagina de captacao com CTA e lead form" },
+  { icon: "📊", label: "Apresentacao comercial", desc: "Slides para reuniao com cliente" },
+  { icon: "🔍", label: "Pesquisa de mercado", desc: "Analise competitiva baseada no material" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -74,6 +96,7 @@ const INPUT_TYPES: { id: InputType; label: string; icon: string; desc: string }[
 export function UploadWizard() {
   const router = useRouter();
   const [state, setState] = useState<WizardState>(INITIAL);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function update(partial: Partial<WizardState>) {
     setState((prev) => ({ ...prev, ...partial }));
@@ -86,16 +109,22 @@ export function UploadWizard() {
     }));
   }
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   function canNext(): boolean {
     switch (state.step) {
-      case 0: return state.inputType !== null;
-      case 1: return state.uploadStatus === 'success' && state.fileUrl.length > 0 && state.authorizationAcknowledged;
-      case 2: return true; // optional
-      case 3: return true; // optional
-      case 4: return true;
-      default: return false;
+      case 0:
+        return state.inputType !== null;
+      case 1:
+        return (
+          state.uploadStatus === "success" &&
+          state.fileUrl.length > 0 &&
+          state.authorizationAcknowledged
+        );
+      case 2:
+        return true;
+      case 3:
+        return true;
+      default:
+        return false;
     }
   }
 
@@ -105,23 +134,21 @@ export function UploadWizard() {
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   }
 
+  const currentType = INPUT_TYPES.find((t) => t.id === state.inputType);
+  const acceptTypes = currentType?.accept ?? ".pdf,application/pdf";
+
   function handleFileSelect(file: File | null) {
     if (!file) return;
-    if (file.type !== 'application/pdf') {
-      update({ error: 'Apenas arquivos PDF sao aceitos.' });
-      return;
-    }
     if (file.size > 100 * 1024 * 1024) {
-      update({ error: 'Arquivo muito grande. Maximo: 100MB.' });
+      update({ error: "Arquivo muito grande. Maximo: 100MB." });
       return;
     }
     update({
       fileName: file.name,
       fileSize: file.size,
-      uploadStatus: 'selected',
+      uploadStatus: "selected",
       error: null,
     });
-    // Store file reference for upload
     (window as unknown as Record<string, File>).__pendingUploadFile = file;
   }
 
@@ -129,7 +156,7 @@ export function UploadWizard() {
     const file = (window as unknown as Record<string, File>).__pendingUploadFile;
     if (!file) return;
 
-    update({ uploadStatus: 'uploading', uploadProgress: 10, error: null });
+    update({ uploadStatus: "uploading", uploadProgress: 10, error: null });
 
     try {
       const supabase = getSupabaseBrowser();
@@ -138,37 +165,37 @@ export function UploadWizard() {
       update({ uploadProgress: 30 });
 
       const { error: uploadError } = await supabase.storage
-        .from('uploads')
-        .upload(path, file, { contentType: 'application/pdf', upsert: false });
+        .from("uploads")
+        .upload(path, file, { contentType: file.type, upsert: false });
 
       if (uploadError) {
-        update({ uploadStatus: 'error', error: uploadError.message, uploadProgress: 0 });
+        update({ uploadStatus: "error", error: uploadError.message, uploadProgress: 0 });
         return;
       }
 
       update({ uploadProgress: 70 });
 
       const { data: signed, error: signError } = await supabase.storage
-        .from('uploads')
-        .createSignedUrl(path, 7200); // 2h
+        .from("uploads")
+        .createSignedUrl(path, 7200);
 
       if (signError || !signed) {
-        update({ uploadStatus: 'error', error: 'Falha ao gerar link seguro', uploadProgress: 0 });
+        update({ uploadStatus: "error", error: "Falha ao gerar link seguro", uploadProgress: 0 });
         return;
       }
 
       update({
         fileUrl: signed.signedUrl,
         filePath: path,
-        uploadStatus: 'success',
+        uploadStatus: "success",
         uploadProgress: 100,
       });
 
       delete (window as unknown as Record<string, File>).__pendingUploadFile;
     } catch (err) {
       update({
-        uploadStatus: 'error',
-        error: err instanceof Error ? err.message : 'Erro no upload',
+        uploadStatus: "error",
+        error: err instanceof Error ? err.message : "Erro no upload",
         uploadProgress: 0,
       });
     }
@@ -182,8 +209,10 @@ export function UploadWizard() {
       const result = await bookagent.process.start({
         file_url: state.fileUrl,
         type: state.inputType,
-        user_context: Object.keys(state.userContext).length > 0 ? state.userContext : undefined,
-        webhook_url: state.webhookUrl || undefined,
+        user_context:
+          Object.keys(state.userContext).length > 0
+            ? state.userContext
+            : undefined,
         authorization_acknowledged: state.authorizationAcknowledged || undefined,
         authorization_timestamp: state.authorizationTimestamp || undefined,
       });
@@ -191,7 +220,10 @@ export function UploadWizard() {
     } catch (err) {
       update({
         submitting: false,
-        error: err instanceof Error ? err.message : "Erro ao iniciar processamento",
+        error:
+          err instanceof Error
+            ? err.message
+            : "Erro ao iniciar processamento",
       });
     }
   }
@@ -203,60 +235,99 @@ export function UploadWizard() {
         {STEPS.map((s, i) => (
           <div key={s.label} className="flex items-center">
             <button
+              type="button"
               onClick={() => i < state.step && update({ step: i })}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
                 i === state.step
                   ? "bg-primary text-primary-foreground"
                   : i < state.step
-                  ? "bg-emerald-500/10 text-emerald-600 cursor-pointer hover:bg-emerald-500/20"
-                  : "bg-muted text-muted-foreground"
+                    ? "bg-emerald-500/10 text-emerald-600 cursor-pointer hover:bg-emerald-500/20"
+                    : "bg-muted text-muted-foreground",
               )}
             >
               <span>{s.icon}</span>
               <span className="hidden sm:inline">{s.label}</span>
             </button>
             {i < STEPS.length - 1 && (
-              <div className={cn("w-6 h-px mx-1", i < state.step ? "bg-emerald-500" : "bg-border")} />
+              <div
+                className={cn(
+                  "w-6 h-px mx-1",
+                  i < state.step ? "bg-emerald-500" : "bg-border",
+                )}
+              />
             )}
           </div>
         ))}
       </div>
 
-      <Progress value={(state.step / (STEPS.length - 1)) * 100} className="h-1" />
+      <Progress
+        value={(state.step / (STEPS.length - 1)) * 100}
+        className="h-1"
+      />
 
       {/* Step content */}
       <Card>
         <CardContent className="p-6">
-          {/* Step 0: Input Type */}
+          {/* Step 0: Material Type */}
           {state.step === 0 && (
             <div>
-              <h2 className="text-lg font-semibold mb-1">Tipo de Material</h2>
+              <h2 className="text-lg font-semibold mb-1">
+                Que tipo de material voce tem?
+              </h2>
               <p className="text-sm text-muted-foreground mb-6">
-                Selecione o tipo de arquivo que deseja processar.
+                Selecione o formato do arquivo que deseja processar.
               </p>
               <div className="grid sm:grid-cols-2 gap-3">
                 {INPUT_TYPES.map((t) => (
                   <button
+                    type="button"
                     key={t.id}
                     onClick={() => update({ inputType: t.id })}
                     className={cn(
                       "flex items-start gap-3 p-4 rounded-lg border text-left transition-all",
                       state.inputType === t.id
                         ? "border-primary bg-primary/5 ring-2 ring-primary/20"
-                        : "border-border hover:border-primary/40 hover:bg-muted/50"
+                        : "border-border hover:border-primary/40 hover:bg-muted/50",
                     )}
                   >
                     <span className="text-2xl mt-0.5">{t.icon}</span>
                     <div>
                       <p className="font-medium text-sm">{t.label}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{t.desc}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {t.desc}
+                      </p>
                     </div>
                     {state.inputType === t.id && (
-                      <Badge className="ml-auto text-[10px] bg-primary">Selecionado</Badge>
+                      <Badge className="ml-auto text-[10px] bg-primary">
+                        Selecionado
+                      </Badge>
                     )}
                   </button>
                 ))}
+              </div>
+
+              {/* What can be generated */}
+              <div className="mt-8">
+                <h3 className="text-sm font-semibold text-muted-foreground mb-3">
+                  O que o BookReel pode gerar a partir do seu material:
+                </h3>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {POSSIBLE_OUTPUTS.map((o) => (
+                    <div
+                      key={o.label}
+                      className="flex items-start gap-2 p-2.5 rounded-lg bg-muted/50"
+                    >
+                      <span className="text-base mt-0.5">{o.icon}</span>
+                      <div>
+                        <p className="text-xs font-medium">{o.label}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {o.desc}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -266,70 +337,103 @@ export function UploadWizard() {
             <div>
               <h2 className="text-lg font-semibold mb-1">Enviar Material</h2>
               <p className="text-sm text-muted-foreground mb-6">
-                Arraste seu arquivo {state.inputType?.toUpperCase()} ou clique para selecionar.
-                Maximo 100MB.
+                Arraste seu arquivo ou clique para selecionar. Maximo 100MB.
               </p>
 
-              {/* Hidden file input */}
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,application/pdf"
+                accept={acceptTypes}
                 className="hidden"
-                title="Selecionar arquivo PDF"
-                onChange={(e) => handleFileSelect(e.target.files?.[0] ?? null)}
+                title="Selecionar arquivo"
+                onChange={(e) =>
+                  handleFileSelect(e.target.files?.[0] ?? null)
+                }
               />
 
               {/* Drop zone */}
-              {state.uploadStatus === 'idle' && (
+              {state.uploadStatus === "idle" && (
                 <div
-                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-primary', 'bg-primary/5'); }}
-                  onDragLeave={(e) => { e.currentTarget.classList.remove('border-primary', 'bg-primary/5'); }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.add(
+                      "border-primary",
+                      "bg-primary/5",
+                    );
+                  }}
+                  onDragLeave={(e) => {
+                    e.currentTarget.classList.remove(
+                      "border-primary",
+                      "bg-primary/5",
+                    );
+                  }}
                   onDrop={(e) => {
                     e.preventDefault();
-                    e.currentTarget.classList.remove('border-primary', 'bg-primary/5');
+                    e.currentTarget.classList.remove(
+                      "border-primary",
+                      "bg-primary/5",
+                    );
                     handleFileSelect(e.dataTransfer.files[0] ?? null);
                   }}
                   onClick={() => fileInputRef.current?.click()}
                   className="border-2 border-dashed border-border rounded-lg p-10 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-all"
                 >
-                  <div className="text-3xl mb-3">📄</div>
-                  <p className="text-sm font-medium text-foreground">Arraste o PDF aqui</p>
-                  <p className="text-xs text-muted-foreground mt-1">ou clique para selecionar</p>
+                  <div className="text-3xl mb-3">
+                    {currentType?.icon ?? "📄"}
+                  </div>
+                  <p className="text-sm font-medium text-foreground">
+                    Arraste o arquivo aqui
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    ou clique para selecionar
+                  </p>
                 </div>
               )}
 
-              {/* File selected — show info + upload button */}
-              {state.uploadStatus === 'selected' && (
+              {/* File selected */}
+              {state.uploadStatus === "selected" && (
                 <div className="border rounded-lg p-4 space-y-3">
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl">📄</span>
+                    <span className="text-2xl">{currentType?.icon ?? "📄"}</span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{state.fileName}</p>
-                      <p className="text-xs text-muted-foreground">{formatFileSize(state.fileSize)}</p>
+                      <p className="text-sm font-medium truncate">
+                        {state.fileName}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatFileSize(state.fileSize)}
+                      </p>
                     </div>
                     <Button
+                      type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={() => update({ uploadStatus: 'idle', fileName: '', fileSize: 0 })}
+                      onClick={() =>
+                        update({
+                          uploadStatus: "idle",
+                          fileName: "",
+                          fileSize: 0,
+                        })
+                      }
                     >
                       Trocar
                     </Button>
                   </div>
-                  <Button onClick={handleUpload} className="w-full">
+                  <Button type="button" onClick={handleUpload} className="w-full">
                     Enviar arquivo
                   </Button>
                 </div>
               )}
 
               {/* Uploading */}
-              {state.uploadStatus === 'uploading' && (
+              {state.uploadStatus === "uploading" && (
                 <div className="border rounded-lg p-4 space-y-3">
                   <div className="flex items-center gap-3">
                     <span className="text-2xl animate-pulse">📤</span>
                     <div className="flex-1">
                       <p className="text-sm font-medium">{state.fileName}</p>
-                      <p className="text-xs text-muted-foreground">Enviando...</p>
+                      <p className="text-xs text-muted-foreground">
+                        Enviando...
+                      </p>
                     </div>
                   </div>
                   <Progress value={state.uploadProgress} className="h-2" />
@@ -337,18 +441,31 @@ export function UploadWizard() {
               )}
 
               {/* Success */}
-              {state.uploadStatus === 'success' && (
+              {state.uploadStatus === "success" && (
                 <div className="border border-emerald-200 bg-emerald-50 rounded-lg p-4">
                   <div className="flex items-center gap-3">
                     <span className="text-2xl">✅</span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-emerald-800">{state.fileName}</p>
-                      <p className="text-xs text-emerald-600">{formatFileSize(state.fileSize)} — Enviado com sucesso</p>
+                      <p className="text-sm font-medium text-emerald-800">
+                        {state.fileName}
+                      </p>
+                      <p className="text-xs text-emerald-600">
+                        {formatFileSize(state.fileSize)} — Enviado com sucesso
+                      </p>
                     </div>
                     <Button
+                      type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={() => update({ uploadStatus: 'idle', fileName: '', fileSize: 0, fileUrl: '', filePath: '' })}
+                      onClick={() =>
+                        update({
+                          uploadStatus: "idle",
+                          fileName: "",
+                          fileSize: 0,
+                          fileUrl: "",
+                          filePath: "",
+                        })
+                      }
                     >
                       Trocar
                     </Button>
@@ -357,12 +474,14 @@ export function UploadWizard() {
               )}
 
               {/* Error */}
-              {state.uploadStatus === 'error' && (
+              {state.uploadStatus === "error" && (
                 <div className="border border-red-200 bg-red-50 rounded-lg p-4">
                   <div className="flex items-center gap-3">
                     <span className="text-2xl">❌</span>
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-red-800">Erro no upload</p>
+                      <p className="text-sm font-medium text-red-800">
+                        Erro no upload
+                      </p>
                       <p className="text-xs text-red-600">{state.error}</p>
                     </div>
                   </div>
@@ -371,7 +490,9 @@ export function UploadWizard() {
                     variant="outline"
                     size="sm"
                     className="mt-3"
-                    onClick={() => update({ uploadStatus: 'idle', error: null })}
+                    onClick={() =>
+                      update({ uploadStatus: "idle", error: null })
+                    }
                   >
                     Tentar novamente
                   </Button>
@@ -379,15 +500,20 @@ export function UploadWizard() {
               )}
 
               {/* Authorization checkbox */}
-              {(state.uploadStatus === 'success' || state.uploadStatus === 'selected') && (
+              {(state.uploadStatus === "success" ||
+                state.uploadStatus === "selected") && (
                 <label className="flex items-start gap-3 mt-6 p-4 rounded-lg border border-amber-200 bg-amber-50 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={state.authorizationAcknowledged}
-                    onChange={(e) => update({
-                      authorizationAcknowledged: e.target.checked,
-                      authorizationTimestamp: e.target.checked ? new Date().toISOString() : null,
-                    })}
+                    onChange={(e) =>
+                      update({
+                        authorizationAcknowledged: e.target.checked,
+                        authorizationTimestamp: e.target.checked
+                          ? new Date().toISOString()
+                          : null,
+                      })
+                    }
                     className="mt-1 h-4 w-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500 shrink-0"
                   />
                   <div>
@@ -395,14 +521,17 @@ export function UploadWizard() {
                       Declaracao de autorizacao
                     </p>
                     <p className="text-xs text-amber-800 leading-relaxed">
-                      Declaro que possuo autorizacao do proprietario deste material (imobiliaria,
-                      construtora ou detentor dos direitos) para utiliza-lo na geracao de conteudo
-                      digital para fins de divulgacao profissional. Assumo total responsabilidade
-                      pelo uso do material enviado e pelo conteudo gerado a partir dele.
+                      Declaro que possuo autorizacao do proprietario deste
+                      material (imobiliaria, construtora ou detentor dos
+                      direitos) para utiliza-lo na geracao de conteudo digital
+                      para fins de divulgacao profissional. Assumo total
+                      responsabilidade pelo uso do material enviado e pelo
+                      conteudo gerado a partir dele.
                     </p>
                     <p className="text-xs text-amber-700 mt-2 leading-relaxed">
-                      Entendo que a BookReel processa o material com base nesta declaracao e nao
-                      verifica independentemente a titularidade dos direitos autorais.
+                      Entendo que a BookReel processa o material com base nesta
+                      declaracao e nao verifica independentemente a titularidade
+                      dos direitos autorais.
                     </p>
                   </div>
                 </label>
@@ -413,101 +542,86 @@ export function UploadWizard() {
           {/* Step 2: Personalization */}
           {state.step === 2 && (
             <div>
-              <h2 className="text-lg font-semibold mb-1">Personalizacao (opcional)</h2>
+              <h2 className="text-lg font-semibold mb-1">
+                Personalizacao (opcional)
+              </h2>
               <p className="text-sm text-muted-foreground mb-6">
-                Dados do corretor/imobiliaria para personalizar os outputs gerados.
+                Dados do corretor ou imobiliaria para personalizar os conteudos gerados.
+                Pule se preferir — pode editar depois.
               </p>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium block mb-1">Nome</label>
                   <Input
-                    placeholder="Douglas Silva Imóveis"
+                    placeholder="Douglas Silva Imoveis"
                     value={state.userContext.name ?? ""}
-                    onChange={(e) => updateCtx({ name: e.target.value || undefined })}
+                    onChange={(e) =>
+                      updateCtx({ name: e.target.value || undefined })
+                    }
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium block mb-1">WhatsApp</label>
+                  <label className="text-sm font-medium block mb-1">
+                    WhatsApp
+                  </label>
                   <Input
                     placeholder="5571999733883"
                     value={state.userContext.whatsapp ?? ""}
-                    onChange={(e) => updateCtx({ whatsapp: e.target.value || undefined })}
+                    onChange={(e) =>
+                      updateCtx({ whatsapp: e.target.value || undefined })
+                    }
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium block mb-1">Instagram</label>
+                  <label className="text-sm font-medium block mb-1">
+                    Instagram
+                  </label>
                   <Input
                     placeholder="@corretor"
                     value={state.userContext.instagram ?? ""}
-                    onChange={(e) => updateCtx({ instagram: e.target.value || undefined })}
+                    onChange={(e) =>
+                      updateCtx({ instagram: e.target.value || undefined })
+                    }
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium block mb-1">Site</label>
-                  <Input
-                    placeholder="https://meusite.com.br"
-                    value={state.userContext.site ?? ""}
-                    onChange={(e) => updateCtx({ site: e.target.value || undefined })}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium block mb-1">Regiao</label>
+                  <label className="text-sm font-medium block mb-1">
+                    Regiao
+                  </label>
                   <Input
                     placeholder="Salvador - BA"
                     value={state.userContext.region ?? ""}
-                    onChange={(e) => updateCtx({ region: e.target.value || undefined })}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium block mb-1">Logo URL</label>
-                  <Input
-                    placeholder="https://meusite.com/logo.png"
-                    value={state.userContext.logo_url ?? ""}
-                    onChange={(e) => updateCtx({ logo_url: e.target.value || undefined })}
+                    onChange={(e) =>
+                      updateCtx({ region: e.target.value || undefined })
+                    }
                   />
                 </div>
               </div>
             </div>
           )}
 
-          {/* Step 3: Options */}
+          {/* Step 3: Confirm + Process */}
           {state.step === 3 && (
             <div>
-              <h2 className="text-lg font-semibold mb-1">Opcoes Avancadas (opcional)</h2>
+              <h2 className="text-lg font-semibold mb-1">
+                Confirmar e Processar
+              </h2>
               <p className="text-sm text-muted-foreground mb-6">
-                Configure webhook para receber notificacao quando o processamento terminar.
-              </p>
-              <div>
-                <label className="text-sm font-medium block mb-1">Webhook URL</label>
-                <Input
-                  type="url"
-                  placeholder="https://meu-backend.com/webhook/bookagent"
-                  value={state.webhookUrl}
-                  onChange={(e) => update({ webhookUrl: e.target.value })}
-                />
-                <p className="text-xs text-muted-foreground mt-2">
-                  Recebera um POST com o resultado quando o job completar.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Step 4: Confirm */}
-          {state.step === 4 && (
-            <div>
-              <h2 className="text-lg font-semibold mb-1">Confirmar e Processar</h2>
-              <p className="text-sm text-muted-foreground mb-6">
-                Revise os dados antes de iniciar o pipeline.
+                Revise os dados e inicie o processamento.
               </p>
 
               <div className="space-y-3 bg-muted/50 rounded-lg p-4">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Tipo</span>
-                  <span className="font-medium">{state.inputType?.toUpperCase()}</span>
+                  <span className="font-medium">
+                    {currentType?.label ?? state.inputType?.toUpperCase()}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">URL</span>
-                  <span className="font-mono text-xs truncate max-w-[300px]">{state.fileUrl}</span>
+                  <span className="text-muted-foreground">Arquivo</span>
+                  <span className="text-xs truncate max-w-[250px]">
+                    {state.fileName} ({formatFileSize(state.fileSize)})
+                  </span>
                 </div>
                 {state.userContext.name && (
                   <div className="flex justify-between text-sm">
@@ -521,25 +635,17 @@ export function UploadWizard() {
                     <span>{state.userContext.whatsapp}</span>
                   </div>
                 )}
-                {state.userContext.instagram && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Instagram</span>
-                    <span>{state.userContext.instagram}</span>
-                  </div>
-                )}
-                {state.webhookUrl && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Webhook</span>
-                    <span className="font-mono text-xs truncate max-w-[300px]">{state.webhookUrl}</span>
-                  </div>
-                )}
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Autorizacao</span>
+                  <span className="text-emerald-600 text-xs">Declarada</span>
+                </div>
               </div>
 
               <div className="mt-4 p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
                 <p className="text-xs text-blue-600">
-                  O pipeline processara o material em 17 etapas: extracao, branding,
-                  narrativa, media plans, blog, landing page, scoring e export.
-                  Voce sera redirecionado para acompanhar o progresso.
+                  O BookReel vai analisar seu material e gerar automaticamente:
+                  reels, carrosseis, artigos, landing pages e mais. Voce sera
+                  redirecionado para acompanhar o progresso.
                 </p>
               </div>
 
@@ -556,6 +662,7 @@ export function UploadWizard() {
       {/* Navigation */}
       <div className="flex justify-between">
         <Button
+          type="button"
           variant="outline"
           onClick={() => update({ step: state.step - 1 })}
           disabled={state.step === 0}
@@ -565,6 +672,7 @@ export function UploadWizard() {
 
         {state.step < STEPS.length - 1 ? (
           <Button
+            type="button"
             onClick={() => update({ step: state.step + 1 })}
             disabled={!canNext()}
           >
@@ -572,10 +680,13 @@ export function UploadWizard() {
           </Button>
         ) : (
           <Button
+            type="button"
             onClick={handleSubmit}
-            disabled={state.submitting || !state.inputType || !state.fileUrl}
+            disabled={
+              state.submitting || !state.inputType || !state.fileUrl
+            }
           >
-            {state.submitting ? "Processando..." : "Iniciar Pipeline"}
+            {state.submitting ? "Processando..." : "Iniciar Processamento"}
           </Button>
         )}
       </div>
