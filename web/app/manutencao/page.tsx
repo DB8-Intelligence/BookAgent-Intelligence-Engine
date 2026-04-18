@@ -10,19 +10,27 @@ export default function ManutencaoPage() {
         </div>
 
         <h1 className="text-2xl font-bold text-slate-900 mb-3">
-          Estamos em manutencao
+          Acesso restrito
         </h1>
 
         <p className="text-slate-500 mb-8">
-          Estamos fazendo melhorias importantes para voce. Voltaremos em breve.
+          O BookReel esta em beta fechado. Se voce tem um codigo de convite, use-o para acessar.
         </p>
 
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
-        >
-          Voltar para home
-        </Link>
+        <div className="flex flex-col gap-3">
+          <Link
+            href="/beta"
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+          >
+            Inserir codigo de convite
+          </Link>
+          <Link
+            href="/"
+            className="text-sm text-slate-500 hover:text-slate-700 transition-colors"
+          >
+            Voltar para home
+          </Link>
+        </div>
       </div>
     </div>
   );
