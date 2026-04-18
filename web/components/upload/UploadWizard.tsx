@@ -310,7 +310,7 @@ export function UploadWizard() {
               {/* What can be generated */}
               <div className="mt-8">
                 <h3 className="text-sm font-semibold text-muted-foreground mb-3">
-                  O que o BookReel pode gerar a partir do seu material:
+                  Produtos disponiveis (voce escolhe quais gerar apos a analise):
                 </h3>
                 <div className="grid sm:grid-cols-2 gap-2">
                   {POSSIBLE_OUTPUTS.map((o) => (
@@ -643,9 +643,9 @@ export function UploadWizard() {
 
               <div className="mt-4 p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
                 <p className="text-xs text-blue-600">
-                  O BookReel vai analisar seu material e gerar automaticamente:
-                  reels, carrosseis, artigos, landing pages e mais. Voce sera
-                  redirecionado para acompanhar o progresso.
+                  O BookReel vai analisar seu material e identificar o que pode ser criado.
+                  Na proxima etapa voce escolhe quais produtos deseja gerar — cada um consome
+                  creditos do seu plano.
                 </p>
               </div>
 
