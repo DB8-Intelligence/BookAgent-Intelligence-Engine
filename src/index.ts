@@ -291,6 +291,9 @@ const app = express();
 // CORS — allow frontend and configured origins
 app.use(cors({
   origin: process.env.CORS_ORIGIN?.split(',') ?? [
+    'https://bookreel.app',
+    'https://www.bookreel.app',
+    'https://bookagent.db8intelligence.com.br',
     'http://localhost:3001',
     'http://localhost:3000',
   ],
