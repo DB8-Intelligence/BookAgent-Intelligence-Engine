@@ -403,10 +403,13 @@ async function request<T>(
 ): Promise<T> {
   const url = `${BASE_URL}${API_PREFIX}${path}`;
 
+  const apiKey = process.env.NEXT_PUBLIC_BOOKAGENT_API_KEY ?? "";
+
   const res = await fetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(apiKey && { "x-api-key": apiKey }),
       ...init?.headers,
     },
   });
