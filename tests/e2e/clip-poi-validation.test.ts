@@ -77,7 +77,10 @@ const EXPECTED_REGIONS: Record<string, { minX: number; maxX: number; minY: numbe
 // Tests
 // ==========================================================================
 
-describe('CLIP POI Detection', () => {
+// Skip in CI — CLIP model is ~350MB and takes too long to download
+const isCI = process.env.CI === 'true';
+
+describe.skipIf(isCI)('CLIP POI Detection', () => {
   let clipDetector: CLIPPOIDetector;
   let heuristicDetector: POIDetector;
 

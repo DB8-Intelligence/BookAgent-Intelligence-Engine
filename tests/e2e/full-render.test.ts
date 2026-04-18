@@ -12,12 +12,21 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { exec } from 'child_process';
+import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import { existsSync, statSync, mkdirSync } from 'fs';
 import { resolve } from 'path';
 import sharp from 'sharp';
 import { v4 as uuid } from 'uuid';
+
+// Skip entire suite if FFmpeg is not installed (CI environments)
+let ffmpegAvailable = false;
+try {
+  execSync('ffmpeg -version', { stdio: 'ignore' });
+  ffmpegAvailable = true;
+} catch {
+  // FFmpeg not found
+}
 
 import { SceneComposerEnhanced, type VideoScene } from '../../src/modules/media/scene-composer-enhanced.js';
 import { NarrativeEngine, type NarrativeStoryboard } from '../../src/modules/narrative/narrative-engine.js';
@@ -189,7 +198,7 @@ function makeBlocks(assets: Asset[]): CorrelationBlock[] {
 // Tests
 // ==========================================================================
 
-describe('Full-Render Validation', () => {
+describe.skipIf(!ffmpegAvailable)('Full-Render Validation', () => {
   let assets: Asset[];
   let storyboard: StoryboardOutput;
   let ffmpegArgs: readonly string[];
