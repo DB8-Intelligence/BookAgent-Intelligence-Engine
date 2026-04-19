@@ -174,4 +174,42 @@ export class JobRepository {
       limit,
     });
   }
+
+  /**
+   * Conta artefatos por tipo para um job.
+   * Usado para computar output_summary quando o job vem do banco.
+   */
+  async countArtifactsByType(jobId: string): Promise<ArtifactCounts> {
+    const rows = await this.client.select<{ artifact_type: string; output_format: string }>(
+      'bookagent_job_artifacts',
+      {
+        filters: [{ column: 'job_id', operator: 'eq', value: jobId }],
+        select: 'artifact_type,output_format',
+      },
+    );
+
+    const counts: ArtifactCounts = { media_plans: 0, blog_plans: 0, landing_page_plans: 0, selected_outputs: 0 };
+
+    const seen = new Set<string>();
+    for (const row of rows) {
+      // Count unique output_format entries per type (avoid double-counting render-spec + metadata)
+      const key = `${row.artifact_type}:${row.output_format}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      if (row.artifact_type === 'media-render-spec') counts.media_plans++;
+      else if (row.artifact_type === 'blog-article') counts.blog_plans++;
+      else if (row.artifact_type === 'landing-page') counts.landing_page_plans++;
+    }
+
+    counts.selected_outputs = counts.media_plans + counts.blog_plans + counts.landing_page_plans;
+    return counts;
+  }
+}
+
+export interface ArtifactCounts {
+  media_plans: number;
+  blog_plans: number;
+  landing_page_plans: number;
+  selected_outputs: number;
 }
