@@ -5,7 +5,7 @@
   "installCommand": "npm install",
   "outputDirectory": ".next",
   "env": {
-    "NEXT_PUBLIC_API_URL": "https://api.bookreel.ai"
+    "NEXT_PUBLIC_API_URL": "https://api-bookagent.db8intelligence.com.br"
   },
   "redirects": [
     {
