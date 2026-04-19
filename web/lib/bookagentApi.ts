@@ -472,8 +472,11 @@ export const bookagent = {
     artifact: (jobId: string, artifactId: string) =>
       request<ArtifactDetail>(`/jobs/${jobId}/artifacts/${artifactId}`),
 
-    downloadUrl: (jobId: string, artifactId: string) =>
-      `${BASE_URL}${API_PREFIX}/jobs/${jobId}/artifacts/${artifactId}/download`,
+    downloadUrl: (jobId: string, artifactId: string) => {
+      const apiKey = process.env.NEXT_PUBLIC_BOOKAGENT_API_KEY ?? "";
+      const base = `${BASE_URL}${API_PREFIX}/jobs/${jobId}/artifacts/${artifactId}/download`;
+      return apiKey ? `${base}?api_key=${apiKey}` : base;
+    },
   },
 
   // ---------- Dashboard ----------

@@ -172,27 +172,8 @@ export async function getArtifactDetail(req: Request, res: Response): Promise<vo
  *
  * Retorna o conteúdo bruto com Content-Type e Content-Disposition adequados.
  */
-export function downloadArtifact(req: Request, res: Response): void {
+export async function downloadArtifact(req: Request, res: Response): Promise<void> {
   const { jobId, artifactId } = req.params;
-
-  const job = orchestrator.getJobStatus(jobId);
-
-  if (!job) {
-    sendError(res, 'NOT_FOUND', 'Job não encontrado', 404);
-    return;
-  }
-
-  if (!job.result?.exportResult) {
-    sendError(res, 'NOT_READY', 'Job ainda não tem artifacts exportados', 409);
-    return;
-  }
-
-  const artifact = job.result.exportResult.artifacts.find((a) => a.id === artifactId);
-
-  if (!artifact) {
-    sendError(res, 'NOT_FOUND', 'Artifact não encontrado', 404);
-    return;
-  }
 
   // Content-Type baseado no formato
   const contentTypeMap: Record<string, string> = {
@@ -202,7 +183,6 @@ export function downloadArtifact(req: Request, res: Response): void {
     [ExportFormat.RENDER_SPEC]: 'application/json; charset=utf-8',
   };
 
-  // Extensão do arquivo
   const extensionMap: Record<string, string> = {
     [ExportFormat.HTML]: 'html',
     [ExportFormat.MARKDOWN]: 'md',
@@ -210,14 +190,42 @@ export function downloadArtifact(req: Request, res: Response): void {
     [ExportFormat.RENDER_SPEC]: 'json',
   };
 
-  const contentType = contentTypeMap[artifact.exportFormat] ?? 'application/octet-stream';
-  const extension = extensionMap[artifact.exportFormat] ?? 'bin';
-  const filename = `${artifact.planId}-${artifact.artifactType}.${extension}`;
+  // 1. Try in-memory
+  const job = orchestrator.getJobStatus(jobId);
+  if (job?.result?.exportResult) {
+    const artifact = job.result.exportResult.artifacts.find((a) => a.id === artifactId);
+    if (artifact) {
+      const contentType = contentTypeMap[artifact.exportFormat] ?? 'application/octet-stream';
+      const extension = extensionMap[artifact.exportFormat] ?? 'bin';
+      const filename = `${artifact.planId}-${artifact.artifactType}.${extension}`;
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', artifact.sizeBytes.toString());
+      res.send(artifact.content);
+      return;
+    }
+  }
 
-  res.setHeader('Content-Type', contentType);
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  res.setHeader('Content-Length', artifact.sizeBytes.toString());
-  res.send(artifact.content);
+  // 2. Fallback to Supabase
+  if (jobRepository) {
+    try {
+      const rows = await fetchArtifactRows(jobId);
+      const row = rows.find((r) => r.id === artifactId);
+      if (row && row.content !== null) {
+        const contentType = contentTypeMap[row.export_format] ?? 'application/octet-stream';
+        const extension = extensionMap[row.export_format] ?? 'bin';
+        const filename = `${row.id}-${row.artifact_type}.${extension}`;
+        const body = typeof row.content === 'string' ? row.content : JSON.stringify(row.content, null, 2);
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', Buffer.byteLength(body, 'utf-8').toString());
+        res.send(body);
+        return;
+      }
+    } catch { /* fall through */ }
+  }
+
+  sendError(res, 'NOT_FOUND', 'Artifact não encontrado ou sem conteúdo', 404);
 }
 
 // ---------------------------------------------------------------------------
