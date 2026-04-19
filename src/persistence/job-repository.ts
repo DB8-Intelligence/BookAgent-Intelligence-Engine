@@ -176,6 +176,18 @@ export class JobRepository {
   }
 
   /**
+   * Lista artefatos de um job.
+   */
+  async getArtifacts(jobId: string): Promise<Record<string, unknown>[]> {
+    return this.client.select<Record<string, unknown>>(
+      'bookagent_job_artifacts',
+      {
+        filters: [{ column: 'job_id', operator: 'eq', value: jobId }],
+      },
+    );
+  }
+
+  /**
    * Conta artefatos por tipo para um job.
    * Usado para computar output_summary quando o job vem do banco.
    */

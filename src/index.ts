@@ -51,7 +51,7 @@ import { checkProviderStatus } from './adapters/provider-factory.js';
 // --- Controllers (dependency injection) ---
 import { setOrchestrator as setProcessOrch, setProcessJobRepository } from './api/controllers/processController.js';
 import { setOrchestrator as setJobsOrch, setJobRepository } from './api/controllers/jobsController.js';
-import { setOrchestrator as setArtifactsOrch } from './api/controllers/artifactsController.js';
+import { setOrchestrator as setArtifactsOrch, setArtifactsJobRepository } from './api/controllers/artifactsController.js';
 import { setSupabaseClientForApproval } from './api/controllers/approvalController.js';
 import { setSupabaseClientForReview } from './api/controllers/reviewController.js';
 import { setSupabaseClientForRevision } from './api/controllers/revisionController.js';
@@ -226,8 +226,10 @@ setOrchestratorForWhatsAppFunnel(orchestrator);
 
 // Injetar JobRepository no jobsController (fallback para leitura no Supabase)
 if (supabaseClient) {
-  setJobRepository(new JobRepository(supabaseClient));
+  const jobRepo = new JobRepository(supabaseClient);
+  setJobRepository(jobRepo);
   setProcessJobRepository(new JobRepository(supabaseClient));
+  setArtifactsJobRepository(jobRepo);
   setSupabaseClientForApproval(supabaseClient);
   setSupabaseClientForReview(supabaseClient);
   setSupabaseClientForRevision(supabaseClient);
