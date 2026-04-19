@@ -181,47 +181,28 @@ export function PipelineVisualizer({
         <Progress value={isDone ? 100 : progress} className={cn("h-2", isActive && "animate-pulse")} />
       </div>
 
-      {/* ── Stage grid ────────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            17 Etapas do Pipeline
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-            {PIPELINE_STAGES.map((stage, i) => {
-              const state = stageStates[i];
-              return (
-                <div
-                  key={stage.id}
-                  className={cn(
-                    "relative rounded-lg border p-3 transition-all",
-                    state === "done" && "border-emerald-500/30 bg-emerald-500/5",
-                    state === "running" && "border-amber-500/40 bg-amber-500/5 ring-1 ring-amber-500/30",
-                    state === "error" && "border-red-500/30 bg-red-500/5",
-                    state === "pending" && "border-border bg-muted/30 opacity-50",
-                  )}
-                >
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <span className="text-base">{stage.icon}</span>
-                    <span className="text-[10px] font-mono text-muted-foreground">{stage.id}</span>
-                  </div>
-                  <p className="text-[11px] font-medium leading-tight">{stage.name}</p>
-                  <p className="text-[9px] text-muted-foreground mt-0.5">{stage.desc}</p>
-
-                  {/* Status dot */}
-                  <div className="absolute top-2 right-2">
-                    {state === "done" && <span className="block w-2 h-2 rounded-full bg-emerald-500" />}
-                    {state === "running" && <span className="block w-2 h-2 rounded-full bg-amber-500 animate-pulse" />}
-                    {state === "error" && <span className="block w-2 h-2 rounded-full bg-red-500" />}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+      {/* ── Processing message (while active) ───── */}
+      {isActive && (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <div className="text-4xl mb-4 animate-pulse">
+              {progress < 30 ? "📄" : progress < 60 ? "🔍" : progress < 90 ? "✨" : "📦"}
+            </div>
+            <p className="text-sm font-medium text-slate-700">
+              {progress < 30
+                ? "Analisando seu material..."
+                : progress < 60
+                ? "Extraindo conteudo e imagens..."
+                : progress < 90
+                ? "Gerando narrativas e planos..."
+                : "Finalizando artefatos..."}
+            </p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Isso pode levar alguns minutos. Voce pode sair e voltar depois.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Error detail ──────────────────────────── */}
       {isFailed && job.error && (
