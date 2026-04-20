@@ -25,6 +25,10 @@ export const config = {
     apiKey: process.env.BOOKAGENT_API_KEY ?? null, // Chave para proteção de endpoints (n8n, internos)
   },
 
+  supabase: {
+    jwtSecret: process.env.SUPABASE_JWT_SECRET ?? null,
+  },
+
   queue: {
     /** Redis configurado → modo assíncrono; não configurado → modo síncrono */
     redisUrl:      process.env.REDIS_URL      ?? null,

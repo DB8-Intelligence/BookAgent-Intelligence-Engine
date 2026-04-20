@@ -63,8 +63,10 @@ export async function tenantGuard(
   try {
     const tenantContext = await resolveTenantContext(
       {
+        // JWT auth user takes priority over headers
+        authUserId: req.authUser?.id,
         tenantIdHeader: asString(req.headers['x-tenant-id']),
-        userIdHeader: asString(req.headers['x-user-id']),
+        userIdHeader: req.authUser?.id ?? asString(req.headers['x-user-id']),
         planTierHeader: asString(req.headers['x-plan-type']),
         bodyUserContext: req.body?.user_context,
       },

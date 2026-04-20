@@ -85,6 +85,8 @@ import { setSupabaseClientForAcquisition } from './api/controllers/acquisitionCo
 import { setSupabaseClientForIntegrationHub } from './api/controllers/integrationHubController.js';
 import { setSupabaseClientForDistribution } from './api/controllers/distributionController.js';
 import { setTenantGuardSupabaseClient, tenantGuard } from './api/middleware/tenant-guard.js';
+import { supabaseAuthMiddleware } from './api/middleware/supabase-auth.js';
+import { autoProvisionMiddleware, setAutoProvisionClient } from './api/middleware/auto-provision.js';
 import { setVideoRenderSupabaseClient } from './api/controllers/videoRenderController.js';
 import { setPlanGuardSupabaseClient } from './api/middleware/plan-guard.js';
 import { setLeadsSupabaseClient } from './api/controllers/leadsController.js';
@@ -230,6 +232,7 @@ if (supabaseClient) {
   setJobRepository(jobRepo);
   setProcessJobRepository(new JobRepository(supabaseClient));
   setArtifactsJobRepository(jobRepo);
+  setAutoProvisionClient(supabaseClient);
   setSupabaseClientForApproval(supabaseClient);
   setSupabaseClientForReview(supabaseClient);
   setSupabaseClientForRevision(supabaseClient);
@@ -304,7 +307,9 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 
-// Tenant resolution — resolve TenantContext em cada request (Parte 74)
+// Auth chain: JWT extraction → auto-provision tenant → resolve tenant context
+app.use(supabaseAuthMiddleware);
+app.use(autoProvisionMiddleware);
 app.use(tenantGuard);
 
 // Health check — inclui status de providers e persistence

@@ -1,11 +1,15 @@
 /**
  * Auth Middleware — BookAgent Intelligence Engine
  *
- * Protege endpoints sensíveis (processamento, leads) validando
- * o header 'x-api-key' contra a configuração interna.
+ * Protege endpoints sensíveis validando autenticação.
  *
- * Se BOOKAGENT_API_KEY não estiver configurado, o endpoint
- * permanece aberto (apenas loga aviso).
+ * Aceita DOIS modos de autenticação:
+ *   1. Supabase JWT (via Authorization: Bearer <token>) — para frontend
+ *   2. API Key (via x-api-key header ou ?api_key query) — para acesso programático
+ *
+ * Se nenhum dos dois estiver presente/válido, retorna 401.
+ * Se BOOKAGENT_API_KEY não estiver configurado E não houver JWT secret,
+ * o endpoint permanece aberto (modo desenvolvimento).
  */
 
 import type { Request, Response, NextFunction } from 'express';
@@ -14,23 +18,25 @@ import { logger } from '../../utils/logger.js';
 import { sendError } from '../helpers/response.js';
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
-  const serverKey = config.api.apiKey;
-
-  // Se não houver chave configurada, permitimos (modo aberto com aviso)
-  if (!serverKey) {
-    // Loga apenas uma vez ou a cada X requests para não inundar o log em produção
-    // (Simplificado agora para logar sempre que solicitado sem chave configurada)
-    // logger.warn('[AuthMiddleware] API_KEY not configured. Endpoints are OPEN.');
+  // 1. Already authenticated via Supabase JWT (set by supabaseAuthMiddleware)
+  if (req.authUser) {
     return next();
   }
 
+  // 2. Try API key authentication
+  const serverKey = config.api.apiKey;
   const clientKey = req.headers['x-api-key'] || req.query['api_key'];
 
-  if (!clientKey || clientKey !== serverKey) {
-    logger.warn(`[AuthMiddleware] Unauthorized access attempt from ${req.ip}`);
-    sendError(res, 'UNAUTHORIZED', 'Invalid or missing API Key', 401);
-    return;
+  if (serverKey && clientKey && clientKey === serverKey) {
+    return next();
   }
 
-  next();
+  // 3. If neither JWT secret nor API key is configured, allow (dev mode)
+  if (!serverKey && !config.supabase.jwtSecret) {
+    return next();
+  }
+
+  // 4. Unauthorized
+  logger.warn(`[AuthMiddleware] Unauthorized access attempt from ${req.ip} to ${req.path}`);
+  sendError(res, 'UNAUTHORIZED', 'Invalid or missing API Key', 401);
 }
