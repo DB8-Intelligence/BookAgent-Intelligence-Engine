@@ -80,6 +80,27 @@ export class JobRepository {
 
     await this.client.insert(this.table, row);
     logger.info(`[JobRepository] Job ${job.id} created (status=${job.status})`);
+
+    // Also create job_meta row for dashboard visibility
+    const uc = job.input.userContext as Record<string, unknown> | undefined;
+    const tenantId = uc?.tenantId as string | undefined;
+    const userId = uc?.authUserId as string | undefined;
+    if (tenantId) {
+      try {
+        await this.client.insert('bookagent_job_meta', {
+          job_id: job.id,
+          user_id: userId ?? 'unknown',
+          plan_type: (uc?.planTier as string) ?? 'starter',
+          source_channel: 'dashboard',
+          approval_status: 'pending',
+          approval_round: 0,
+          tenant_id: tenantId,
+        });
+        logger.info(`[JobRepository] Job meta created for ${job.id} (tenant=${tenantId})`);
+      } catch (metaErr) {
+        logger.warn(`[JobRepository] Failed to create job_meta for ${job.id}: ${metaErr}`);
+      }
+    }
   }
 
   /**

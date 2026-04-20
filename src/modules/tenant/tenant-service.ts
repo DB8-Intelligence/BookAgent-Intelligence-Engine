@@ -90,19 +90,19 @@ export async function createTenant(
     updatedAt: now,
   };
 
-  // Persist tenant
+  // Persist tenant — columns must match actual bookagent_tenants schema
   if (supabase) {
     await supabase.upsert(TABLE, {
       id: tenant.id,
+      auth_user_id: input.ownerId,
       name: tenant.name,
-      slug: tenant.slug,
-      status: tenant.status,
-      plan: JSON.stringify(tenant.plan),
-      owner_id: tenant.ownerId,
-      members: JSON.stringify(tenant.members),
+      email: input.ownerEmail,
+      plan_tier: planTier,
+      subscription_status: isTrial ? 'trial' : 'active',
+      trial_ends_at: isTrial ? new Date(now.getTime() + 7 * 86400000).toISOString() : null,
       metadata: JSON.stringify(tenant.metadata),
-      created_at: tenant.createdAt,
-      updated_at: tenant.updatedAt,
+      created_at: tenant.createdAt.toISOString(),
+      updated_at: tenant.updatedAt.toISOString(),
     }, 'id');
 
     // Create subscription

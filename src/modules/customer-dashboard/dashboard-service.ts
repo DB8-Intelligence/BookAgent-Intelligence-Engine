@@ -52,11 +52,12 @@ export async function getOverview(
   const tid = tenantCtx.tenantId;
 
   // Parallel queries
-  const [jobs, usage, subscription, recentJobs] = await Promise.all([
+  const [jobs, usage, subscription, recentJobs, tenantName] = await Promise.all([
     getJobStats(tid, supabase),
     getUsageSummary(tenantCtx, supabase),
     getSubscription(tid, supabase),
     getJobList(tenantCtx, supabase, 5),
+    getTenantName(tid, supabase),
   ]);
 
   // Alerts
@@ -104,7 +105,7 @@ export async function getOverview(
   const rendersFeature = usage.features.find((f) => f.eventType === 'video_render_requested');
 
   return {
-    tenantName: tid,
+    tenantName: tenantName ?? tid,
     planTier: tenantCtx.planTier,
     subscriptionStatus: subscription?.status ?? 'active',
     stats: {
@@ -680,6 +681,20 @@ function mapToCustomerStatus(approvalStatus: string | null): CustomerJobStatus {
   }
 }
 
+async function getTenantName(tenantId: string, supabase: SupabaseClient | null): Promise<string | null> {
+  if (!supabase || tenantId === 'default') return null;
+  try {
+    const rows = await supabase.select<{ name: string }>('bookagent_tenants', {
+      filters: [{ column: 'id', operator: 'eq', value: tenantId }],
+      select: 'name',
+      limit: 1,
+    });
+    return rows[0]?.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
 interface JobStats {
   thisMonth: number;
   total: number;
@@ -695,20 +710,36 @@ async function getJobStats(tenantId: string, supabase: SupabaseClient | null): P
 
   try {
     const rows = await supabase.select<{
+      job_id: string;
       approval_status: string | null;
       created_at: string;
     }>('bookagent_job_meta', {
       filters: [{ column: 'tenant_id', operator: 'eq', value: tenantId }],
-      select: 'approval_status,created_at',
+      select: 'job_id,approval_status,created_at',
     });
 
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
+    // Count artifacts across all tenant jobs
+    let artifactsCount = 0;
+    const jobIds = rows.map((r) => r.job_id);
+    if (jobIds.length > 0) {
+      try {
+        const artRows = await supabase.select<{ job_id: string }>('bookagent_job_artifacts', {
+          filters: [{ column: 'job_id', operator: 'in', value: `(${jobIds.join(',')})` }],
+          select: 'job_id',
+        });
+        artifactsCount = artRows.length;
+      } catch {
+        // best-effort
+      }
+    }
+
     return {
       total: rows.length,
       thisMonth: rows.filter((r) => r.created_at >= monthStart).length,
-      artifactsCount: 0,
+      artifactsCount,
       publishedCount: rows.filter((r) => r.approval_status === 'published').length,
       pendingReviews: rows.filter((r) =>
         r.approval_status === 'awaiting_intermediate_review' ||
