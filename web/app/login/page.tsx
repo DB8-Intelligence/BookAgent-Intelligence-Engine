@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -20,7 +19,6 @@ function GoogleIcon() {
 }
 
 export default function LoginPage() {
-  const router = useRouter();
   const { session, loading: authLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,9 +29,9 @@ export default function LoginPage() {
   // Redireciona se ja estiver logado
   useEffect(() => {
     if (!authLoading && session) {
-      router.replace("/dashboard");
+      window.location.href = "/dashboard";
     }
-  }, [authLoading, session, router]);
+  }, [authLoading, session]);
 
   async function handleGoogleSignIn() {
     setError(null);
@@ -76,8 +74,8 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
-    router.refresh();
+    // Full page reload para garantir que o middleware veja os cookies novos
+    window.location.href = "/dashboard";
   }
 
   return (
