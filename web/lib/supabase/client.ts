@@ -1,12 +1,16 @@
 /**
  * Supabase Browser Client — singleton para uso no frontend.
  *
+ * Usa createBrowserClient do @supabase/ssr para que a sessao
+ * seja armazenada em cookies (acessiveis pelo middleware).
+ *
  * Env vars:
  *   NEXT_PUBLIC_SUPABASE_URL
  *   NEXT_PUBLIC_SUPABASE_ANON_KEY
  */
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 let client: SupabaseClient | null = null;
 
@@ -22,9 +26,7 @@ export function getSupabaseBrowser(): SupabaseClient {
     );
   }
 
-  client = createClient(url, key, {
-    realtime: { params: { eventsPerSecond: 10 } },
-  });
+  client = createBrowserClient(url, key);
 
   return client;
 }
