@@ -26,7 +26,7 @@ export const config = {
   },
 
   supabase: {
-    jwtSecret: process.env.SUPABASE_JWT_SECRET ?? null,
+    jwtSecret: process.env.SUPABASE_JWT_SECRET ?? process.env.NEXOIMOB_SUPABASE_JWT_SECRET ?? null,
   },
 
   queue: {
