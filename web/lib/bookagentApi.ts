@@ -423,7 +423,7 @@ async function request<T>(
     headers: {
       "Content-Type": "application/json",
       ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
-      ...(apiKey && !accessToken && { "x-api-key": apiKey }),
+      ...(apiKey && { "x-api-key": apiKey }),
       ...init?.headers,
     },
   });
