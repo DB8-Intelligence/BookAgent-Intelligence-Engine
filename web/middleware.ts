@@ -1,43 +1,81 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
 
 /**
- * Middleware — protege rotas do dashboard.
+ * Middleware — protege rotas autenticadas.
  *
- * Acesso permitido quando:
- *   - Cookie `bookreel_beta` presente com codigo valido
+ * Rotas protegidas (requer sessao Supabase):
+ *   /dashboard/**, /upload/**, /pipeline/**, /outputs/**
  *
- * Sem cookie valido:
- *   - /dashboard/** e /upload/** redirecionam para /beta
+ * Rotas de auth (redireciona para dashboard se ja logado):
+ *   /login, /register
  *
- * Rotas livres (sem check):
- *   / (landing), /beta, /manutencao, /planos, /landing, /_next/**
+ * Rotas livres:
+ *   /, /landing, /planos, /beta, /auth/callback, /_next/**
  */
 
-const VALID_BETA_CODES = new Set([
-  'BOOKREEL-BETA-001',
-  'BOOKREEL-BETA-002',
-  'BOOKREEL-BETA-003',
-  'BOOKREEL-BETA-004',
-  'BOOKREEL-BETA-005',
-  'BOOKREEL-BETA-006',
-  'BOOKREEL-BETA-007',
-  'BOOKREEL-BETA-008',
-  'BOOKREEL-BETA-009',
-  'BOOKREEL-BETA-010',
-  'DB8-MASTER-2026',
-]);
+export async function middleware(request: NextRequest) {
+  const response = NextResponse.next({
+    request: { headers: request.headers },
+  });
 
-export function middleware(request: NextRequest) {
-  const betaCookie = request.cookies.get('bookreel_beta')?.value;
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            request.cookies.set(name, value);
+            response.cookies.set(name, value, options);
+          });
+        },
+      },
+    },
+  );
 
-  if (betaCookie && VALID_BETA_CODES.has(betaCookie)) {
-    return NextResponse.next();
+  const { data: { session } } = await supabase.auth.getSession();
+  const path = request.nextUrl.pathname;
+
+  // Protected routes — redirect to login if no session
+  if (!session && isProtectedRoute(path)) {
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('redirect', path);
+    return NextResponse.redirect(loginUrl);
   }
 
-  return NextResponse.redirect(new URL('/beta', request.url));
+  // Auth routes — redirect to dashboard if already logged in
+  if (session && isAuthRoute(path)) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+
+  return response;
+}
+
+function isProtectedRoute(path: string): boolean {
+  return (
+    path.startsWith('/dashboard') ||
+    path.startsWith('/upload') ||
+    path.startsWith('/pipeline') ||
+    path.startsWith('/outputs')
+  );
+}
+
+function isAuthRoute(path: string): boolean {
+  return path === '/login' || path === '/register';
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/upload/:path*'],
+  matcher: [
+    '/dashboard/:path*',
+    '/upload/:path*',
+    '/pipeline/:path*',
+    '/outputs/:path*',
+    '/login',
+    '/register',
+  ],
 };

@@ -405,11 +405,25 @@ async function request<T>(
 
   const apiKey = process.env.NEXT_PUBLIC_BOOKAGENT_API_KEY ?? "";
 
+  // Get Supabase session token for authenticated requests
+  let accessToken = "";
+  if (typeof window !== "undefined") {
+    try {
+      const { getSupabaseBrowser } = await import("@/lib/supabase/client");
+      const supabase = getSupabaseBrowser();
+      const { data: { session } } = await supabase.auth.getSession();
+      accessToken = session?.access_token ?? "";
+    } catch {
+      // Supabase not available — fall back to API key
+    }
+  }
+
   const res = await fetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      ...(apiKey && { "x-api-key": apiKey }),
+      ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
+      ...(apiKey && !accessToken && { "x-api-key": apiKey }),
       ...init?.headers,
     },
   });
