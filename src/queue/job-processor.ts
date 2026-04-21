@@ -120,12 +120,24 @@ export async function processBookAgentJob(
       });
 
       // Persist asset URL map for video rendering (if available)
-      const assetUrlMap = (result as unknown as Record<string, unknown>).assetUrlMap as Record<string, string> | undefined;
+      const resultAny = result as unknown as Record<string, unknown>;
+      const assetUrlMap = resultAny.assetUrlMap as Record<string, string> | undefined;
       if (assetUrlMap && Object.keys(assetUrlMap).length > 0 && jobRepo) {
         await safeExec('saveAssetUrlMap', async () => {
           await jobRepo.updateAssetUrlMap(jobId, assetUrlMap);
         });
         logger.info(`[JobProcessor] Saved assetUrlMap with ${Object.keys(assetUrlMap).length} entries for job ${jobId}`);
+      }
+
+      // Save processingId (orchestrator internal ID used for storage paths)
+      // This is different from jobId because orchestrator.process() creates its own UUID
+      if (jobRepo) {
+        await safeExec('saveProcessingId', async () => {
+          await jobRepo.updateAssetUrlMap(jobId, {
+            ...(assetUrlMap ?? {}),
+            __processingId: job.id, // Internal ID used as storage key in Supabase bucket
+          });
+        });
       }
 
       // Persistir artifacts

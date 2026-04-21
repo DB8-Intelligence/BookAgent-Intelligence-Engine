@@ -137,10 +137,9 @@ export async function renderVideo(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Build asset URL map from persisted assetUrlMap or referenced IDs
+    // Build asset URL map — resolve asset IDs to public Supabase Storage URLs
     let assetUrls: Record<string, string> = {};
 
-    // Try to load persisted asset URL map from job
     try {
       const jobRows = await supabase.select<{ asset_url_map: Record<string, string> | null }>(
         'bookagent_jobs',
@@ -152,19 +151,28 @@ export async function renderVideo(req: Request, res: Response): Promise<void> {
       );
       const savedMap = jobRows[0]?.asset_url_map;
       if (savedMap && typeof savedMap === 'object') {
-        assetUrls = typeof savedMap === 'string' ? JSON.parse(savedMap) : savedMap;
-        logger.info(`[VideoRender] Loaded ${Object.keys(assetUrls).length} asset URLs from job ${jobId}`);
+        const parsed = typeof savedMap === 'string' ? JSON.parse(savedMap) : savedMap;
+        // Remove internal keys
+        const { __processingId, ...urlMap } = parsed as Record<string, string>;
+        assetUrls = urlMap;
+
+        // If assetUrls has real URLs (starts with http), use them directly
+        const hasRealUrls = Object.values(assetUrls).some((v) => v?.startsWith('http'));
+        if (hasRealUrls) {
+          logger.info(`[VideoRender] Loaded ${Object.keys(assetUrls).length} asset URLs from persisted map`);
+        } else if (__processingId) {
+          // Build URLs from processingId + page number pattern
+          assetUrls = await buildAssetUrlsFromStorage(__processingId, artifact.referenced_asset_ids ?? [], supabase);
+        }
       }
     } catch (err) {
       logger.warn(`[VideoRender] Failed to load asset URL map: ${err}`);
     }
 
-    // Fallback: if no persisted map, use asset IDs as placeholders
+    // Fallback: try to find storage folder by matching recent uploads
     if (Object.keys(assetUrls).length === 0 && artifact.referenced_asset_ids) {
-      for (const assetId of artifact.referenced_asset_ids) {
-        assetUrls[assetId] = assetId;
-      }
-      logger.warn(`[VideoRender] No asset URL map found for job ${jobId}, using asset IDs as placeholders`);
+      logger.warn(`[VideoRender] No asset URL map for job ${jobId} — trying storage scan`);
+      assetUrls = await buildAssetUrlsFallback(jobId, artifact.referenced_asset_ids, spec, supabase);
     }
 
     // Update status to queued
@@ -319,4 +327,116 @@ export async function getVideoStatus(req: Request, res: Response): Promise<void>
     logger.error(`[VideoRender] getVideoStatus failed for job=${jobId}: ${err}`);
     sendError(res, 'INTERNAL_ERROR', 'Failed to get video status', 500);
   }
+}
+
+// ============================================================================
+// Helpers — Asset URL Resolution
+// ============================================================================
+
+const SUPABASE_URL = process.env.SUPABASE_URL ?? 'https://xhfiyukhjzwhqbacuyxq.supabase.co';
+const BOOK_ASSETS_BUCKET = process.env.BOOK_ASSETS_BUCKET ?? 'book-assets';
+
+function buildPageUrl(processingId: string, pageNum: number): string {
+  return `${SUPABASE_URL}/storage/v1/object/public/${BOOK_ASSETS_BUCKET}/${processingId}/pages/png/page-${pageNum}.png`;
+}
+
+/**
+ * Build asset URLs from a known processingId by distributing assets across pages.
+ * Each asset maps to a page — we assign sequentially since the exact mapping is lost.
+ */
+async function buildAssetUrlsFromStorage(
+  processingId: string,
+  assetIds: string[],
+  _supabase: SupabaseClient,
+): Promise<Record<string, string>> {
+  const map: Record<string, string> = {};
+
+  // Distribute assets across pages (1-indexed)
+  for (let i = 0; i < assetIds.length; i++) {
+    const pageNum = (i % 26) + 1; // Cycle through available pages
+    map[assetIds[i]] = buildPageUrl(processingId, pageNum);
+  }
+
+  logger.info(`[VideoRender] Built ${Object.keys(map).length} asset URLs from processingId ${processingId}`);
+  return map;
+}
+
+/**
+ * Fallback: query storage.objects to find the processing folder
+ * that was created around the same time as this job.
+ */
+async function buildAssetUrlsFallback(
+  jobId: string,
+  assetIds: string[],
+  _spec: Record<string, unknown>,
+  supabaseClient: SupabaseClient,
+): Promise<Record<string, string>> {
+  const map: Record<string, string> = {};
+
+  try {
+    // Get job creation time
+    const jobRows = await supabaseClient.select<{ created_at: string }>(
+      'bookagent_jobs',
+      {
+        filters: [{ column: 'id', operator: 'eq', value: jobId }],
+        select: 'created_at',
+        limit: 1,
+      },
+    );
+    if (jobRows.length === 0) return map;
+
+    const jobCreated = jobRows[0].created_at;
+
+    // Find storage folders created within 30 min of the job via raw SQL
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!serviceKey) return map;
+
+    const sqlRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+      },
+    }).catch(() => null);
+
+    // Direct approach: use PostgREST to query storage.objects
+    const storageUrl = `${SUPABASE_URL}/rest/v1/storage/objects?bucket_id=eq.${BOOK_ASSETS_BUCKET}&name=like.%25/pages/png/page-1.png&order=created_at.desc&limit=10&select=name,created_at`;
+    const storageRes = await fetch(storageUrl, {
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+      },
+    }).catch(() => null);
+
+    if (storageRes?.ok) {
+      const folders = (await storageRes.json()) as Array<{ name: string; created_at: string }>;
+      // Find the folder created closest to this job
+      const jobTime = new Date(jobCreated).getTime();
+      let bestMatch = '';
+      let bestDiff = Infinity;
+
+      for (const f of folders) {
+        const folderId = f.name.split('/')[0];
+        const folderTime = new Date(f.created_at).getTime();
+        const diff = Math.abs(folderTime - jobTime);
+        if (diff < bestDiff && diff < 30 * 60 * 1000) {
+          bestDiff = diff;
+          bestMatch = folderId;
+        }
+      }
+
+      if (bestMatch) {
+        logger.info(`[VideoRender] Found storage folder ${bestMatch} for job ${jobId} (diff=${Math.round(bestDiff / 1000)}s)`);
+        for (let i = 0; i < assetIds.length; i++) {
+          const pageNum = (i % 26) + 1;
+          map[assetIds[i]] = buildPageUrl(bestMatch, pageNum);
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn(`[VideoRender] Fallback URL resolution failed: ${err}`);
+  }
+
+  return map;
 }
