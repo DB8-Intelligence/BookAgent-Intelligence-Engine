@@ -62,7 +62,7 @@ export async function enqueueVideoRender(data: VideoRenderJobData): Promise<stri
   }
 
   const job = await queue.add('video-render', data, {
-    jobId: `video-${data.jobId}-${data.artifactId}`,
+    jobId: `video-${data.jobId}-${data.artifactId}-${Date.now()}`,
   });
 
   logger.info(
