@@ -14,6 +14,31 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 const API_PREFIX = "/api/v1";
 
 // ============================================================================
+// API Call Ring Buffer — captures last 10 calls for bug context
+// ============================================================================
+
+export interface ApiLogEntry {
+  method: string;
+  path: string;
+  status: number;
+  error?: string;
+  timestamp: string;
+  duration_ms: number;
+}
+
+const apiLogBuffer: ApiLogEntry[] = [];
+const API_LOG_MAX = 10;
+
+function recordApiCall(entry: ApiLogEntry): void {
+  apiLogBuffer.push(entry);
+  if (apiLogBuffer.length > API_LOG_MAX) apiLogBuffer.shift();
+}
+
+export function getApiLog(): ApiLogEntry[] {
+  return [...apiLogBuffer];
+}
+
+// ============================================================================
 // Response Envelope
 // ============================================================================
 
@@ -418,34 +443,59 @@ async function request<T>(
     }
   }
 
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
-      ...(apiKey && { "x-api-key": apiKey }),
-      ...init?.headers,
-    },
-  });
+  const startMs = Date.now();
+  const method = (init?.method ?? "GET").toUpperCase();
+  let status = 0;
+  let apiError: string | undefined;
 
-  // Handle non-JSON responses (e.g., download)
-  const contentType = res.headers.get("content-type") ?? "";
-  if (!contentType.includes("application/json")) {
-    if (!res.ok) throw new BookAgentApiError("HTTP_ERROR", `HTTP ${res.status}`);
-    return res as unknown as T;
+  try {
+    const res = await fetch(url, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
+        ...(apiKey && { "x-api-key": apiKey }),
+        ...init?.headers,
+      },
+    });
+
+    status = res.status;
+
+    // Handle non-JSON responses (e.g., download)
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("application/json")) {
+      if (!res.ok) {
+        apiError = `HTTP ${res.status}`;
+        throw new BookAgentApiError("HTTP_ERROR", apiError);
+      }
+      return res as unknown as T;
+    }
+
+    const json = (await res.json()) as ApiEnvelope<T>;
+
+    if (!json.success || json.data === undefined) {
+      apiError = json.error?.message ?? `API error ${res.status}`;
+      throw new BookAgentApiError(
+        json.error?.code ?? "UNKNOWN",
+        apiError,
+        json.error?.details,
+      );
+    }
+
+    return json.data;
+  } catch (err) {
+    if (!apiError && err instanceof Error) apiError = err.message;
+    throw err;
+  } finally {
+    recordApiCall({
+      method,
+      path,
+      status,
+      error: apiError,
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startMs,
+    });
   }
-
-  const json = (await res.json()) as ApiEnvelope<T>;
-
-  if (!json.success || json.data === undefined) {
-    throw new BookAgentApiError(
-      json.error?.code ?? "UNKNOWN",
-      json.error?.message ?? `API error ${res.status}`,
-      json.error?.details,
-    );
-  }
-
-  return json.data;
 }
 
 // ============================================================================
@@ -560,6 +610,25 @@ export const bookagent = {
   ops: {
     dashboard: () => request<Record<string, unknown>>("/ops/dashboard"),
     queue: () => request<Record<string, unknown>>("/ops/queue"),
+  },
+
+  // ---------- Bugs ----------
+  bugs: {
+    create: (data: { title: string; description?: string; severity: string; context: Record<string, unknown> }) =>
+      request<Record<string, unknown>>("/bugs", { method: "POST", body: JSON.stringify(data) }),
+    mine: () =>
+      request<Array<Record<string, unknown>>>("/bugs/mine"),
+    list: (filters?: { severity?: string; status?: string }) => {
+      const p = new URLSearchParams();
+      if (filters?.severity) p.set("severity", filters.severity);
+      if (filters?.status) p.set("status", filters.status);
+      const qs = p.toString();
+      return request<Array<Record<string, unknown>>>(`/bugs${qs ? `?${qs}` : ""}`);
+    },
+    triage: (id: string, data: { status?: string; admin_notes?: string }) =>
+      request<Record<string, unknown>>(`/bugs/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    isAdmin: () =>
+      request<{ is_admin: boolean }>("/bugs/is-admin"),
   },
 };
 

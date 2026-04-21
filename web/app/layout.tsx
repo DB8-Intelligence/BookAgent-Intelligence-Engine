@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AuthProvider } from "@/lib/auth/auth-context";
 import { UserMenu } from "@/components/auth/user-menu";
+import { BugReporterWidget } from "@/components/app/BugReporterWidget";
+import { ErrorBoundary } from "@/components/app/ErrorBoundary";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,6 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR">
       <body className="font-sans antialiased">
+        <ErrorBoundary>
         <AuthProvider>
           <div className="min-h-screen flex flex-col">
             <header className="border-b bg-card">
@@ -34,7 +37,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </header>
             <main className="flex-1">{children}</main>
           </div>
+          <BugReporterWidget />
         </AuthProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

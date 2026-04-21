@@ -138,6 +138,7 @@ import integrationHubRoutes from './api/routes/integration-hub.js';
 import distributionRoutes from './api/routes/distribution.js';
 import customerDashboardRoutes from './api/routes/customer-dashboard.js';
 import videoRoutes from './api/routes/video.js';
+import bugsRoutes, { setSupabaseClientForBugs } from './api/routes/bugs.js';
 
 // --- Middleware ---
 import { errorHandler } from './api/middleware/error-handler.js';
@@ -265,6 +266,7 @@ if (supabaseClient) {
   setSupabaseClientForAcquisition(supabaseClient);
   setSupabaseClientForIntegrationHub(supabaseClient);
   setSupabaseClientForDistribution(supabaseClient);
+  setSupabaseClientForBugs(supabaseClient);
   setTenantGuardSupabaseClient(supabaseClient);
   setVideoRenderSupabaseClient(supabaseClient);
   setPlanGuardSupabaseClient(supabaseClient);
@@ -399,6 +401,7 @@ app.use(`${prefix}/partners`, partnerRoutes);
 app.use(`${prefix}/acquisition`, acquisitionRoutes);
 app.use(`${prefix}/integrations`, integrationHubRoutes);
 app.use(`${prefix}/distribution`, distributionRoutes);
+app.use(`${prefix}/bugs`, bugsRoutes);
 
 // Webhooks externos (Kiwify, Hotmart) — sem tenant guard
 app.use('/webhooks', webhooksRoutes);
