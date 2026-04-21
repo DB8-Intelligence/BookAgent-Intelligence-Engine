@@ -296,32 +296,40 @@ export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
                 </div>
 
                 {/* Render preview based on format */}
-                {selected.export_format === "html" ? (
-                  <div className="border rounded-lg overflow-hidden bg-white">
-                    <iframe
-                      srcDoc={selected.content}
-                      className="w-full h-[500px]"
-                      title={selected.title}
-                      sandbox="allow-same-origin"
-                    />
-                  </div>
-                ) : selected.export_format === "markdown" ? (
-                  <div className="bg-muted rounded-lg p-4 overflow-auto max-h-[500px]">
-                    <pre className="text-xs whitespace-pre-wrap font-mono">{selected.content}</pre>
-                  </div>
-                ) : (
-                  <div className="bg-muted rounded-lg p-4 overflow-auto max-h-[500px]">
-                    <pre className="text-xs font-mono">
-                      {(() => {
-                        try {
-                          return JSON.stringify(JSON.parse(selected.content), null, 2);
-                        } catch {
-                          return selected.content;
-                        }
-                      })()}
-                    </pre>
-                  </div>
-                )}
+                {(() => {
+                  // content may be string or object (JSONB from Supabase)
+                  const raw = selected.content;
+                  const contentStr = typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
+
+                  if (selected.export_format === "html") {
+                    return (
+                      <div className="border rounded-lg overflow-hidden bg-white">
+                        <iframe
+                          srcDoc={contentStr}
+                          className="w-full h-[500px]"
+                          title={selected.title}
+                          sandbox="allow-same-origin"
+                        />
+                      </div>
+                    );
+                  }
+                  if (selected.export_format === "markdown") {
+                    return (
+                      <div className="bg-muted rounded-lg p-4 overflow-auto max-h-[500px]">
+                        <pre className="text-xs whitespace-pre-wrap font-mono">{contentStr}</pre>
+                      </div>
+                    );
+                  }
+                  // JSON or render-spec
+                  const formatted = typeof raw === "object" && raw !== null
+                    ? JSON.stringify(raw, null, 2)
+                    : (() => { try { return JSON.stringify(JSON.parse(contentStr), null, 2); } catch { return contentStr; } })();
+                  return (
+                    <div className="bg-muted rounded-lg p-4 overflow-auto max-h-[500px]">
+                      <pre className="text-xs font-mono">{formatted}</pre>
+                    </div>
+                  );
+                })()}
 
                 {/* Referenced assets */}
                 {selected.referenced_asset_ids.length > 0 && (
