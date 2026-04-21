@@ -4,13 +4,10 @@ import { useEffect, useState, useMemo } from "react";
 import {
   bookagent,
   formatBytes,
-  ARTIFACT_ICONS,
-  FORMAT_LABELS,
   type ArtifactListItem,
   type ArtifactDetail,
-  type ArtifactType,
 } from "@/lib/bookagentApi";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -21,48 +18,127 @@ import { cn } from "@/lib/utils";
 
 interface OutputsGalleryProps {
   jobId: string;
-  /** Initial filter by artifact type */
-  filterType?: ArtifactType;
 }
 
 // ---------------------------------------------------------------------------
-// Filter bar types
+// Product config — maps output_format to user-friendly product info
 // ---------------------------------------------------------------------------
 
-type FilterKey = "all" | ArtifactType;
+interface ProductConfig {
+  label: string;
+  icon: string;
+  description: string;
+  color: string;
+  /** The primary artifact to show (others are hidden as sub-items) */
+  primaryFormat: string;
+  canRender: boolean;
+}
 
-const FILTER_OPTIONS: { key: FilterKey; label: string; icon: string }[] = [
-  { key: "all", label: "Todos", icon: "📁" },
-  { key: "media-render-spec", label: "Media", icon: "🎬" },
-  { key: "blog-article", label: "Blog", icon: "✍️" },
-  { key: "landing-page", label: "Landing Page", icon: "🌐" },
-  { key: "media-metadata", label: "Metadata", icon: "📋" },
-];
-
-// ---------------------------------------------------------------------------
-// Status config
-// ---------------------------------------------------------------------------
-
-const STATUS_STYLES: Record<string, string> = {
-  valid: "text-emerald-500 border-emerald-500/30",
-  partial: "text-amber-500 border-amber-500/30",
-  invalid: "text-red-500 border-red-500/30",
+const PRODUCT_CONFIG: Record<string, ProductConfig> = {
+  reel: {
+    label: "Reel Instagram",
+    icon: "🎬",
+    description: "Video curto 9:16 para Instagram e TikTok",
+    color: "from-pink-500/10 to-purple-500/10",
+    primaryFormat: "render-spec",
+    canRender: true,
+  },
+  carousel: {
+    label: "Carrossel",
+    icon: "📱",
+    description: "Slides 1:1 para feed do Instagram",
+    color: "from-blue-500/10 to-cyan-500/10",
+    primaryFormat: "render-spec",
+    canRender: true,
+  },
+  presentation: {
+    label: "Apresentacao Comercial",
+    icon: "📊",
+    description: "Slides 16:9 para reunioes e propostas",
+    color: "from-amber-500/10 to-orange-500/10",
+    primaryFormat: "render-spec",
+    canRender: true,
+  },
+  video_long: {
+    label: "Video Institucional",
+    icon: "🎥",
+    description: "Video longo 16:9 para YouTube",
+    color: "from-red-500/10 to-rose-500/10",
+    primaryFormat: "render-spec",
+    canRender: true,
+  },
+  blog: {
+    label: "Artigo para Blog",
+    icon: "✍️",
+    description: "Post SEO-otimizado com 1500+ palavras",
+    color: "from-emerald-500/10 to-teal-500/10",
+    primaryFormat: "html",
+    canRender: false,
+  },
+  landing_page: {
+    label: "Landing Page",
+    icon: "🌐",
+    description: "Pagina de captacao com formulario",
+    color: "from-violet-500/10 to-indigo-500/10",
+    primaryFormat: "html",
+    canRender: false,
+  },
 };
+
+// ---------------------------------------------------------------------------
+// Group artifacts into products
+// ---------------------------------------------------------------------------
+
+interface Product {
+  key: string;
+  config: ProductConfig;
+  primary: ArtifactListItem;
+  subItems: ArtifactListItem[];
+  allItems: ArtifactListItem[];
+}
+
+function groupIntoProducts(artifacts: ArtifactListItem[]): Product[] {
+  const groups: Record<string, ArtifactListItem[]> = {};
+
+  for (const a of artifacts) {
+    const key = a.output_format || "other";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(a);
+  }
+
+  const products: Product[] = [];
+
+  for (const [key, items] of Object.entries(groups)) {
+    const config = PRODUCT_CONFIG[key];
+    if (!config) continue; // Skip unknown formats
+
+    // Find the primary artifact (render-spec for media, html for content)
+    const primary = items.find((i) => i.export_format === config.primaryFormat) ?? items[0];
+    const subItems = items.filter((i) => i.id !== primary.id);
+
+    products.push({ key, config, primary, subItems, allItems: items });
+  }
+
+  // Sort: media first, then content
+  const order = ["reel", "carousel", "presentation", "video_long", "blog", "landing_page"];
+  products.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+
+  return products;
+}
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
+export function OutputsGallery({ jobId }: OutputsGalleryProps) {
   const [artifacts, setArtifacts] = useState<ArtifactListItem[]>([]);
   const [selected, setSelected] = useState<ArtifactDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<FilterKey>(filterType ?? "all");
+  const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
   const [renderStatus, setRenderStatus] = useState<Record<string, string>>({});
   const [renderLoading, setRenderLoading] = useState<string | null>(null);
 
-  // Fetch artifacts
   useEffect(() => {
     setLoading(true);
     bookagent.jobs
@@ -72,30 +148,8 @@ export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
       .finally(() => setLoading(false));
   }, [jobId]);
 
-  // Filter
-  const filtered = useMemo(() => {
-    if (activeFilter === "all") return artifacts;
-    return artifacts.filter((a) => a.artifact_type === activeFilter);
-  }, [artifacts, activeFilter]);
+  const products = useMemo(() => groupIntoProducts(artifacts), [artifacts]);
 
-  // Stats
-  const stats = useMemo(() => {
-    const byType: Record<string, number> = {};
-    let totalSize = 0;
-    let validCount = 0;
-    let warningCount = 0;
-
-    for (const a of artifacts) {
-      byType[a.artifact_type] = (byType[a.artifact_type] ?? 0) + 1;
-      totalSize += a.size_bytes;
-      if (a.status === "valid") validCount++;
-      if (a.warnings.length > 0) warningCount++;
-    }
-
-    return { byType, totalSize, validCount, warningCount, total: artifacts.length };
-  }, [artifacts]);
-
-  // Trigger video render for a render-spec artifact
   async function triggerRender(artifactId: string) {
     setRenderLoading(artifactId);
     try {
@@ -111,7 +165,6 @@ export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
     }
   }
 
-  // View artifact detail
   async function viewArtifact(artifactId: string) {
     setLoadingDetail(true);
     try {
@@ -124,218 +177,198 @@ export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
     }
   }
 
-  // -- Loading --
   if (loading) {
     return (
       <Card>
         <CardContent className="py-16 text-center text-muted-foreground">
-          Carregando artefatos...
+          Carregando conteudos gerados...
         </CardContent>
       </Card>
     );
   }
 
-  // -- Empty --
-  if (artifacts.length === 0) {
+  if (products.length === 0) {
     return (
       <Card>
         <CardContent className="py-16 text-center text-muted-foreground">
-          Nenhum artefato gerado para este job.
+          Nenhum conteudo gerado para este job.
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <div className="space-y-5">
-      {/* ── Summary bar ───────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Badge variant="secondary" className="gap-1.5">
-          📦 {stats.total} artefato(s)
-        </Badge>
-        <Badge variant="outline" className="gap-1.5 text-emerald-500 border-emerald-500/30">
-          ✅ {stats.validCount} valido(s)
-        </Badge>
-        {stats.warningCount > 0 && (
-          <Badge variant="outline" className="gap-1.5 text-amber-500 border-amber-500/30">
-            ⚠ {stats.warningCount} com avisos
-          </Badge>
-        )}
-        <Badge variant="outline" className="gap-1.5">
-          💾 {formatBytes(stats.totalSize)} total
-        </Badge>
+    <div className="space-y-6">
+      {/* Summary */}
+      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+        <span>{products.length} produtos gerados</span>
+        <span>·</span>
+        <span>{artifacts.length} arquivos</span>
       </div>
 
-      {/* ── Filter tabs ───────────────────────────── */}
-      <div className="flex flex-wrap gap-1.5">
-        {FILTER_OPTIONS.map((f) => {
-          const count = f.key === "all" ? artifacts.length : (stats.byType[f.key] ?? 0);
-          if (f.key !== "all" && count === 0) return null;
-          return (
-            <button
-              key={f.key}
-              onClick={() => setActiveFilter(f.key)}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
-                activeFilter === f.key
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-background text-muted-foreground border-border hover:border-primary/40",
-              )}
-            >
-              <span>{f.icon}</span>
-              {f.label}
-              <span className="text-[10px] opacity-70">({count})</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ── Content: list + preview ───────────────── */}
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* List column */}
-        <div className="space-y-2.5">
-          {filtered.map((a) => (
+      {/* Products grid + Preview */}
+      <div className="grid lg:grid-cols-5 gap-6">
+        {/* Product cards column */}
+        <div className="lg:col-span-3 space-y-4">
+          {products.map((product) => (
             <Card
-              key={a.id}
+              key={product.key}
               className={cn(
-                "cursor-pointer transition-all hover:shadow-md",
-                selected?.id === a.id && "ring-2 ring-primary shadow-md",
+                "overflow-hidden transition-all hover:shadow-md",
+                expandedProduct === product.key && "ring-2 ring-primary/50",
               )}
-              onClick={() => viewArtifact(a.id)}
             >
-              <CardContent className="p-4">
-                {/* Top row */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-xl shrink-0">
-                      {ARTIFACT_ICONS[a.artifact_type] ?? "📄"}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{a.title}</p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <Badge variant="secondary" className="text-[9px] h-4">
-                          {a.output_format}
-                        </Badge>
-                        <Badge variant="outline" className="text-[9px] h-4">
-                          {FORMAT_LABELS[a.export_format] ?? a.export_format}
-                        </Badge>
-                        <span className="text-[10px] text-muted-foreground">
-                          {formatBytes(a.size_bytes)}
-                        </span>
-                      </div>
+              {/* Product header with gradient */}
+              <div className={cn("bg-gradient-to-r p-4", product.config.color)}>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">{product.config.icon}</span>
+                    <div>
+                      <h3 className="font-semibold text-sm">{product.config.label}</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {product.config.description}
+                      </p>
                     </div>
                   </div>
                   <Badge
                     variant="outline"
-                    className={cn("text-[9px] shrink-0", STATUS_STYLES[a.status])}
+                    className="text-[10px] text-emerald-600 border-emerald-300 bg-white/50"
                   >
-                    {a.status}
+                    Pronto
                   </Badge>
                 </div>
+              </div>
 
-                {/* Warnings */}
-                {a.warnings.length > 0 && (
-                  <div className="mt-2 pl-8 space-y-0.5">
-                    {a.warnings.slice(0, 3).map((w, i) => (
-                      <p key={i} className="text-[10px] text-amber-500 leading-tight">⚠ {w}</p>
-                    ))}
-                    {a.warnings.length > 3 && (
-                      <p className="text-[10px] text-muted-foreground">
-                        +{a.warnings.length - 3} mais...
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="flex items-center gap-2 mt-3 pl-8 flex-wrap">
+              {/* Product actions */}
+              <CardContent className="p-4 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-6 text-[10px] px-2"
-                    onClick={(e) => { e.stopPropagation(); viewArtifact(a.id); }}
+                    className="text-xs"
+                    onClick={() => viewArtifact(product.primary.id)}
                   >
-                    {loadingDetail && selected?.id === a.id ? "..." : "Visualizar"}
+                    {loadingDetail && selected?.id === product.primary.id
+                      ? "Carregando..."
+                      : "Visualizar"}
                   </Button>
+
                   <a
-                    href={bookagent.jobs.downloadUrl(jobId, a.id)}
+                    href={bookagent.jobs.downloadUrl(jobId, product.primary.id)}
                     download
-                    onClick={(e) => e.stopPropagation()}
                   >
-                    <Button size="sm" variant="secondary" className="h-6 text-[10px] px-2">
+                    <Button size="sm" variant="secondary" className="text-xs">
                       Download
                     </Button>
                   </a>
-                  {a.artifact_type === "media-render-spec" && (
+
+                  {product.config.canRender && (
                     <Button
                       size="sm"
-                      variant="default"
-                      className="h-6 text-[10px] px-2 bg-emerald-600 hover:bg-emerald-700"
-                      disabled={renderLoading === a.id || renderStatus[a.id] === "queued"}
-                      onClick={(e) => { e.stopPropagation(); triggerRender(a.id); }}
+                      className="text-xs bg-emerald-600 hover:bg-emerald-700"
+                      disabled={
+                        renderLoading === product.primary.id ||
+                        renderStatus[product.primary.id] === "queued"
+                      }
+                      onClick={() => triggerRender(product.primary.id)}
                     >
-                      {renderLoading === a.id
+                      {renderLoading === product.primary.id
                         ? "Enviando..."
-                        : renderStatus[a.id] === "queued"
+                        : renderStatus[product.primary.id] === "queued"
                           ? "Na fila"
                           : "Gerar Video"}
                     </Button>
                   )}
-                  {renderStatus[a.id] && renderStatus[a.id] !== "queued" && (
-                    <span className="text-[10px] text-red-500">{renderStatus[a.id]}</span>
-                  )}
-                  {a.referenced_asset_count > 0 && (
-                    <span className="text-[10px] text-muted-foreground ml-auto">
-                      🖼️ {a.referenced_asset_count} asset(s)
-                    </span>
-                  )}
+
+                  {renderStatus[product.primary.id] &&
+                    renderStatus[product.primary.id] !== "queued" && (
+                      <span className="text-xs text-red-500">
+                        {renderStatus[product.primary.id]}
+                      </span>
+                    )}
                 </div>
+
+                {/* Sub-items toggle */}
+                {product.subItems.length > 0 && (
+                  <button
+                    className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() =>
+                      setExpandedProduct(
+                        expandedProduct === product.key ? null : product.key,
+                      )
+                    }
+                  >
+                    {expandedProduct === product.key ? "- Ocultar" : "+"}{" "}
+                    {product.subItems.length} formato(s) adicional(is)
+                  </button>
+                )}
+
+                {/* Expanded sub-items */}
+                {expandedProduct === product.key && (
+                  <div className="space-y-1.5 pl-2 border-l-2 border-muted">
+                    {product.subItems.map((sub) => (
+                      <div
+                        key={sub.id}
+                        className="flex items-center gap-2 py-1"
+                      >
+                        <Badge variant="outline" className="text-[9px] h-4">
+                          {sub.export_format.toUpperCase()}
+                        </Badge>
+                        <span className="text-[11px] text-muted-foreground flex-1 truncate">
+                          {sub.title}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {formatBytes(sub.size_bytes)}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-5 text-[10px] px-1.5"
+                          onClick={() => viewArtifact(sub.id)}
+                        >
+                          Ver
+                        </Button>
+                        <a href={bookagent.jobs.downloadUrl(jobId, sub.id)} download>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-5 text-[10px] px-1.5"
+                          >
+                            Baixar
+                          </Button>
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
-
-          {filtered.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              Nenhum artefato do tipo selecionado.
-            </p>
-          )}
         </div>
 
         {/* Preview column */}
-        <div className="lg:sticky lg:top-20 lg:self-start">
+        <div className="lg:col-span-2 lg:sticky lg:top-20 lg:self-start">
           {selected ? (
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  {ARTIFACT_ICONS[selected.artifact_type] ?? "📄"}
-                  <span className="truncate">{selected.title}</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Meta badges */}
+              <CardContent className="p-4 space-y-4">
+                <h3 className="text-sm font-semibold truncate">{selected.title}</h3>
+
                 <div className="flex flex-wrap gap-1.5">
                   <Badge variant="secondary" className="text-[10px]">
-                    {FORMAT_LABELS[selected.export_format] ?? selected.export_format}
-                  </Badge>
-                  <Badge variant="outline" className="text-[10px]">
-                    {selected.output_format}
+                    {selected.export_format.toUpperCase()}
                   </Badge>
                   <Badge variant="outline" className="text-[10px]">
                     {formatBytes(selected.size_bytes)}
                   </Badge>
-                  <Badge
-                    variant="outline"
-                    className={cn("text-[10px]", STATUS_STYLES[selected.status])}
-                  >
-                    {selected.status}
-                  </Badge>
                 </div>
 
-                {/* Render preview based on format */}
+                {/* Render preview */}
                 {(() => {
-                  // content may be string or object (JSONB from Supabase)
                   const raw = selected.content;
-                  const contentStr = typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
+                  const contentStr =
+                    typeof raw === "string"
+                      ? raw
+                      : JSON.stringify(raw, null, 2);
 
                   if (selected.export_format === "html") {
                     return (
@@ -352,14 +385,22 @@ export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
                   if (selected.export_format === "markdown") {
                     return (
                       <div className="bg-muted rounded-lg p-4 overflow-auto max-h-[500px]">
-                        <pre className="text-xs whitespace-pre-wrap font-mono">{contentStr}</pre>
+                        <pre className="text-xs whitespace-pre-wrap font-mono">
+                          {contentStr}
+                        </pre>
                       </div>
                     );
                   }
-                  // JSON or render-spec
-                  const formatted = typeof raw === "object" && raw !== null
-                    ? JSON.stringify(raw, null, 2)
-                    : (() => { try { return JSON.stringify(JSON.parse(contentStr), null, 2); } catch { return contentStr; } })();
+                  const formatted =
+                    typeof raw === "object" && raw !== null
+                      ? JSON.stringify(raw, null, 2)
+                      : (() => {
+                          try {
+                            return JSON.stringify(JSON.parse(contentStr), null, 2);
+                          } catch {
+                            return contentStr;
+                          }
+                        })();
                   return (
                     <div className="bg-muted rounded-lg p-4 overflow-auto max-h-[500px]">
                       <pre className="text-xs font-mono">{formatted}</pre>
@@ -367,31 +408,12 @@ export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
                   );
                 })()}
 
-                {/* Referenced assets */}
-                {selected.referenced_asset_ids.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">
-                      Assets Referenciados ({selected.referenced_asset_ids.length})
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {selected.referenced_asset_ids.slice(0, 10).map((id) => (
-                        <Badge key={id} variant="outline" className="text-[9px] font-mono">
-                          {id.slice(0, 8)}
-                        </Badge>
-                      ))}
-                      {selected.referenced_asset_ids.length > 10 && (
-                        <Badge variant="outline" className="text-[9px]">
-                          +{selected.referenced_asset_ids.length - 10}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Download */}
-                <a href={bookagent.jobs.downloadUrl(jobId, selected.id)} download>
-                  <Button className="w-full">
-                    Download {FORMAT_LABELS[selected.export_format] ?? selected.export_format}
+                <a
+                  href={bookagent.jobs.downloadUrl(jobId, selected.id)}
+                  download
+                >
+                  <Button className="w-full" size="sm">
+                    Download
                   </Button>
                 </a>
               </CardContent>
@@ -399,9 +421,9 @@ export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
           ) : (
             <Card>
               <CardContent className="py-20 text-center">
-                <span className="text-4xl block mb-3">👈</span>
+                <span className="text-3xl block mb-2">👈</span>
                 <p className="text-sm text-muted-foreground">
-                  Selecione um artefato para visualizar
+                  Clique em "Visualizar" para pre-visualizar
                 </p>
               </CardContent>
             </Card>
