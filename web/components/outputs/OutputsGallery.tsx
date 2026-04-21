@@ -59,6 +59,8 @@ export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
   const [loading, setLoading] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterKey>(filterType ?? "all");
+  const [renderStatus, setRenderStatus] = useState<Record<string, string>>({});
+  const [renderLoading, setRenderLoading] = useState<string | null>(null);
 
   // Fetch artifacts
   useEffect(() => {
@@ -92,6 +94,22 @@ export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
 
     return { byType, totalSize, validCount, warningCount, total: artifacts.length };
   }, [artifacts]);
+
+  // Trigger video render for a render-spec artifact
+  async function triggerRender(artifactId: string) {
+    setRenderLoading(artifactId);
+    try {
+      const result = await bookagent.dashboard.renderVideo(jobId, artifactId);
+      setRenderStatus((prev) => ({ ...prev, [artifactId]: result.status }));
+    } catch (err) {
+      setRenderStatus((prev) => ({
+        ...prev,
+        [artifactId]: err instanceof Error ? err.message : "Erro",
+      }));
+    } finally {
+      setRenderLoading(null);
+    }
+  }
 
   // View artifact detail
   async function viewArtifact(artifactId: string) {
@@ -230,7 +248,7 @@ export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
                 )}
 
                 {/* Actions */}
-                <div className="flex items-center gap-2 mt-3 pl-8">
+                <div className="flex items-center gap-2 mt-3 pl-8 flex-wrap">
                   <Button
                     size="sm"
                     variant="outline"
@@ -248,6 +266,24 @@ export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
                       Download
                     </Button>
                   </a>
+                  {a.artifact_type === "media-render-spec" && (
+                    <Button
+                      size="sm"
+                      variant="default"
+                      className="h-6 text-[10px] px-2 bg-emerald-600 hover:bg-emerald-700"
+                      disabled={renderLoading === a.id || renderStatus[a.id] === "queued"}
+                      onClick={(e) => { e.stopPropagation(); triggerRender(a.id); }}
+                    >
+                      {renderLoading === a.id
+                        ? "Enviando..."
+                        : renderStatus[a.id] === "queued"
+                          ? "Na fila"
+                          : "Gerar Video"}
+                    </Button>
+                  )}
+                  {renderStatus[a.id] && renderStatus[a.id] !== "queued" && (
+                    <span className="text-[10px] text-red-500">{renderStatus[a.id]}</span>
+                  )}
                   {a.referenced_asset_count > 0 && (
                     <span className="text-[10px] text-muted-foreground ml-auto">
                       🖼️ {a.referenced_asset_count} asset(s)

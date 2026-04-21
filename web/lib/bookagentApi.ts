@@ -545,6 +545,10 @@ export const bookagent = {
       request<{ jobId: string; decision: string; status: string; message: string; n8nTriggered: boolean }>(`/jobs/${jobId}/publish`, { method: "POST", body: JSON.stringify(data) }),
     socialPublish: (jobId: string, data: { userId: string; platforms?: string[]; caption?: string; hashtags?: string[]; imageUrl?: string }) =>
       request<{ jobId: string; results: DashboardPublication[]; successCount: number; failureCount: number; finalStatus: string }>(`/jobs/${jobId}/social-publish`, { method: "POST", body: JSON.stringify(data) }),
+    renderVideo: (jobId: string, artifactId?: string) =>
+      request<{ jobId: string; artifactId: string; status: string; bullJobId?: string; sceneCount: number; format: string; message: string }>(`/jobs/${jobId}/render-video`, { method: "POST", body: JSON.stringify(artifactId ? { artifactId } : {}) }),
+    videoStatus: (jobId: string) =>
+      request<{ jobId: string; videoRenderStatus: string; outputPath?: string; error?: string }>(`/jobs/${jobId}/video-status`),
   },
 
   // ---------- Co-Pilot ----------
