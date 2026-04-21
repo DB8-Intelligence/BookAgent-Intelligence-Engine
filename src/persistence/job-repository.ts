@@ -104,6 +104,18 @@ export class JobRepository {
   }
 
   /**
+   * Persiste o mapeamento assetId → URL pública para uso no video render.
+   */
+  async updateAssetUrlMap(jobId: string, assetUrlMap: Record<string, string>): Promise<void> {
+    await this.client.update(
+      this.table,
+      { column: 'id', operator: 'eq', value: jobId },
+      { asset_url_map: JSON.stringify(assetUrlMap) },
+    );
+    logger.info(`[JobRepository] Asset URL map saved for job ${jobId} (${Object.keys(assetUrlMap).length} entries)`);
+  }
+
+  /**
    * Atualiza status durante execução (pending → processing).
    */
   async updateStatus(jobId: string, status: string): Promise<void> {

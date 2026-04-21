@@ -60,6 +60,8 @@ export interface ProcessingContext {
     png_pages: string[];
     svg_pages: string[];
   };
+  /** Mapeamento assetId → URL pública para resolução em render-time */
+  assetUrlMap?: Record<string, string>;
 
   // --- Populado pelo Correlation ---
   correlations?: CorrelationBlock[];

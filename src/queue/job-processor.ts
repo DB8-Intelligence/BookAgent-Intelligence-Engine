@@ -119,6 +119,15 @@ export async function processBookAgentJob(
         await jobRepo?.completeJob(jobId, result, durationMs);
       });
 
+      // Persist asset URL map for video rendering (if available)
+      const assetUrlMap = (result as unknown as Record<string, unknown>).assetUrlMap as Record<string, string> | undefined;
+      if (assetUrlMap && Object.keys(assetUrlMap).length > 0 && jobRepo) {
+        await safeExec('saveAssetUrlMap', async () => {
+          await jobRepo.updateAssetUrlMap(jobId, assetUrlMap);
+        });
+        logger.info(`[JobProcessor] Saved assetUrlMap with ${Object.keys(assetUrlMap).length} entries for job ${jobId}`);
+      }
+
       // Persistir artifacts
       if (artifacts.length > 0) {
         await safeExec('saveArtifacts', async () => {

@@ -99,7 +99,7 @@ export async function renderVideo(req: Request, res: Response): Promise<void> {
     // Find RenderSpec artifact
     const filters = [
       { column: 'job_id', operator: 'eq' as const, value: jobId },
-      { column: 'artifact_type', operator: 'eq' as const, value: 'MEDIA_RENDER_SPEC' },
+      { column: 'artifact_type', operator: 'eq' as const, value: 'media-render-spec' },
     ];
 
     if (parsed.data.artifactId) {
@@ -120,10 +120,12 @@ export async function renderVideo(req: Request, res: Response): Promise<void> {
 
     const artifact = artifacts[0];
 
-    // Validate the spec is parseable
+    // Validate the spec is parseable (content may be object from JSONB or string)
     let spec: Record<string, unknown>;
     try {
-      spec = JSON.parse(artifact.content);
+      spec = typeof artifact.content === 'string'
+        ? JSON.parse(artifact.content)
+        : artifact.content as Record<string, unknown>;
     } catch {
       sendError(res, 'INVALID_SPEC', 'RenderSpec artifact contains invalid JSON', 422);
       return;
@@ -135,14 +137,34 @@ export async function renderVideo(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Build asset URL map from referenced IDs
-    const assetUrls: Record<string, string> = {};
-    if (artifact.referenced_asset_ids) {
-      for (const assetId of artifact.referenced_asset_ids) {
-        // In V1: assets are referenced by ID, resolved to file path by the worker
-        // In production: this would be a Supabase Storage URL
-        assetUrls[assetId] = assetId; // Worker resolves via StorageManager
+    // Build asset URL map from persisted assetUrlMap or referenced IDs
+    let assetUrls: Record<string, string> = {};
+
+    // Try to load persisted asset URL map from job
+    try {
+      const jobRows = await supabase.select<{ asset_url_map: Record<string, string> | null }>(
+        'bookagent_jobs',
+        {
+          filters: [{ column: 'id', operator: 'eq', value: jobId }],
+          select: 'asset_url_map',
+          limit: 1,
+        },
+      );
+      const savedMap = jobRows[0]?.asset_url_map;
+      if (savedMap && typeof savedMap === 'object') {
+        assetUrls = typeof savedMap === 'string' ? JSON.parse(savedMap) : savedMap;
+        logger.info(`[VideoRender] Loaded ${Object.keys(assetUrls).length} asset URLs from job ${jobId}`);
       }
+    } catch (err) {
+      logger.warn(`[VideoRender] Failed to load asset URL map: ${err}`);
+    }
+
+    // Fallback: if no persisted map, use asset IDs as placeholders
+    if (Object.keys(assetUrls).length === 0 && artifact.referenced_asset_ids) {
+      for (const assetId of artifact.referenced_asset_ids) {
+        assetUrls[assetId] = assetId;
+      }
+      logger.warn(`[VideoRender] No asset URL map found for job ${jobId}, using asset IDs as placeholders`);
     }
 
     // Update status to queued
@@ -178,10 +200,14 @@ export async function renderVideo(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    const renderSpecJson = typeof artifact.content === 'string'
+      ? artifact.content
+      : JSON.stringify(artifact.content);
+
     const bullJobId = await enqueueVideoRender({
       jobId,
       artifactId: artifact.id,
-      renderSpecJson: artifact.content,
+      renderSpecJson,
       assetUrls,
       webhookUrl: typeof req.body?.webhookUrl === 'string' ? req.body.webhookUrl : undefined,
     });

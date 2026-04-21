@@ -166,10 +166,24 @@ export class AssetExtractionModule implements IModule {
       }),
     );
 
+    // Build assetUrlMap: assetId → public page URL (for video rendering)
+    const assetUrlMap: Record<string, string> = {};
+    if (result.pageFormats?.png_pages) {
+      for (const asset of assetsWithPOI) {
+        const pageIdx = asset.page - 1;
+        const pageUrl = result.pageFormats.png_pages[pageIdx];
+        if (pageUrl) {
+          assetUrlMap[asset.id] = pageUrl;
+        }
+      }
+      logger.info(`Asset Extraction: assetUrlMap built with ${Object.keys(assetUrlMap).length} entries`);
+    }
+
     return {
       ...context,
       pageFormats: result.pageFormats,
       assets: assetsWithPOI,
+      assetUrlMap,
     };
   }
 }
