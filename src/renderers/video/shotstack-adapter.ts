@@ -269,16 +269,27 @@ export function buildShotstackEdit(
 // ---------------------------------------------------------------------------
 
 function mapTransition(t: string | null | undefined): { in?: string; out?: string } | undefined {
-  const map: Record<string, { in?: string; out?: string }> = {
-    fade:     { in: 'fade',     out: 'fade' },
-    dissolve: { in: 'fade',     out: 'fade' },
-    slide:    { in: 'slideLeft', out: 'slideLeft' },
-    wipe:     { in: 'wipeLeft', out: 'wipeLeft' },
-    zoom:     { in: 'zoom',     out: 'zoom' },
-    cut:      {},
-  };
   if (!t || t === 'cut' || t === 'none') return undefined;
-  return map[t] ?? { in: 'fade', out: 'fade' };
+
+  const map: Record<string, string> = {
+    'fade': 'fade',
+    'dissolve': 'fade',
+    'slide-left': 'slideLeft',
+    'slide-right': 'slideRight',
+    'slide-up': 'slideUp',
+    'slide-down': 'slideDown',
+    'slide': 'slideLeft',
+    'wipe': 'wipeLeft',
+    'wipe-left': 'wipeLeft',
+    'wipe-right': 'wipeRight',
+    'zoom': 'zoom',
+    'zoom-in': 'zoom',
+    'zoom-out': 'zoom',
+    'reveal': 'reveal',
+  };
+
+  const mapped = map[t] ?? 'fade';
+  return { in: mapped, out: mapped };
 }
 
 // ---------------------------------------------------------------------------
