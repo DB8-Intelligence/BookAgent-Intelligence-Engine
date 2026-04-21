@@ -130,6 +130,8 @@ export function OutputsGallery({ jobId }: OutputsGalleryProps) {
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
   const [renderStatus, setRenderStatus] = useState<Record<string, string>>({});
   const [renderLoading, setRenderLoading] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -140,14 +142,81 @@ export function OutputsGallery({ jobId }: OutputsGalleryProps) {
       .finally(() => setLoading(false));
   }, [jobId]);
 
+  // Poll video render status every 8s while any render is queued/processing
+  useEffect(() => {
+    const hasActiveRender = Object.values(renderStatus).some(
+      (s) => s === "queued" || s === "processing",
+    );
+    if (!hasActiveRender) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const status = await bookagent.dashboard.videoStatus(jobId);
+        if (status.videoRenderStatus === "completed" && status.outputPath) {
+          setVideoUrl(status.outputPath);
+          setRenderStatus((prev) => {
+            const next = { ...prev };
+            for (const key of Object.keys(next)) {
+              if (next[key] === "queued" || next[key] === "processing") {
+                next[key] = "completed";
+              }
+            }
+            return next;
+          });
+          // Refresh artifacts to show VIDEO_RENDER artifact
+          bookagent.jobs.artifacts(jobId).then(setArtifacts).catch(() => {});
+        } else if (status.videoRenderStatus === "failed") {
+          setVideoError(status.error ?? "Falha no render");
+          setRenderStatus((prev) => {
+            const next = { ...prev };
+            for (const key of Object.keys(next)) {
+              if (next[key] === "queued" || next[key] === "processing") {
+                next[key] = "failed";
+              }
+            }
+            return next;
+          });
+        } else if (status.videoRenderStatus) {
+          // Update status (e.g., "processing")
+          setRenderStatus((prev) => {
+            const next = { ...prev };
+            for (const key of Object.keys(next)) {
+              if (next[key] === "queued") {
+                next[key] = status.videoRenderStatus;
+              }
+            }
+            return next;
+          });
+        }
+      } catch {
+        // Polling error — ignore silently
+      }
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, [jobId, renderStatus]);
+
+  // Check for existing video on mount
+  useEffect(() => {
+    bookagent.dashboard
+      .videoStatus(jobId)
+      .then((status) => {
+        if (status.videoRenderStatus === "completed" && status.outputPath) {
+          setVideoUrl(status.outputPath);
+        }
+      })
+      .catch(() => {});
+  }, [jobId]);
+
   const products = useMemo(() => groupIntoProducts(artifacts), [artifacts]);
   const readyCount = products.filter((p) => p.ready).length;
 
   async function triggerRender(artifactId: string) {
     setRenderLoading(artifactId);
+    setVideoError(null);
     try {
       const result = await bookagent.dashboard.renderVideo(jobId, artifactId);
-      setRenderStatus((prev) => ({ ...prev, [artifactId]: result.status }));
+      setRenderStatus((prev) => ({ ...prev, [artifactId]: result.status ?? "queued" }));
     } catch (err) {
       setRenderStatus((prev) => ({
         ...prev,
@@ -182,6 +251,70 @@ export function OutputsGallery({ jobId }: OutputsGalleryProps) {
 
   return (
     <div className="space-y-6">
+      {/* Video Player — shown when render is complete */}
+      {videoUrl && (
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-sm flex items-center gap-2">
+                <span className="text-lg">🎬</span> Video Renderizado
+              </h3>
+              <a href={videoUrl} download>
+                <Button size="sm" variant="secondary" className="text-xs">
+                  Download MP4
+                </Button>
+              </a>
+            </div>
+            <div className="rounded-lg overflow-hidden bg-black aspect-[9/16] max-h-[480px] mx-auto">
+              <video
+                src={videoUrl}
+                controls
+                playsInline
+                preload="metadata"
+                className="w-full h-full object-contain"
+              >
+                Seu navegador nao suporta o player de video.
+              </video>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Video render in progress */}
+      {!videoUrl && Object.values(renderStatus).some((s) => s === "queued" || s === "processing") && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <span className="text-lg animate-spin">⏳</span>
+              <div className="flex-1">
+                <p className="text-sm font-medium">Renderizando video...</p>
+                <p className="text-xs text-muted-foreground">
+                  Isso pode levar 1-3 minutos. A pagina atualiza automaticamente.
+                </p>
+              </div>
+              <div className="h-1.5 w-32 bg-muted rounded-full overflow-hidden">
+                <div className="h-full w-2/3 bg-emerald-500 rounded-full animate-pulse" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Video render error */}
+      {videoError && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <span className="text-lg">❌</span>
+              <div>
+                <p className="text-sm font-medium text-red-600">Falha no render</p>
+                <p className="text-xs text-muted-foreground">{videoError}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Summary */}
       <p className="text-sm text-muted-foreground">
         {readyCount} de {products.length} produtos prontos
@@ -252,27 +385,37 @@ export function OutputsGallery({ jobId }: OutputsGalleryProps) {
                     {product.config.canRender && (
                       <Button
                         size="sm"
-                        className="text-xs bg-emerald-600 hover:bg-emerald-700"
+                        className={cn(
+                          "text-xs",
+                          renderStatus[product.primary.id] === "completed"
+                            ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                            : "bg-emerald-600 hover:bg-emerald-700",
+                        )}
                         disabled={
                           renderLoading === product.primary.id ||
-                          renderStatus[product.primary.id] === "queued"
+                          renderStatus[product.primary.id] === "queued" ||
+                          renderStatus[product.primary.id] === "processing" ||
+                          renderStatus[product.primary.id] === "completed"
                         }
                         onClick={() => triggerRender(product.primary!.id)}
                       >
                         {renderLoading === product.primary.id
                           ? "Enviando..."
                           : renderStatus[product.primary.id] === "queued"
-                            ? "Na fila"
-                            : "Gerar Video"}
+                            ? "Na fila..."
+                            : renderStatus[product.primary.id] === "processing"
+                              ? "Renderizando..."
+                              : renderStatus[product.primary.id] === "completed"
+                                ? "✓ Concluido"
+                                : "Gerar Video"}
                       </Button>
                     )}
 
-                    {renderStatus[product.primary.id] &&
-                      renderStatus[product.primary.id] !== "queued" && (
-                        <span className="text-xs text-red-500">
-                          {renderStatus[product.primary.id]}
-                        </span>
-                      )}
+                    {renderStatus[product.primary.id] === "failed" && (
+                      <span className="text-xs text-red-500">
+                        Falha — tente novamente
+                      </span>
+                    )}
                   </div>
 
                   {product.subItems.length > 0 && (

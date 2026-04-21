@@ -21,6 +21,8 @@ export interface ExtractedAsset {
   geometry?: PDFGeometry;
   /** Metadados de cor/alpha (color space, bits, alpha). Opcional. */
   imageMetadata?: PDFImageMetadata;
+  /** URL pública no Supabase Storage (quando upload individual está habilitado). */
+  publicUrl?: string;
 }
 
 export interface PageFormats {

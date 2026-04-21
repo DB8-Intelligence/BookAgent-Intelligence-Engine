@@ -22,6 +22,7 @@ import type { ArtifactRepository } from '../persistence/artifact-repository.js';
 import type { StorageManager } from '../persistence/storage-manager.js';
 import { InputType, JobStatus } from '../domain/value-objects/index.js';
 import type { Job, JobInput } from '../domain/entities/job.js';
+import { enqueueVideoRender } from './video-queue.js';
 import { logger } from '../utils/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -155,6 +156,28 @@ export async function processBookAgentJob(
         `[JobProcessor] ✓ Completed job ${jobId}: ` +
         `${artifacts.length} artifacts, ${durationMs}ms`,
       );
+
+      // Auto-trigger video renders for all media-render-spec artifacts
+      const renderSpecs = artifacts.filter(
+        (a) => a.artifactType === 'media-render-spec',
+      );
+      for (const spec of renderSpecs) {
+        await safeExec(`auto-render ${spec.id}`, async () => {
+          const specContent = typeof spec.content === 'string'
+            ? spec.content
+            : JSON.stringify(spec.content);
+
+          await enqueueVideoRender({
+            jobId,
+            artifactId: spec.id,
+            renderSpecJson: specContent,
+            assetUrls: assetUrlMap ?? {},
+          });
+          logger.info(
+            `[JobProcessor] Auto-triggered video render for artifact ${spec.id}`,
+          );
+        });
+      }
 
       // Webhook de conclusão
       if (webhookUrl) {

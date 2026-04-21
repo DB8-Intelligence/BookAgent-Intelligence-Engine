@@ -61,9 +61,11 @@ export class AssetExtractionModule implements IModule {
       return { ...context, assets: [] };
     }
 
-    // Ler estratégia do Book Compatibility Analysis (se executou antes)
+    // Ler estratégia do Book Compatibility Analysis (se executou antes).
+    // Default: 'hybrid' — extrai fotos embutidas + renderiza páginas sem assets.
+    // Isso garante que temos fotos individuais quando possível, com fallback seguro.
     const compatibility = context.bookCompatibility;
-    const heuristicStrategy = compatibility?.recommendedStrategy ?? 'embedded-extraction';
+    const heuristicStrategy = compatibility?.recommendedStrategy ?? 'hybrid';
     const confidence = compatibility?.confidence ?? 'unknown';
 
     // Feature flag override: ENHANCED_EXTRACTION=true força enhanced-extraction
@@ -166,18 +168,33 @@ export class AssetExtractionModule implements IModule {
       }),
     );
 
-    // Build assetUrlMap: assetId → public page URL (for video rendering)
+    // Build assetUrlMap: assetId → public URL (for video rendering).
+    // Priority: individual photo URL (publicUrl) > page PNG fallback.
     const assetUrlMap: Record<string, string> = {};
-    if (result.pageFormats?.png_pages) {
-      for (const asset of assetsWithPOI) {
+    let individualCount = 0;
+    let pageFallbackCount = 0;
+
+    for (const asset of assetsWithPOI) {
+      // Prefer individual photo URL uploaded to Supabase
+      const individualUrl = result.assets.find(a => a.id === asset.id)?.publicUrl;
+      if (individualUrl) {
+        assetUrlMap[asset.id] = individualUrl;
+        individualCount++;
+      } else if (result.pageFormats?.png_pages) {
+        // Fallback to page-level PNG
         const pageIdx = asset.page - 1;
         const pageUrl = result.pageFormats.png_pages[pageIdx];
         if (pageUrl) {
           assetUrlMap[asset.id] = pageUrl;
+          pageFallbackCount++;
         }
       }
-      logger.info(`Asset Extraction: assetUrlMap built with ${Object.keys(assetUrlMap).length} entries`);
     }
+
+    logger.info(
+      `Asset Extraction: assetUrlMap built with ${Object.keys(assetUrlMap).length} entries ` +
+      `(${individualCount} individual photos, ${pageFallbackCount} page fallbacks)`,
+    );
 
     return {
       ...context,

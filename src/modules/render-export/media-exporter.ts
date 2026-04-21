@@ -322,6 +322,18 @@ function buildRenderSceneSpec(
       }
     : null;
 
+  // When narration script has a headline, upgrade scene text overlays:
+  // replace generic headline with the narration-generated commercial copy.
+  const finalOverlays = scene.textOverlays.map((o) => {
+    if (o.role === 'headline' && scriptScene?.headline) {
+      return { ...o, text: scriptScene.headline };
+    }
+    if (o.role === 'cta' && scriptScene?.headline) {
+      return { ...o, text: scriptScene.headline };
+    }
+    return o;
+  });
+
   return {
     order: scene.order,
     role: scene.role,
@@ -330,7 +342,7 @@ function buildRenderSceneSpec(
     assetIds: [...scene.assetIds],
     layout: scene.layoutHint,
     transition: scene.transition,
-    textOverlays: scene.textOverlays.map((o) => ({
+    textOverlays: finalOverlays.map((o) => ({
       text: o.text,
       role: o.role,
       position: o.position,

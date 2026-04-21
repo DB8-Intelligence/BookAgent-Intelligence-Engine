@@ -127,14 +127,38 @@ export function composeScenes(
 // Text overlays
 // ---------------------------------------------------------------------------
 
+/** Headlines comerciais por papel — copy de venda, não títulos técnicos */
+const COMMERCIAL_HEADLINES: Record<BeatRole, string> = {
+  [BeatRole.HOOK]: 'Descubra o Novo',
+  [BeatRole.CONTEXT]: 'Localização Privilegiada',
+  [BeatRole.SHOWCASE]: 'Conheça os Ambientes',
+  [BeatRole.LIFESTYLE]: 'Viva com Estilo',
+  [BeatRole.DIFFERENTIATOR]: 'O Diferencial',
+  [BeatRole.SOCIAL_PROOF]: 'Qualidade Comprovada',
+  [BeatRole.INVESTMENT]: 'Investimento Inteligente',
+  [BeatRole.REINFORCEMENT]: 'Mais Motivos para Escolher',
+  [BeatRole.CLOSING]: 'O Momento é Agora',
+  [BeatRole.CTA]: 'Agende Sua Visita',
+};
+
+/**
+ * Extrai a parte comercial do briefing (texto do template antes do separador ` | `).
+ * Ex: "Mostrar o melhor do empreendimento — fachada, áreas comuns" (sem metadata da Source).
+ */
+function extractBriefingCopy(briefing: string): string {
+  const sep = briefing.indexOf(' | ');
+  return sep > 0 ? briefing.slice(0, sep) : briefing;
+}
+
 function buildTextOverlays(
   beat: NarrativeBeat,
   source?: Source,
 ): TextOverlay[] {
   const overlays: TextOverlay[] = [];
 
-  // Headline
-  const headline = beat.suggestedHeadline ?? source?.title;
+  // Headline: beat headline (from narrative planning) > commercial role headline.
+  // Avoids falling back to source.title which is often a technical PDF section title.
+  const headline = beat.suggestedHeadline ?? COMMERCIAL_HEADLINES[beat.role];
   if (headline && headline.length > 2) {
     overlays.push({
       text: headline,
@@ -144,29 +168,38 @@ function buildTextOverlays(
     });
   }
 
-  // Supporting text (from source summary or text excerpt)
-  if (source) {
-    const body = source.summary ?? source.text.slice(0, 120);
-    if (body && body.length > 10) {
-      // Don't add body text to very short scenes or hooks
-      if (beat.role !== BeatRole.HOOK && beat.role !== BeatRole.CTA) {
-        overlays.push({
-          text: body.length > 120 ? body.slice(0, 117) + '...' : body,
-          role: 'body',
-          position: 'bottom',
-          size: 'small',
-        });
-      }
+  // Body: use the commercial briefing template text (not raw PDF source text).
+  // The briefing template contains production-oriented copy like "Mostrar o melhor
+  // do empreendimento — fachada, áreas comuns" which is much better for overlays
+  // than raw PDF text from source.summary/source.text.
+  if (beat.role !== BeatRole.HOOK && beat.role !== BeatRole.CTA) {
+    const bodyCopy = extractBriefingCopy(beat.briefing);
+    if (bodyCopy && bodyCopy.length > 10) {
+      overlays.push({
+        text: bodyCopy.length > 120 ? bodyCopy.slice(0, 117) + '...' : bodyCopy,
+        role: 'body',
+        position: 'bottom',
+        size: 'small',
+      });
     }
   }
 
-  // CTA specific text
-  if (beat.role === BeatRole.CTA && !headline) {
+  // CTA specific: ensure headline + contact subtitle
+  if (beat.role === BeatRole.CTA) {
+    if (!headline) {
+      overlays.push({
+        text: 'Agende Sua Visita',
+        role: 'cta',
+        position: 'center',
+        size: 'large',
+      });
+    }
+    // Add WhatsApp/contact subtitle for CTA scenes
     overlays.push({
-      text: 'Agende sua visita',
-      role: 'cta',
-      position: 'center',
-      size: 'large',
+      text: 'Fale com o corretor pelo WhatsApp',
+      role: 'body',
+      position: 'bottom',
+      size: 'small',
     });
   }
 

@@ -86,6 +86,10 @@ ${branding?.hasLogo ? `  <div class="floating-logo floating-logo--${branding.log
 
 ${sections}
 
+${cta?.whatsappLink ? `  <a href="${esc(cta.whatsappLink)}" class="whatsapp-fab" target="_blank" rel="noopener" aria-label="WhatsApp">
+    <svg viewBox="0 0 24 24" width="28" height="28" fill="#fff"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.612.638l4.695-1.229A11.95 11.95 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.352 0-4.55-.698-6.396-1.895l-.447-.296-3.09.81.824-3.012-.325-.476A9.96 9.96 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z"/></svg>
+  </a>` : ''}
+
   <script>
     /* Smooth scroll for anchor links */
     document.querySelectorAll('a[href^="#"]').forEach(function(a) {
@@ -125,6 +129,14 @@ function renderSection(
       return renderHero(section, cta);
     case LPSectionType.GALLERY:
       return renderGallery(section);
+    case LPSectionType.DIFFERENTIALS:
+      return renderDifferentials(section);
+    case LPSectionType.LIFESTYLE:
+      return renderLifestyle(section, cta);
+    case LPSectionType.LOCATION:
+      return renderLocation(section, cta);
+    case LPSectionType.CTA_INLINE:
+      return renderCtaInline(section, cta);
     case LPSectionType.CTA_FORM:
       return renderFormSection(section, cta, contact);
     case LPSectionType.FOOTER:
@@ -242,6 +254,134 @@ ${section.ctaText ? `        <a href="#contato" class="btn btn-accent">${esc(sec
     </div>
   </footer>`;
 }
+
+// ---------------------------------------------------------------------------
+// Differentials — Icon grid (BuscaImo pattern)
+// ---------------------------------------------------------------------------
+
+/** Maps common real estate keywords to Unicode icons */
+const DIFFERENTIAL_ICONS: Record<string, string> = {
+  piscina: '🏊', academia: '🏋️', churrasqueira: '🔥', gourmet: '🍽️',
+  playground: '🎠', salao: '🎉', festas: '🎉', garagem: '🚗',
+  bicicletario: '🚲', wifi: '📶', seguranca: '🔒', portaria: '🛡️',
+  elevador: '🛗', jardim: '🌳', pet: '🐾', coworking: '💻',
+  sauna: '♨️', spa: '💆', lavanderia: '👔', quadra: '⚽',
+  cinema: '🎬', brinquedoteca: '🧸', lounge: '🛋️', rooftop: '🌇',
+  varanda: '🏠', vista: '🏙️', sacada: '🌅', lazer: '🎯',
+  condominio: '🏢', entrega: '📅', localizacao: '📍', metragem: '📐',
+};
+
+function matchIcon(text: string): string {
+  const lower = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  for (const [keyword, icon] of Object.entries(DIFFERENTIAL_ICONS)) {
+    if (lower.includes(keyword)) return icon;
+  }
+  return '✦';
+}
+
+function renderDifferentials(section: LandingPageSection): string {
+  const items = section.contentPoints.length > 0
+    ? section.contentPoints
+    : ['Piscina', 'Academia', 'Salão de Festas', 'Playground', 'Segurança 24h', 'Garagem'];
+
+  return `  <section class="lp-section lp-differentials" data-type="differentials" data-role="${section.conversionRole}">
+    <div class="container">
+      <h2 class="section-title">${esc(section.heading)}</h2>
+${section.subheading ? `      <p class="section-subtitle">${esc(section.subheading)}</p>` : ''}
+      <div class="diff-grid">
+${items.map((item) => {
+    const label = item.replace(/^[•\-]\s*/, '');
+    const icon = matchIcon(label);
+    return `        <div class="diff-card">
+          <span class="diff-icon">${icon}</span>
+          <span class="diff-label">${esc(label)}</span>
+        </div>`;
+  }).join('\n')}
+      </div>
+    </div>
+  </section>`;
+}
+
+// ---------------------------------------------------------------------------
+// Lifestyle — Image-focused section (lazer, áreas comuns)
+// ---------------------------------------------------------------------------
+
+function renderLifestyle(
+  section: LandingPageSection,
+  cta?: { primaryText: string; whatsappLink?: string },
+): string {
+  const hasImages = section.assetIds.length > 0;
+
+  return `  <section class="lp-section lp-lifestyle" data-type="lifestyle" data-role="${section.conversionRole}">
+${hasImages ? `    <div class="lifestyle-bg" style="background-image: url('{{asset:${section.assetIds[0]}}}')"></div>
+    <div class="lifestyle-overlay"></div>` : ''}
+    <div class="container lifestyle-content${hasImages ? ' lifestyle-content--over-image' : ''}">
+      <h2 class="section-title">${esc(section.heading)}</h2>
+${section.subheading ? `      <p class="section-subtitle">${esc(section.subheading)}</p>` : ''}
+${renderContentPoints(section.contentPoints)}
+${section.assetIds.length > 1 ? `      <div class="lifestyle-gallery">
+${section.assetIds.slice(1, 4).map((id) => `        <div class="lifestyle-thumb">
+          <img src="{{asset:${id}}}" alt="" loading="lazy">
+        </div>`).join('\n')}
+      </div>` : ''}
+${section.ctaText ? `      <a href="${esc(cta?.whatsappLink ?? '#contato')}" class="btn btn-primary">${esc(section.ctaText)}</a>` : ''}
+    </div>
+  </section>`;
+}
+
+// ---------------------------------------------------------------------------
+// Location — Address, neighborhood advantages
+// ---------------------------------------------------------------------------
+
+function renderLocation(
+  section: LandingPageSection,
+  cta?: { primaryText: string; whatsappLink?: string },
+): string {
+  return `  <section class="lp-section lp-location" data-type="location" data-role="${section.conversionRole}">
+    <div class="container">
+      <h2 class="section-title">${esc(section.heading)}</h2>
+${section.subheading ? `      <p class="section-subtitle">${esc(section.subheading)}</p>` : ''}
+      <div class="location-layout">
+        <div class="location-info">
+${renderContentPoints(section.contentPoints)}
+${section.ctaText ? `          <a href="${esc(cta?.whatsappLink ?? '#contato')}" class="btn btn-primary">${esc(section.ctaText)}</a>` : ''}
+        </div>
+${section.assetIds.length > 0 ? `        <div class="location-map">
+          <img src="{{asset:${section.assetIds[0]}}}" alt="Localização" loading="lazy">
+        </div>` : `        <div class="location-map location-map--placeholder">
+          <span class="map-pin">📍</span>
+          <p>Localização privilegiada</p>
+        </div>`}
+      </div>
+    </div>
+  </section>`;
+}
+
+// ---------------------------------------------------------------------------
+// CTA Inline — Mid-page WhatsApp/contact strip
+// ---------------------------------------------------------------------------
+
+function renderCtaInline(
+  section: LandingPageSection,
+  cta?: { primaryText: string; whatsappLink?: string },
+): string {
+  const ctaText = section.ctaText ?? cta?.primaryText ?? 'Fale com um Corretor';
+  const ctaHref = cta?.whatsappLink ?? '#contato';
+
+  return `  <section class="lp-section lp-cta-inline" data-type="cta-inline" data-role="${section.conversionRole}">
+    <div class="container cta-inline-content">
+      <div class="cta-inline-text">
+        <h2 class="section-title">${esc(section.heading)}</h2>
+${section.subheading ? `        <p class="section-subtitle">${esc(section.subheading)}</p>` : ''}
+      </div>
+      <a href="${esc(ctaHref)}" class="btn btn-primary btn-lg cta-inline-btn">${esc(ctaText)}</a>
+    </div>
+  </section>`;
+}
+
+// ---------------------------------------------------------------------------
+// Content Section (generic fallback)
+// ---------------------------------------------------------------------------
 
 function renderContentSection(
   section: LandingPageSection,
@@ -618,6 +758,132 @@ function generateCSS(colors: { primary: string; secondary: string; accent: strin
     .floating-logo--top-right { top: 1.5rem; right: 1.5rem; }
     .floating-logo--top-left { top: 1.5rem; left: 1.5rem; }
 
+    /* Differentials grid */
+    .lp-differentials { background: var(--lp-bg); }
+    .diff-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 1.25rem;
+      margin-top: 2rem;
+    }
+    .diff-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 1.5rem 0.75rem;
+      background: #fff;
+      border-radius: var(--lp-radius);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      text-align: center;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .diff-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
+    .diff-icon { font-size: 2rem; line-height: 1; }
+    .diff-label { font-size: 0.9rem; font-weight: 600; color: var(--lp-text); }
+
+    /* Lifestyle section */
+    .lp-lifestyle {
+      position: relative;
+      min-height: 500px;
+      overflow: hidden;
+    }
+    .lifestyle-bg {
+      position: absolute; inset: 0;
+      background-size: cover;
+      background-position: center;
+      z-index: 0;
+    }
+    .lifestyle-overlay {
+      position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.3) 100%);
+      z-index: 1;
+    }
+    .lifestyle-content { position: relative; z-index: 2; }
+    .lifestyle-content--over-image { color: #fff; }
+    .lifestyle-content--over-image .section-subtitle { opacity: 0.9; }
+    .lifestyle-gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin: 2rem 0;
+    }
+    .lifestyle-thumb {
+      border-radius: var(--lp-radius);
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    }
+    .lifestyle-thumb img {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* Location section */
+    .lp-location { background: var(--lp-bg); }
+    .location-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      margin-top: 2rem;
+      align-items: start;
+    }
+    .location-map {
+      border-radius: var(--lp-radius);
+      overflow: hidden;
+      box-shadow: var(--lp-shadow);
+    }
+    .location-map img { width: 100%; display: block; }
+    .location-map--placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 250px;
+      background: var(--lp-primary);
+      color: #fff;
+      text-align: center;
+    }
+    .map-pin { font-size: 3rem; margin-bottom: 0.5rem; }
+
+    /* CTA inline strip */
+    .lp-cta-inline {
+      background: var(--lp-accent);
+      color: #fff;
+      padding: 3rem 0;
+    }
+    .cta-inline-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 2rem;
+      flex-wrap: wrap;
+    }
+    .cta-inline-text .section-title { margin-bottom: 0.25rem; }
+    .cta-inline-text .section-subtitle { margin-bottom: 0; opacity: 0.9; }
+    .cta-inline-btn { background: #fff; color: var(--lp-accent); flex-shrink: 0; }
+    .cta-inline-btn:hover { background: #f0f0f0; }
+
+    /* WhatsApp floating action button */
+    .whatsapp-fab {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      z-index: 999;
+      width: 56px;
+      height: 56px;
+      background: #25D366;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px rgba(37,211,102,0.4);
+      transition: transform 0.2s, box-shadow 0.2s;
+      text-decoration: none;
+    }
+    .whatsapp-fab:hover { transform: scale(1.1); box-shadow: 0 6px 24px rgba(37,211,102,0.5); }
+
     /* Responsive */
     @media (max-width: 768px) {
       .hero-title { font-size: 2rem; }
@@ -628,5 +894,12 @@ function generateCSS(colors: { primary: string; secondary: string; accent: strin
       .gallery-item img { height: 220px; }
       .hero-highlights { flex-direction: column; }
       .feature-list { grid-template-columns: 1fr; }
+      .diff-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.75rem; }
+      .diff-card { padding: 1rem 0.5rem; }
+      .diff-icon { font-size: 1.5rem; }
+      .lifestyle-gallery { grid-template-columns: 1fr; }
+      .lifestyle-thumb img { height: 180px; }
+      .location-layout { grid-template-columns: 1fr; }
+      .cta-inline-content { flex-direction: column; text-align: center; }
     }`;
 }
