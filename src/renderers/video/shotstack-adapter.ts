@@ -220,7 +220,7 @@ export function buildShotstackEdit(
         },
         start: cursor + 0.3, // pequeno delay para entrar suavemente
         length: duration - 0.6,
-        transition: { in: 'fadeIn', out: 'fadeOut' },
+        transition: { in: 'fade', out: 'fade' },
       });
     }
 
