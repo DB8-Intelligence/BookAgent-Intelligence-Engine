@@ -6,25 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { OutputsGallery } from "@/components/outputs/OutputsGallery";
 import { bookagent } from "@/lib/bookagentApi";
-
-/** Extract a clean material name from the upload file URL */
-function extractMaterialName(fileUrl: string): string {
-  try {
-    const path = new URL(fileUrl).pathname;
-    let filename = decodeURIComponent(path.split("/").pop() || "");
-    // Remove UUID prefix (e.g., "f4d32c2a-...-Mansao_Othon.pdf")
-    filename = filename.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/, "");
-    // Remove extension
-    filename = filename.replace(/\.\w+$/, "");
-    // Remove parenthetical suffixes like " (6)"
-    filename = filename.replace(/\s*\(\d+\)\s*$/, "");
-    // Replace underscores with spaces
-    filename = filename.replace(/_/g, " ");
-    return filename.trim() || "Material";
-  } catch {
-    return "Material";
-  }
-}
+import { extractMaterialName } from "@/lib/materialName";
 
 export default function OutputsPage() {
   const params = useParams();

@@ -16,6 +16,7 @@ import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { KPICard } from "@/components/dashboard/KPICard";
+import { extractMaterialName } from "@/lib/materialName";
 
 type ActionState = { loading: boolean; success: string | null; error: string | null };
 
@@ -26,6 +27,7 @@ export default function JobDetailPage() {
   const jobId = params.jobId;
 
   const [data, setData] = useState<DashboardJobDetail | null>(null);
+  const [materialName, setMaterialName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,8 +41,13 @@ export default function JobDetailPage() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const detail = await bookagent.dashboard.jobDetail(jobId);
+      // Fetch dashboard detail + material name in parallel
+      const [detail, job] = await Promise.all([
+        bookagent.dashboard.jobDetail(jobId),
+        bookagent.jobs.get(jobId).catch(() => null),
+      ]);
       setData(detail);
+      setMaterialName(extractMaterialName(job?.input?.file_url));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar detalhes do job");
@@ -148,8 +155,8 @@ export default function JobDetailPage() {
 
       {/* Header */}
       <PageHeader
-        title={`Job ${data.jobId.slice(0, 8)}...`}
-        description={data.inputType}
+        title={materialName || `Job ${data.jobId.slice(0, 8)}`}
+        description={data.inputType ? `${data.inputType.toUpperCase()} • ${data.jobId.slice(0, 8)}` : undefined}
         action={<StatusBadge status={data.status} className="text-sm px-3 py-1" />}
       />
 
