@@ -43,14 +43,23 @@ function isAdmin(email: string | undefined): boolean {
 // Auth resolver — matches the fallback chain used elsewhere in the app
 // ---------------------------------------------------------------------------
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUuid(value: string | undefined): value is string {
+  return typeof value === 'string' && UUID_RE.test(value);
+}
+
 function resolveUserId(req: Request): string | undefined {
-  // Try JWT first (from supabaseAuthMiddleware)
-  if (req.authUser?.id) return req.authUser.id;
-  // Then tenantContext (resolved by tenant-guard, may use x-user-id header)
-  if (req.tenantContext?.userId) return req.tenantContext.userId;
+  // Try JWT first (from supabaseAuthMiddleware) — most trusted source
+  if (isValidUuid(req.authUser?.id)) return req.authUser.id;
+  // Then tenantContext — but skip 'anonymous' sentinel
+  const ctxUserId = req.tenantContext?.userId;
+  if (ctxUserId && ctxUserId !== 'anonymous' && isValidUuid(ctxUserId)) {
+    return ctxUserId;
+  }
   // Fallback to x-user-id header directly
   const headerId = req.headers['x-user-id'];
-  if (typeof headerId === 'string' && headerId.length > 0) return headerId;
+  if (typeof headerId === 'string' && isValidUuid(headerId)) return headerId;
   return undefined;
 }
 

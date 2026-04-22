@@ -431,14 +431,18 @@ async function request<T>(
 
   const apiKey = process.env.NEXT_PUBLIC_BOOKAGENT_API_KEY ?? "";
 
-  // Get Supabase session token for authenticated requests
+  // Get Supabase session token + user id for authenticated requests.
+  // x-user-id is a fallback for when the backend can't validate the JWT
+  // (e.g. SUPABASE_JWT_SECRET not configured on Railway).
   let accessToken = "";
+  let userId = "";
   if (typeof window !== "undefined") {
     try {
       const { getSupabaseBrowser } = await import("@/lib/supabase/client");
       const supabase = getSupabaseBrowser();
       const { data: { session } } = await supabase.auth.getSession();
       accessToken = session?.access_token ?? "";
+      userId = session?.user?.id ?? "";
     } catch {
       // Supabase not available — fall back to API key
     }
@@ -455,6 +459,7 @@ async function request<T>(
       headers: {
         "Content-Type": "application/json",
         ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
+        ...(userId && { "x-user-id": userId }),
         ...(apiKey && { "x-api-key": apiKey }),
         ...init?.headers,
       },
