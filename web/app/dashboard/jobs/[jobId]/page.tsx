@@ -16,6 +16,7 @@ import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { KPICard } from "@/components/dashboard/KPICard";
+import { Button } from "@/components/ui/button";
 import { extractMaterialName } from "@/lib/materialName";
 
 type ActionState = { loading: boolean; success: string | null; error: string | null };
@@ -146,6 +147,10 @@ export default function JobDetailPage() {
   const canReject = data.status === "AWAITING_REVIEW" || data.status === "REVISION_IN_PROGRESS";
   const canPublish = data.status === "APPROVED";
 
+  // Pipeline finished = artifacts exist and job has completedAt timestamp.
+  // Show "Ver Produtos" CTA regardless of review/approval status.
+  const pipelineFinished = Boolean(data.pipeline?.completedAt) || data.artifacts.length > 0;
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Back link */}
@@ -157,7 +162,18 @@ export default function JobDetailPage() {
       <PageHeader
         title={materialName || `Job ${data.jobId.slice(0, 8)}`}
         description={data.inputType ? `${data.inputType.toUpperCase()} • ${data.jobId.slice(0, 8)}` : undefined}
-        action={<StatusBadge status={data.status} className="text-sm px-3 py-1" />}
+        action={
+          <div className="flex items-center gap-3">
+            {pipelineFinished && (
+              <Link href={`/outputs/${data.jobId}`}>
+                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700">
+                  Ver Produtos Gerados →
+                </Button>
+              </Link>
+            )}
+            <StatusBadge status={data.status} className="text-sm px-3 py-1" />
+          </div>
+        }
       />
 
       {/* Pipeline section */}
