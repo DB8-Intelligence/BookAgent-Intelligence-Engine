@@ -89,7 +89,20 @@ export async function createProcess(req: Request, res: Response): Promise<void> 
   // Queue mode — Redis disponível
   const queue = getQueue();
   if (queue) {
-    await handleQueueMode(res, { file_url, type, user_context: enrichedContext, webhook_url });
+    await handleQueueMode(res, {
+      file_url,
+      type,
+      user_context: enrichedContext,
+      webhook_url,
+      tenantContext: req.tenantContext
+        ? {
+            tenantId: req.tenantContext.tenantId,
+            userId: req.tenantContext.userId,
+            planTier: req.tenantContext.planTier,
+            learningScope: req.tenantContext.learningScope,
+          }
+        : undefined,
+    });
     return;
   }
 
@@ -108,9 +121,15 @@ async function handleQueueMode(
     type: string;
     user_context: Record<string, string | undefined>;
     webhook_url?: string;
+    tenantContext?: {
+      tenantId: string;
+      userId: string;
+      planTier: string;
+      learningScope: string;
+    };
   },
 ): Promise<void> {
-  const { file_url, type, user_context, webhook_url } = params;
+  const { file_url, type, user_context, webhook_url, tenantContext } = params;
   const jobId = randomUUID();
 
   try {
@@ -154,8 +173,11 @@ async function handleQueueMode(
         site:      user_context.site,
         region:    user_context.region,
         logoUrl:   user_context.logo_url,
-      },
+        // Forward selectedFormats so output-selection respects user choice
+        ...(user_context.selectedFormats && { selectedFormats: user_context.selectedFormats }),
+      } as Record<string, string | undefined>,
       webhookUrl: webhook_url,
+      tenantContext,
     });
 
     const data: ProcessResponse = {
