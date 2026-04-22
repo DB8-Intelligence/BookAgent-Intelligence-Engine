@@ -43,6 +43,7 @@ function realtimeRowToJob(row: RealtimeJobPayload): DashboardJob {
     statusLabel: row.status.replace(/_/g, ' ').toLowerCase(),
     statusBadge: row.status === 'COMPLETED' ? 'success' : row.status === 'FAILED' ? 'error' : 'default',
     inputType: 'pdf',
+    inputFileUrl: null,
     artifactsCount: row.artifacts_count ?? 0,
     publicationsCount: 0,
     hasPendingReview: false,

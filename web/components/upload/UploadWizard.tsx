@@ -34,6 +34,16 @@ interface WizardState {
   error: string | null;
 }
 
+// Produtos selecionáveis pelo usuário
+const SELECTABLE_PRODUCTS = [
+  { id: "reel", icon: "🎬", label: "Reels para Instagram/TikTok", desc: "Videos curtos 9:16 com Ken Burns e narracao", default: true },
+  { id: "carousel", icon: "📱", label: "Carrossel de imagens", desc: "8-10 slides para feed do Instagram", default: true },
+  { id: "blog", icon: "📝", label: "Artigo para blog", desc: "Post SEO-otimizado com 1500+ palavras", default: true },
+  { id: "landing_page", icon: "🌐", label: "Landing page", desc: "Pagina de captacao com CTA e lead form", default: true },
+  { id: "presentation", icon: "📊", label: "Apresentacao comercial", desc: "Slides para reuniao com cliente", default: false },
+  { id: "video_long", icon: "🎥", label: "Video institucional", desc: "Video longo 16:9 para YouTube", default: false },
+];
+
 const INITIAL: WizardState = {
   step: 0,
   fileUrl: "",
@@ -80,16 +90,6 @@ const INPUT_TYPES: {
     desc: "Tour virtual, video institucional, drone",
     accept: "video/*",
   },
-];
-
-// Produtos selecionáveis pelo usuário
-const SELECTABLE_PRODUCTS = [
-  { id: "reel", icon: "🎬", label: "Reels para Instagram/TikTok", desc: "Videos curtos 9:16 com Ken Burns e narracao", default: true },
-  { id: "carousel", icon: "📱", label: "Carrossel de imagens", desc: "8-10 slides para feed do Instagram", default: true },
-  { id: "blog", icon: "📝", label: "Artigo para blog", desc: "Post SEO-otimizado com 1500+ palavras", default: true },
-  { id: "landing_page", icon: "🌐", label: "Landing page", desc: "Pagina de captacao com CTA e lead form", default: true },
-  { id: "presentation", icon: "📊", label: "Apresentacao comercial", desc: "Slides para reuniao com cliente", default: false },
-  { id: "video_long", icon: "🎥", label: "Video institucional", desc: "Video longo 16:9 para YouTube", default: false },
 ];
 
 // ---------------------------------------------------------------------------
