@@ -272,8 +272,17 @@ export async function getVideoStatus(req: Request, res: Response): Promise<void>
       limit: 1,
     });
 
+    // No job_meta row yet = video render never triggered. Return as 'not_requested'
+    // rather than 404, so frontend polling doesn't log errors for jobs that simply
+    // haven't kicked off rendering yet (e.g. blog/LP-only jobs, or jobs completed
+    // before auto-trigger was deployed).
     if (rows.length === 0) {
-      sendError(res, 'NOT_FOUND', 'Job not found', 404);
+      sendSuccess(res, {
+        jobId,
+        videoRenderStatus: 'not_requested',
+        artifactId: null,
+        requestedAt: null,
+      });
       return;
     }
 
