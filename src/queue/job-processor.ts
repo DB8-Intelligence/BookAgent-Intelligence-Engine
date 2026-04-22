@@ -23,6 +23,13 @@ import type { StorageManager } from '../persistence/storage-manager.js';
 import { InputType, JobStatus } from '../domain/value-objects/index.js';
 import type { Job, JobInput } from '../domain/entities/job.js';
 import { enqueueVideoRender } from './video-queue.js';
+import { checkAndRecordUsage } from '../modules/billing/limit-checker.js';
+import { recordUsage } from '../modules/billing/usage-meter.js';
+import { UsageEventType, LimitCheckResult } from '../domain/entities/billing.js';
+import { TenantRole, PLAN_FEATURES, PLAN_TENANT_LIMITS, LearningScope } from '../domain/entities/tenant.js';
+import type { TenantContext } from '../domain/entities/tenant.js';
+import type { PlanTier } from '../plans/plan-config.js';
+import { SupabaseClient } from '../persistence/supabase-client.js';
 import { logger } from '../utils/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -34,6 +41,7 @@ export interface ProcessorDependencies {
   jobRepo: JobRepository | null;
   artifactRepo: ArtifactRepository | null;
   storageManager: StorageManager | null;
+  supabaseClient?: SupabaseClient | null;
 }
 
 const INPUT_TYPE_MAP: Record<string, InputType> = {
@@ -102,6 +110,60 @@ export async function processBookAgentJob(
     await jobRepo?.updateStatus(jobId, 'processing');
   });
 
+  // Build TenantContext for credit checks (from queue data)
+  const queueTenant = bullJob.data.tenantContext;
+  const planTier = (queueTenant?.planTier ?? 'starter') as PlanTier;
+  const tenantCtx: TenantContext | null = queueTenant
+    ? {
+        tenantId: queueTenant.tenantId,
+        userId: queueTenant.userId,
+        userRole: TenantRole.OWNER,
+        planTier,
+        features: PLAN_FEATURES[planTier] ?? PLAN_FEATURES['starter'],
+        limits: PLAN_TENANT_LIMITS[planTier] ?? PLAN_TENANT_LIMITS['starter'],
+        learningScope: (queueTenant.learningScope as LearningScope) ?? LearningScope.TENANT,
+      }
+    : null;
+
+  const supabase = deps.supabaseClient ?? null;
+
+  // Credit check: verify tenant has remaining quota before processing
+  if (tenantCtx) {
+    const creditCheck = await checkAndRecordUsage(
+      tenantCtx,
+      UsageEventType.JOB_CREATED,
+      supabase,
+      { jobId },
+    );
+
+    if (creditCheck.result === LimitCheckResult.BLOCKED) {
+      logger.warn(
+        `[JobProcessor] BLOCKED by credit limit: ${creditCheck.message} ` +
+        `(tenant=${tenantCtx.tenantId}, plan=${tenantCtx.planTier})`,
+      );
+
+      await safeExec('failJob credit block', async () => {
+        await jobRepo?.failJob(jobId, `Limite atingido: ${creditCheck.message}`);
+      });
+
+      if (webhookUrl) {
+        await sendWebhook(webhookUrl, {
+          source: 'bookagent',
+          timestamp: new Date().toISOString(),
+          jobId,
+          status: 'failed',
+          error: creditCheck.message,
+        });
+      }
+
+      return; // Don't process — credit exhausted
+    }
+
+    if (creditCheck.result === LimitCheckResult.WARNING) {
+      logger.info(`[JobProcessor] Credit warning: ${creditCheck.message}`);
+    }
+  }
+
   const startTime = Date.now();
 
   try {
@@ -150,6 +212,34 @@ export async function processBookAgentJob(
         await safeExec('saveFiles', async () => {
           await storageManager?.saveArtifactFiles(artifacts);
         });
+      }
+
+      // Record usage for generated artifacts (best-effort)
+      if (tenantCtx) {
+        const blogCount = artifacts.filter(a => a.artifactType === 'blog-article').length;
+        const lpCount = artifacts.filter(a => a.artifactType === 'landing-page').length;
+        const renderCount = artifacts.filter(a => a.artifactType === 'media-render-spec').length;
+
+        const usageEvents: Array<{ type: UsageEventType; count: number }> = [
+          { type: UsageEventType.JOB_COMPLETED, count: 1 },
+          { type: UsageEventType.BLOG_GENERATED, count: blogCount },
+          { type: UsageEventType.LANDING_PAGE_GENERATED, count: lpCount },
+          { type: UsageEventType.VIDEO_RENDER_REQUESTED, count: renderCount },
+        ];
+
+        for (const { type: evtType, count } of usageEvents) {
+          if (count > 0) {
+            await safeExec(`recordUsage ${evtType}`, async () => {
+              await recordUsage({
+                tenantId: tenantCtx.tenantId,
+                userId: tenantCtx.userId,
+                eventType: evtType,
+                quantity: count,
+                jobId,
+              }, supabase);
+            });
+          }
+        }
       }
 
       logger.info(

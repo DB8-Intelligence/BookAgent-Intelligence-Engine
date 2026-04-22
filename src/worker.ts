@@ -105,6 +105,7 @@ const worker = createWorker({
   jobRepo,
   artifactRepo,
   storageManager,
+  supabaseClient,
 });
 
 if (!worker) {
