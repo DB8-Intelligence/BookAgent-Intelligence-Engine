@@ -251,8 +251,29 @@ export async function processBookAgentJob(
       const renderSpecs = artifacts.filter(
         (a) => a.artifactType === 'media-render-spec',
       );
+
+      if (renderSpecs.length > 0 && supabase) {
+        // Mark video_render_status=queued up-front so frontend polling works
+        // and we have visibility if enqueue fails (no row = enqueue crashed).
+        try {
+          await supabase.upsert(
+            'bookagent_job_meta',
+            {
+              job_id: jobId,
+              video_render_status: 'queued',
+              video_render_artifact_id: renderSpecs[0].id,
+              video_render_requested_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+            'job_id',
+          );
+        } catch (err) {
+          logger.warn(`[JobProcessor] Failed to mark video_render_status=queued: ${err}`);
+        }
+      }
+
       for (const spec of renderSpecs) {
-        await safeExec(`auto-render ${spec.id}`, async () => {
+        try {
           const specContent = typeof spec.content === 'string'
             ? spec.content
             : JSON.stringify(spec.content);
@@ -266,7 +287,27 @@ export async function processBookAgentJob(
           logger.info(
             `[JobProcessor] Auto-triggered video render for artifact ${spec.id}`,
           );
-        });
+        } catch (err) {
+          // Log prominently — this was previously swallowed by safeExec
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error(
+            `[JobProcessor] AUTO-TRIGGER FAILED for ${spec.id}: ${msg}. ` +
+            `User will need to click "Gerar Video" manually.`,
+          );
+          // Mark as failed in job_meta so UI shows error instead of hanging on "queued"
+          if (supabase) {
+            await supabase.upsert(
+              'bookagent_job_meta',
+              {
+                job_id: jobId,
+                video_render_status: 'failed',
+                video_render_error: `Auto-trigger failed: ${msg}`,
+                updated_at: new Date().toISOString(),
+              },
+              'job_id',
+            ).catch(() => {});
+          }
+        }
       }
 
       // Webhook de conclusão
