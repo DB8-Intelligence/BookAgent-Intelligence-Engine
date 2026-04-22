@@ -163,10 +163,12 @@ export async function getJobList(
 
     let artifactCounts: Record<string, number> = {};
     let publicationCounts: Record<string, number> = {};
+    let fileUrls: Record<string, string> = {};
+    let inputTypes: Record<string, string> = {};
 
     if (jobIds.length > 0) {
       try {
-        const [artRows, pubRows] = await Promise.all([
+        const [artRows, pubRows, jobRows] = await Promise.all([
           supabase.select<{ job_id: string }>('bookagent_job_artifacts', {
             filters: [{ column: 'job_id', operator: 'in', value: `(${jobIds.join(',')})` }],
             select: 'job_id',
@@ -175,7 +177,18 @@ export async function getJobList(
             filters: [{ column: 'job_id', operator: 'in', value: `(${jobIds.join(',')})` }],
             select: 'job_id',
           }),
+          supabase.select<{ id: string; input_file_url: string | null; input_type: string | null }>(
+            'bookagent_jobs',
+            {
+              filters: [{ column: 'id', operator: 'in', value: `(${jobIds.join(',')})` }],
+              select: 'id,input_file_url,input_type',
+            },
+          ),
         ]);
+        for (const r of jobRows) {
+          if (r.input_file_url) fileUrls[r.id] = r.input_file_url;
+          if (r.input_type) inputTypes[r.id] = r.input_type;
+        }
         for (const r of artRows) {
           artifactCounts[r.job_id] = (artifactCounts[r.job_id] ?? 0) + 1;
         }
@@ -194,7 +207,8 @@ export async function getJobList(
         status,
         statusLabel: CUSTOMER_STATUS_LABELS[status],
         statusBadge: CUSTOMER_STATUS_BADGE[status],
-        inputType: '',
+        inputType: inputTypes[row.job_id] ?? '',
+        inputFileUrl: fileUrls[row.job_id] ?? null,
         artifactsCount: artifactCounts[row.job_id] ?? 0,
         publicationsCount: publicationCounts[row.job_id] ?? 0,
         hasPendingReview: status === CustomerJobStatus.AWAITING_REVIEW,

@@ -139,6 +139,7 @@ import distributionRoutes from './api/routes/distribution.js';
 import customerDashboardRoutes from './api/routes/customer-dashboard.js';
 import videoRoutes from './api/routes/video.js';
 import bugsRoutes, { setSupabaseClientForBugs } from './api/routes/bugs.js';
+import { setSupabaseClientForJobsDelete } from './api/routes/jobs.js';
 
 // --- Middleware ---
 import { errorHandler } from './api/middleware/error-handler.js';
@@ -267,6 +268,7 @@ if (supabaseClient) {
   setSupabaseClientForIntegrationHub(supabaseClient);
   setSupabaseClientForDistribution(supabaseClient);
   setSupabaseClientForBugs(supabaseClient);
+  setSupabaseClientForJobsDelete(supabaseClient);
   setTenantGuardSupabaseClient(supabaseClient);
   setVideoRenderSupabaseClient(supabaseClient);
   setPlanGuardSupabaseClient(supabaseClient);

@@ -192,6 +192,27 @@ export class SupabaseClient {
   }
 
   /**
+   * Remove registros que correspondem ao filtro.
+   */
+  async delete(
+    table: string,
+    filter: FilterCondition,
+  ): Promise<void> {
+    const filterParam = buildFilterParam(filter);
+    const url = `${this.baseUrl}/${table}?${filterParam}`;
+
+    const response = await this.request(url, {
+      method: 'DELETE',
+      headers: this.headers,
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`[SupabaseClient] DELETE ${table} failed (${response.status}): ${error}`);
+    }
+  }
+
+  /**
    * Insere ou atualiza (UPSERT) registros.
    * @param onConflict - coluna de conflito (ex: 'id')
    */

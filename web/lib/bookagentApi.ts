@@ -266,6 +266,7 @@ export interface DashboardJob {
   statusLabel: string;
   statusBadge: string;
   inputType: string;
+  inputFileUrl: string | null;
   artifactsCount: number;
   publicationsCount: number;
   hasPendingReview: boolean;
@@ -547,6 +548,9 @@ export const bookagent = {
       const base = `${BASE_URL}${API_PREFIX}/jobs/${jobId}/artifacts/${artifactId}/download`;
       return apiKey ? `${base}?api_key=${apiKey}` : base;
     },
+
+    delete: (jobId: string) =>
+      request<{ jobId: string; deleted: boolean }>(`/jobs/${jobId}`, { method: "DELETE" }),
   },
 
   // ---------- Dashboard ----------
