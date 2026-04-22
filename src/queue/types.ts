@@ -33,6 +33,8 @@ export interface BookAgentJobData {
     site?: string;
     region?: string;
     logoUrl?: string;
+    /** CSV de formatos selecionados — repassa para o ProcessingContext.userSelectedFormats */
+    selectedFormats?: string;
   };
 
   /** URL para notificação ao finalizar (POST com resultado) */

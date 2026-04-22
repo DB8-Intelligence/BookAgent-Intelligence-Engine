@@ -85,6 +85,9 @@ export async function processBookAgentJob(
       site:      userContext.site,
       region:    userContext.region,
       logoUrl:   userContext.logoUrl,
+      // Forward selectedFormats so ProcessingContext.userSelectedFormats is populated
+      // and output-selection filters to only the formats the user picked in the wizard
+      selectedFormats: userContext.selectedFormats,
     },
   };
 
