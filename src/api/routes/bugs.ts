@@ -40,6 +40,25 @@ function isAdmin(email: string | undefined): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Auth resolver — matches the fallback chain used elsewhere in the app
+// ---------------------------------------------------------------------------
+
+function resolveUserId(req: Request): string | undefined {
+  // Try JWT first (from supabaseAuthMiddleware)
+  if (req.authUser?.id) return req.authUser.id;
+  // Then tenantContext (resolved by tenant-guard, may use x-user-id header)
+  if (req.tenantContext?.userId) return req.tenantContext.userId;
+  // Fallback to x-user-id header directly
+  const headerId = req.headers['x-user-id'];
+  if (typeof headerId === 'string' && headerId.length > 0) return headerId;
+  return undefined;
+}
+
+function resolveEmail(req: Request): string | undefined {
+  return req.authUser?.email;
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -64,7 +83,7 @@ function sendError(res: Response, code: string, message: string, status = 400): 
 // ---------------------------------------------------------------------------
 
 router.post('/', async (req: Request, res: Response) => {
-  const userId = req.authUser?.id;
+  const userId = resolveUserId(req);
   if (!userId) {
     sendError(res, 'UNAUTHORIZED', 'Authentication required', 401);
     return;
@@ -114,7 +133,7 @@ router.post('/', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 
 router.get('/is-admin', (req: Request, res: Response) => {
-  const email = req.authUser?.email;
+  const email = resolveEmail(req);
   sendJson(res, { is_admin: isAdmin(email) });
 });
 
@@ -123,7 +142,7 @@ router.get('/is-admin', (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 
 router.get('/mine', async (req: Request, res: Response) => {
-  const userId = req.authUser?.id;
+  const userId = resolveUserId(req);
   if (!userId) {
     sendError(res, 'UNAUTHORIZED', 'Authentication required', 401);
     return;
@@ -152,7 +171,7 @@ router.get('/mine', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 
 router.get('/', async (req: Request, res: Response) => {
-  if (!isAdmin(req.authUser?.email)) {
+  if (!isAdmin(resolveEmail(req))) {
     sendError(res, 'FORBIDDEN', 'Admin access required', 403);
     return;
   }
@@ -192,7 +211,7 @@ router.get('/', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 
 router.patch('/:id', async (req: Request, res: Response) => {
-  if (!isAdmin(req.authUser?.email)) {
+  if (!isAdmin(resolveEmail(req))) {
     sendError(res, 'FORBIDDEN', 'Admin access required', 403);
     return;
   }
