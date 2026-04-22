@@ -21,6 +21,12 @@ export const ProcessRequestSchema = z.object({
   authorization_acknowledged: z.boolean().optional(),
   authorization_timestamp: z.string().datetime().optional(),
   /**
+   * Formatos de output selecionados pelo usuário.
+   * Se fornecido, apenas esses formatos serão gerados (os demais são rejeitados).
+   * Ex: ['reel', 'blog', 'landing_page']
+   */
+  selected_formats: z.array(z.string()).optional(),
+  /**
    * URL para receber notificação POST quando o job finalizar.
    * Payload: { source, timestamp, jobId, status, artifacts_count?, duration_ms?, error? }
    * Ideal para integração com n8n: configure o Webhook Trigger do n8n aqui.

@@ -51,8 +51,14 @@ export class OutputSelectionModule implements IModule {
       evaluatePlan(plan, sources, assets),
     );
 
+    // --- Etapa 1.5: Aplicar seleção do usuário (se fornecida) ---
+    const userFormats = context.userSelectedFormats;
+    const filteredDecisions = userFormats && userFormats.length > 0
+      ? applyUserSelection(rawDecisions, userFormats)
+      : rawDecisions;
+
     // --- Etapa 2: Priorizar e detectar redundâncias ---
-    const decisions = prioritizeOutputs(rawDecisions);
+    const decisions = prioritizeOutputs(filteredDecisions);
 
     // --- Log ---
     logSelectionSummary(decisions);
@@ -62,6 +68,54 @@ export class OutputSelectionModule implements IModule {
       selectedOutputs: decisions,
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// User selection filter
+// ---------------------------------------------------------------------------
+
+/**
+ * Aplica a seleção do usuário: formatos selecionados são promovidos para
+ * APPROVED (se viáveis) ou mantidos como APPROVED_WITH_GAPS. Formatos
+ * NÃO selecionados são rejeitados independente da viabilidade.
+ */
+function applyUserSelection(
+  decisions: OutputDecision[],
+  userFormats: string[],
+): OutputDecision[] {
+  const normalizedFormats = new Set(userFormats.map(f => f.toLowerCase().replace(/-/g, '_')));
+
+  logger.info(
+    `[OutputSelection] User selected formats: ${[...normalizedFormats].join(', ')}`,
+  );
+
+  return decisions.map((d) => {
+    const formatKey = d.format.toLowerCase().replace(/-/g, '_');
+    const narrativeKey = d.narrativeType.toLowerCase().replace(/-/g, '_');
+
+    // Check if user selected this format (match against format or narrative type)
+    const isSelected = normalizedFormats.has(formatKey) || normalizedFormats.has(narrativeKey);
+
+    if (!isSelected) {
+      // User didn't select this format — reject it
+      return {
+        ...d,
+        status: ApprovalStatus.REJECTED,
+        reason: `Não selecionado pelo usuário (formato: ${d.format})`,
+      };
+    }
+
+    // User selected this format — promote if rejected (unless truly infeasible)
+    if (d.status === ApprovalStatus.REJECTED && d.confidence > 0.2) {
+      return {
+        ...d,
+        status: ApprovalStatus.APPROVED_WITH_GAPS,
+        reason: `Selecionado pelo usuário (aprovado com gaps, confiança ${Math.round(d.confidence * 100)}%)`,
+      };
+    }
+
+    return d; // Keep original status (APPROVED or APPROVED_WITH_GAPS)
+  });
 }
 
 // ---------------------------------------------------------------------------

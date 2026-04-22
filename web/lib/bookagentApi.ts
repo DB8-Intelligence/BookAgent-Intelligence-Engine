@@ -105,6 +105,7 @@ export interface ProcessInput {
   file_url: string;
   type: InputType;
   user_context?: UserContext;
+  selected_formats?: string[];
   webhook_url?: string;
   authorization_acknowledged?: boolean;
   authorization_timestamp?: string | null;

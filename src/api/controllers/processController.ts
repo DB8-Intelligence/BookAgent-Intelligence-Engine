@@ -72,13 +72,14 @@ export async function createProcess(req: Request, res: Response): Promise<void> 
     return;
   }
 
-  const { file_url, type, user_context, webhook_url, authorization_acknowledged, authorization_timestamp } = parsed.data;
+  const { file_url, type, user_context, webhook_url, authorization_acknowledged, authorization_timestamp, selected_formats } = parsed.data;
 
-  // Merge authorization + tenant context into user_context for persistence
+  // Merge authorization + tenant context + selected formats into user_context for persistence
   const enrichedContext = {
     ...user_context,
     ...(authorization_acknowledged !== undefined && { authorization_acknowledged: String(authorization_acknowledged) }),
     ...(authorization_timestamp !== undefined && { authorization_timestamp }),
+    ...(selected_formats && selected_formats.length > 0 && { selectedFormats: selected_formats.join(',') }),
     // Inject tenant info so job-repository can create job_meta
     ...(req.tenantContext?.tenantId && { tenantId: req.tenantContext.tenantId }),
     ...(req.tenantContext?.planTier && { planTier: req.tenantContext.planTier }),

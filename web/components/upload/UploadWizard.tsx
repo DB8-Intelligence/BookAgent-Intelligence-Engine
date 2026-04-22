@@ -29,6 +29,7 @@ interface WizardState {
   authorizationTimestamp: string | null;
   inputType: InputType | null;
   userContext: UserContext;
+  selectedFormats: string[];
   submitting: boolean;
   error: string | null;
 }
@@ -45,6 +46,7 @@ const INITIAL: WizardState = {
   authorizationTimestamp: null,
   inputType: null,
   userContext: {},
+  selectedFormats: SELECTABLE_PRODUCTS.filter(p => p.default).map(p => p.id),
   submitting: false,
   error: null,
 };
@@ -53,6 +55,7 @@ const STEPS = [
   { label: "Material", icon: "📎" },
   { label: "Upload", icon: "📤" },
   { label: "Personalizacao", icon: "🎨" },
+  { label: "Produtos", icon: "📦" },
   { label: "Processar", icon: "🚀" },
 ];
 
@@ -79,14 +82,14 @@ const INPUT_TYPES: {
   },
 ];
 
-// Outputs que o sistema pode gerar
-const POSSIBLE_OUTPUTS = [
-  { icon: "🎬", label: "Reels para Instagram/TikTok", desc: "Videos curtos 9:16 com Ken Burns e narracao" },
-  { icon: "📱", label: "Carrossel de imagens", desc: "8-10 slides para feed do Instagram" },
-  { icon: "📝", label: "Artigo para blog", desc: "Post SEO-otimizado com 1500+ palavras" },
-  { icon: "🌐", label: "Landing page", desc: "Pagina de captacao com CTA e lead form" },
-  { icon: "📊", label: "Apresentacao comercial", desc: "Slides para reuniao com cliente" },
-  { icon: "🔍", label: "Pesquisa de mercado", desc: "Analise competitiva baseada no material" },
+// Produtos selecionáveis pelo usuário
+const SELECTABLE_PRODUCTS = [
+  { id: "reel", icon: "🎬", label: "Reels para Instagram/TikTok", desc: "Videos curtos 9:16 com Ken Burns e narracao", default: true },
+  { id: "carousel", icon: "📱", label: "Carrossel de imagens", desc: "8-10 slides para feed do Instagram", default: true },
+  { id: "blog", icon: "📝", label: "Artigo para blog", desc: "Post SEO-otimizado com 1500+ palavras", default: true },
+  { id: "landing_page", icon: "🌐", label: "Landing page", desc: "Pagina de captacao com CTA e lead form", default: true },
+  { id: "presentation", icon: "📊", label: "Apresentacao comercial", desc: "Slides para reuniao com cliente", default: false },
+  { id: "video_long", icon: "🎥", label: "Video institucional", desc: "Video longo 16:9 para YouTube", default: false },
 ];
 
 // ---------------------------------------------------------------------------
@@ -122,10 +125,24 @@ export function UploadWizard() {
       case 2:
         return true;
       case 3:
+        return state.selectedFormats.length > 0;
+      case 4:
         return true;
       default:
         return false;
     }
+  }
+
+  function toggleFormat(id: string) {
+    setState((prev) => {
+      const has = prev.selectedFormats.includes(id);
+      return {
+        ...prev,
+        selectedFormats: has
+          ? prev.selectedFormats.filter((f) => f !== id)
+          : [...prev.selectedFormats, id],
+      };
+    });
   }
 
   function formatFileSize(bytes: number): string {
@@ -213,6 +230,9 @@ export function UploadWizard() {
           Object.keys(state.userContext).length > 0
             ? state.userContext
             : undefined,
+        selected_formats: state.selectedFormats.length > 0
+          ? state.selectedFormats
+          : undefined,
         authorization_acknowledged: state.authorizationAcknowledged || undefined,
         authorization_timestamp: state.authorizationTimestamp || undefined,
       });
@@ -310,12 +330,12 @@ export function UploadWizard() {
               {/* What can be generated */}
               <div className="mt-8">
                 <h3 className="text-sm font-semibold text-muted-foreground mb-3">
-                  Produtos disponiveis (voce escolhe quais gerar apos a analise):
+                  Produtos disponiveis (voce escolhe quais gerar no passo 4):
                 </h3>
                 <div className="grid sm:grid-cols-2 gap-2">
-                  {POSSIBLE_OUTPUTS.map((o) => (
+                  {SELECTABLE_PRODUCTS.map((o) => (
                     <div
-                      key={o.label}
+                      key={o.id}
                       className="flex items-start gap-2 p-2.5 rounded-lg bg-muted/50"
                     >
                       <span className="text-base mt-0.5">{o.icon}</span>
@@ -600,8 +620,78 @@ export function UploadWizard() {
             </div>
           )}
 
-          {/* Step 3: Confirm + Process */}
+          {/* Step 3: Product Selection */}
           {state.step === 3 && (
+            <div>
+              <h2 className="text-lg font-semibold mb-1">
+                Escolha os produtos
+              </h2>
+              <p className="text-sm text-muted-foreground mb-6">
+                Selecione quais conteudos deseja gerar a partir do seu material.
+                Cada produto consome creditos do seu plano.
+              </p>
+
+              <div className="grid sm:grid-cols-2 gap-3">
+                {SELECTABLE_PRODUCTS.map((product) => {
+                  const isSelected = state.selectedFormats.includes(product.id);
+                  return (
+                    <button
+                      type="button"
+                      key={product.id}
+                      onClick={() => toggleFormat(product.id)}
+                      className={cn(
+                        "flex items-start gap-3 p-4 rounded-lg border text-left transition-all",
+                        isSelected
+                          ? "border-emerald-500 bg-emerald-50 ring-2 ring-emerald-500/20"
+                          : "border-border hover:border-muted-foreground/30 hover:bg-muted/50",
+                      )}
+                    >
+                      <span className="text-2xl mt-0.5">{product.icon}</span>
+                      <div className="flex-1">
+                        <p className="font-medium text-sm">{product.label}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {product.desc}
+                        </p>
+                      </div>
+                      <div className={cn(
+                        "w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-1 transition-colors",
+                        isSelected
+                          ? "border-emerald-500 bg-emerald-500 text-white"
+                          : "border-muted-foreground/30",
+                      )}>
+                        {isSelected && <span className="text-xs">✓</span>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  {state.selectedFormats.length} produto(s) selecionado(s)
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline"
+                    onClick={() => update({ selectedFormats: SELECTABLE_PRODUCTS.map(p => p.id) })}
+                  >
+                    Selecionar todos
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:underline"
+                    onClick={() => update({ selectedFormats: [] })}
+                  >
+                    Limpar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Confirm + Process */}
+          {state.step === 4 && (
             <div>
               <h2 className="text-lg font-semibold mb-1">
                 Confirmar e Processar
@@ -635,6 +725,14 @@ export function UploadWizard() {
                     <span>{state.userContext.whatsapp}</span>
                   </div>
                 )}
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Produtos</span>
+                  <span className="text-xs">
+                    {state.selectedFormats
+                      .map((id) => SELECTABLE_PRODUCTS.find((p) => p.id === id)?.label ?? id)
+                      .join(", ")}
+                  </span>
+                </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Autorizacao</span>
                   <span className="text-emerald-600 text-xs">Declarada</span>

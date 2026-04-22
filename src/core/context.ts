@@ -75,6 +75,10 @@ export interface ProcessingContext {
   // --- Populado pelo Narrative ---
   narratives?: NarrativePlan[];
 
+  // --- Seleção de formatos pelo usuário (do upload wizard) ---
+  /** Formatos selecionados pelo user (ex: ['reel', 'blog']). Se presente, output-selection respeita. */
+  userSelectedFormats?: string[];
+
   // --- Populado pelo Output Selection ---
   selectedOutputs?: OutputDecision[];
 
@@ -120,10 +124,17 @@ export function createContext(
   input: JobInput,
   tenantCtx?: TenantContext,
 ): ProcessingContext {
+  // Extract user-selected formats from userContext (passed as CSV from process API)
+  const selectedFormatsRaw = (input.userContext as Record<string, string | undefined>)?.selectedFormats;
+  const userSelectedFormats = selectedFormatsRaw
+    ? selectedFormatsRaw.split(',').map(f => f.trim()).filter(Boolean)
+    : undefined;
+
   return {
     jobId,
     input,
     tenantContext: tenantCtx,
+    userSelectedFormats,
     executionLogs: [],
   };
 }
