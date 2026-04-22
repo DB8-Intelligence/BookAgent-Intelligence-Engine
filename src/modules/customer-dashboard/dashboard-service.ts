@@ -419,26 +419,30 @@ export async function getUsageView(
   tenantCtx: TenantContext,
   supabase: SupabaseClient | null,
 ): Promise<CustomerUsageView> {
+  const { isAdminUserId } = await import('../billing/admin-bypass.js');
   const summary = await getUsageSummary(tenantCtx, supabase);
+  const adminBypass = isAdminUserId(tenantCtx.userId);
 
   const features: CustomerFeatureUsage[] = summary.features.map((f) => ({
     label: f.label,
     used: f.used,
-    limit: f.limit,
-    remaining: f.remaining,
-    percent: f.usedPercent,
-    status: f.status === 'allowed' ? 'ok'
+    // Admins: show -1 (unlimited) instead of plan limit
+    limit: adminBypass ? -1 : f.limit,
+    remaining: adminBypass ? -1 : f.remaining,
+    percent: adminBypass ? 0 : f.usedPercent,
+    status: adminBypass ? 'ok'
+      : f.status === 'allowed' ? 'ok'
       : f.status === 'warning' ? 'warning'
       : f.status === 'blocked' ? 'blocked'
       : 'disabled',
   }));
 
   return {
-    planTier: tenantCtx.planTier,
+    planTier: adminBypass ? 'agency' : tenantCtx.planTier,
     period: summary.periodKey,
     features,
     estimatedCostUsd: summary.estimatedCostUsd > 0 ? summary.estimatedCostUsd : null,
-    alerts: summary.alerts,
+    alerts: adminBypass ? [] : summary.alerts,
     generatedAt: new Date().toISOString(),
   };
 }

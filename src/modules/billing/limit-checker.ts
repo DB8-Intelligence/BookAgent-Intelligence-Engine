@@ -30,6 +30,7 @@ import type { SupabaseClient } from '../../persistence/supabase-client.js';
 import { logger } from '../../utils/logger.js';
 
 import { getUsageCount, getAllUsageCounts, currentMonthKey } from './usage-meter.js';
+import { isAdminUserId } from './admin-bypass.js';
 
 // ---------------------------------------------------------------------------
 // Feature → Event mapping (for feature flag check)
@@ -83,6 +84,19 @@ export async function checkUsageLimit(
   supabase: SupabaseClient | null,
   quantityToAdd: number = 1,
 ): Promise<LimitCheckResponse> {
+  // Admin bypass — DB8 team / founder can test without hitting limits
+  if (isAdminUserId(tenantContext.userId)) {
+    return {
+      result: LimitCheckResult.ALLOWED,
+      eventType,
+      currentUsage: 0,
+      limit: -1, // -1 = unlimited (admin)
+      remaining: -1,
+      usedPercent: 0,
+      message: `Admin bypass (${EVENT_LABELS[eventType]}).`,
+    };
+  }
+
   // 1. Check feature flag
   const requiredFeature = EVENT_REQUIRES_FEATURE[eventType];
   if (requiredFeature && !tenantContext.features[requiredFeature]) {
@@ -272,6 +286,7 @@ export async function getUsageSummary(
   const features: FeatureUsage[] = [];
   const alerts: string[] = [];
   let totalEstimatedCost = 0;
+  const adminBypass = isAdminUserId(tenantContext.userId);
 
   // Build feature usage for each tracked event
   const trackedEvents: UsageEventType[] = [
@@ -292,11 +307,13 @@ export async function getUsageSummary(
     const limitField = EVENT_TO_LIMIT_FIELD[eventType];
     const limit = limitField ? planLimits[limitField] : 0;
     const used = counters.get(eventType) ?? 0;
-    const remaining = Math.max(0, limit - used);
-    const usedPercent = limit > 0 ? Math.round((used / limit) * 100) : 0;
+    const remaining = adminBypass ? -1 : Math.max(0, limit - used);
+    const usedPercent = adminBypass ? 0 : (limit > 0 ? Math.round((used / limit) * 100) : 0);
 
     let status: LimitCheckResult;
-    if (limit === 0 && EVENT_REQUIRES_FEATURE[eventType]) {
+    if (adminBypass) {
+      status = LimitCheckResult.ALLOWED; // admin always allowed
+    } else if (limit === 0 && EVENT_REQUIRES_FEATURE[eventType]) {
       status = LimitCheckResult.FEATURE_DISABLED;
     } else if (used >= limit && limit > 0) {
       status = LimitCheckResult.BLOCKED;

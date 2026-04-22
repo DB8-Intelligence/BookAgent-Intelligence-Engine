@@ -19,6 +19,7 @@ import { getPlan, canCreateJob, type PlanTier } from '../../plans/plan-config.js
 import { sendError } from '../helpers/response.js';
 import { logger } from '../../utils/logger.js';
 import type { SupabaseClient } from '../../persistence/supabase-client.js';
+import { isAdmin } from '../../modules/billing/admin-bypass.js';
 
 // ============================================================================
 // Module-level Supabase client (optional — injected from bootstrap)
@@ -127,6 +128,15 @@ export async function planGuard(
 
   if (!userId) {
     // Sem user_id — modo anônimo/interno, não aplicar limites
+    next();
+    return;
+  }
+
+  // Admin bypass — DB8 team / founder can create jobs without plan limits
+  if (isAdmin({ userId, email: req.authUser?.email })) {
+    req.resolvedUserId = userId;
+    req.resolvedPlanTier = 'agency'; // admin inherits best tier capabilities
+    logger.debug(`[PlanGuard] Admin bypass for user=${userId}`);
     next();
     return;
   }
