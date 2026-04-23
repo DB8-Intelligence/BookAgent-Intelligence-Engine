@@ -68,14 +68,41 @@ export class Pipeline {
   /**
    * Executa todos os estágios na ordem definida.
    * Cada execução é cronometrada e registrada em executionLogs.
+   *
+   * Otimização (Parte X — paralelização):
+   *   Media Generation, Blog e Landing Page (estágios 10-12) são INDEPENDENTES
+   *   entre si — todos consomem selectedOutputs+narratives e produzem campos
+   *   distintos no context (mediaPlans, blogPlans, landingPagePlans).
+   *   Rodamos eles em Promise.all → economia de ~2x no tempo desses 3 estágios.
+   *
+   *   Desligar via env: PIPELINE_PARALLEL_GENERATORS=false (default: true)
    */
   async execute(initialContext: ProcessingContext): Promise<JobResult> {
     let context = initialContext;
     const logs: ModuleExecutionLog[] = [];
+    const parallelGenerators = process.env.PIPELINE_PARALLEL_GENERATORS !== 'false';
 
-    for (const stage of STAGE_ORDER) {
+    // Parallel generator stages (media, blog, LP) — rodam juntos após OUTPUT_SELECTION
+    const PARALLEL_STAGES: PipelineStage[] = [
+      PipelineStage.MEDIA_GENERATION,
+      PipelineStage.BLOG,
+      PipelineStage.LANDING_PAGE,
+    ];
+
+    let i = 0;
+    while (i < STAGE_ORDER.length) {
+      const stage = STAGE_ORDER[i];
+
+      // Check if we hit the parallelizable group
+      if (parallelGenerators && stage === PipelineStage.MEDIA_GENERATION) {
+        await this.runParallelGenerators(context, PARALLEL_STAGES, logs)
+          .then((merged) => { context = merged; });
+        i += PARALLEL_STAGES.length;
+        continue;
+      }
+
       const mod = this.modules.get(stage);
-      if (!mod) continue;
+      if (!mod) { i++; continue; }
 
       const startedAt = new Date();
       const startMs = Date.now();
@@ -113,6 +140,8 @@ export class Pipeline {
         // Propagar o erro para o orchestrator decidir
         throw error;
       }
+
+      i++;
     }
 
     // Anexar logs ao context final
@@ -138,5 +167,69 @@ export class Pipeline {
    */
   getRegisteredStages(): PipelineStage[] {
     return Array.from(this.modules.keys());
+  }
+
+  /**
+   * Executa vários estágios em paralelo e faz merge dos contexts resultantes.
+   * Cada módulo retorna um novo ProcessingContext com seus campos populados;
+   * fazemos shallow-merge na ordem dos estágios — campos sobrescritos pelo
+   * último vencem, mas os 3 geradores tocam em campos distintos (mediaPlans,
+   * blogPlans, landingPagePlans), então conflitos são zero.
+   */
+  private async runParallelGenerators(
+    baseContext: ProcessingContext,
+    stages: PipelineStage[],
+    logs: ModuleExecutionLog[],
+  ): Promise<ProcessingContext> {
+    const runs = stages.map(async (stage) => {
+      const mod = this.modules.get(stage);
+      if (!mod) return null;
+
+      const startedAt = new Date();
+      const startMs = Date.now();
+
+      try {
+        logger.info(`Pipeline: executando [${stage}] → ${mod.name} (paralelo)`);
+        const resultCtx = await mod.run(baseContext);
+
+        logs.push({
+          stage,
+          moduleName: mod.name,
+          status: ModuleStatus.SUCCESS,
+          durationMs: Date.now() - startMs,
+          startedAt,
+          completedAt: new Date(),
+          warnings: [],
+          metrics: createEmptyMetrics(),
+        });
+
+        return resultCtx;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        logger.error(`Pipeline: falha paralela em [${stage}] → ${mod.name}: ${message}`);
+
+        logs.push({
+          stage,
+          moduleName: mod.name,
+          status: ModuleStatus.ERROR,
+          durationMs: Date.now() - startMs,
+          startedAt,
+          completedAt: new Date(),
+          error: message,
+          warnings: [],
+          metrics: createEmptyMetrics(),
+        });
+
+        throw error;
+      }
+    });
+
+    const results = await Promise.all(runs);
+
+    // Merge: cada gerador toca em campos distintos (mediaPlans / blogPlans / landingPagePlans)
+    return results.reduce<ProcessingContext>(
+      (acc, ctx) => (ctx ? { ...acc, ...ctx } : acc),
+      baseContext,
+    );
   }
 }
