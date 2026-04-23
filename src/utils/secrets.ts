@@ -1,0 +1,187 @@
+/**
+ * Secrets Utility — leitura segura de credenciais via env vars
+ *
+ * No Cloud Run, secrets do Secret Manager são injetados como env vars
+ * via --set-secrets (cloudbuild.yaml). Ou seja, `process.env.X` lê do
+ * Secret Manager automaticamente. Este módulo centraliza a leitura e
+ * adiciona:
+ *   - getSecret(name, { required }) — lança se required+ausente
+ *   - auditSecrets() — status de cada secret esperado (pra /health)
+ *   - validateStartupSecrets() — roda no boot e loga avisos claros
+ *
+ * IMPORTANTE: NUNCA logar o valor do secret, só presença/ausência.
+ * O utility mascara qualquer tentativa.
+ */
+
+import { logger } from './logger.js';
+
+// ---------------------------------------------------------------------------
+// Catálogo de secrets esperados em produção
+// ---------------------------------------------------------------------------
+
+/** Origem esperada de cada secret (pra diagnóstico) */
+export type SecretSource = 'secret-manager' | 'env' | 'default';
+
+export interface SecretDef {
+  name: string;
+  /** Obrigatório em produção (NODE_ENV=production) */
+  requiredInProd: boolean;
+  /** Descrição pra mensagens de erro */
+  description: string;
+  /** Se em produção deve vir do Secret Manager (warning se vir de .env) */
+  expectedSource?: SecretSource;
+}
+
+export const EXPECTED_SECRETS: SecretDef[] = [
+  {
+    name: 'SUPABASE_SERVICE_ROLE_KEY',
+    requiredInProd: true,
+    description: 'Service role key para backend Supabase (bypass RLS)',
+    expectedSource: 'secret-manager',
+  },
+  {
+    name: 'SUPABASE_JWT_SECRET',
+    requiredInProd: true,
+    description: 'JWT secret pra validação de tokens Supabase (HS256 legacy)',
+    expectedSource: 'secret-manager',
+  },
+  {
+    name: 'REDIS_URL',
+    requiredInProd: true,
+    description: 'Connection string Redis para BullMQ (ex: redis://user:pass@host:port)',
+    expectedSource: 'secret-manager',
+  },
+  {
+    name: 'ANTHROPIC_API_KEY',
+    requiredInProd: false, // opcional quando AI_PROVIDER=vertex
+    description: 'API key Anthropic Claude (fallback quando AI_PROVIDER=anthropic)',
+    expectedSource: 'secret-manager',
+  },
+  {
+    name: 'SHOTSTACK_API_KEY',
+    requiredInProd: false, // opcional quando VIDEO_RENDERER=ffmpeg
+    description: 'Shotstack cloud video rendering (opcional, default é ffmpeg local)',
+    expectedSource: 'secret-manager',
+  },
+  {
+    name: 'N8N_WEBHOOK_TOKEN',
+    requiredInProd: false,
+    description: 'HMAC token pra validar webhooks do n8n',
+    expectedSource: 'secret-manager',
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export interface GetSecretOptions {
+  required?: boolean;
+  defaultValue?: string;
+}
+
+/**
+ * Lê um secret via process.env. Lança se required=true e ausente.
+ *
+ * Em Cloud Run com --set-secrets, process.env.X vem do Secret Manager.
+ * Em Railway/local, vem do .env ou env var normal.
+ * O código não sabe nem precisa saber a origem — só que está no env.
+ */
+export function getSecret(name: string, opts: GetSecretOptions = {}): string | undefined {
+  const value = process.env[name];
+
+  if (value === undefined || value === '') {
+    if (opts.required) {
+      throw new Error(
+        `[Secrets] ${name} is required but not set. ` +
+        `In production, check Cloud Run --set-secrets mapping. ` +
+        `Locally, add to .env.`,
+      );
+    }
+    return opts.defaultValue;
+  }
+
+  return value;
+}
+
+/**
+ * Auditoria de todos os secrets esperados.
+ * Retorna status de presença (NUNCA o valor).
+ * Usado por /health endpoint e startup validation.
+ */
+export interface SecretAuditEntry {
+  name: string;
+  present: boolean;
+  requiredInProd: boolean;
+  /** Comprimento do valor (sanity check sem vazar) */
+  valueLength: number;
+  description: string;
+}
+
+export function auditSecrets(): SecretAuditEntry[] {
+  return EXPECTED_SECRETS.map((def) => {
+    const value = process.env[def.name];
+    return {
+      name: def.name,
+      present: !!value && value.length > 0,
+      requiredInProd: def.requiredInProd,
+      valueLength: value?.length ?? 0,
+      description: def.description,
+    };
+  });
+}
+
+/**
+ * Validação de startup: verifica secrets obrigatórios.
+ *
+ * Comportamento:
+ *   - Em produção (NODE_ENV=production): LANÇA se required+ausente
+ *   - Em dev: WARN mas permite continuar (graceful degradation)
+ *
+ * Chamado em src/index.ts e src/worker.ts logo no boot.
+ */
+export function validateStartupSecrets(): void {
+  const isProd = process.env.NODE_ENV === 'production';
+  const audit = auditSecrets();
+
+  const missingRequired = audit.filter((a) => a.requiredInProd && !a.present);
+  const missingOptional = audit.filter((a) => !a.requiredInProd && !a.present);
+
+  // Log presentes (sem valores)
+  const present = audit.filter((a) => a.present);
+  logger.info(
+    `[Secrets] ${present.length}/${audit.length} present: ${present.map((p) => p.name).join(', ')}`,
+  );
+
+  if (missingOptional.length > 0) {
+    logger.debug(
+      `[Secrets] Optional secrets not set: ${missingOptional.map((m) => m.name).join(', ')}`,
+    );
+  }
+
+  if (missingRequired.length > 0) {
+    const names = missingRequired.map((m) => m.name).join(', ');
+
+    if (isProd) {
+      logger.error(
+        `[Secrets] FATAL: required secrets missing in production: ${names}. ` +
+        `Check Cloud Run --set-secrets mapping against Secret Manager.`,
+      );
+      throw new Error(`[Secrets] Missing required: ${names}`);
+    }
+
+    logger.warn(
+      `[Secrets] Required secrets missing (DEV mode — continuing): ${names}`,
+    );
+  }
+}
+
+/**
+ * Helper pra mostrar apenas prefixo/sufixo seguros de um secret
+ * (útil em logs de debug quando precisa saber qual key está ativa).
+ */
+export function maskSecret(value: string | undefined): string {
+  if (!value) return '(empty)';
+  if (value.length < 8) return '***';
+  return `${value.slice(0, 4)}...${value.slice(-4)} (${value.length} chars)`;
+}

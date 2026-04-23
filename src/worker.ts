@@ -20,6 +20,7 @@
 
 import { createServer } from 'node:http';
 import { isRedisConfigured } from './queue/connection.js';
+import { validateStartupSecrets, auditSecrets } from './utils/secrets.js';
 import { createWorker } from './queue/worker.js';
 import { createVideoWorker } from './queue/video-worker.js';
 import { Orchestrator } from './core/orchestrator.js';
@@ -49,6 +50,12 @@ import { DeliveryModule } from './modules/delivery/index.js';
 // ============================================================================
 // Validar configuração
 // ============================================================================
+
+// Startup secrets validation — lança em produção se required faltarem.
+// Em Cloud Run, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET e REDIS_URL
+// vêm do Secret Manager via --set-secrets. Se a mapeamento no cloudbuild.yaml
+// estiver errado, isso falha rápido aqui (antes de aceitar jobs).
+validateStartupSecrets();
 
 if (!isRedisConfigured()) {
   logger.error('[Worker] REDIS_URL or REDIS_HOST not configured. Worker cannot start.');
@@ -149,6 +156,7 @@ const healthServer = createServer((req, res) => {
       },
       persistence: supabaseClient ? 'supabase' : 'in-memory',
       uptime: process.uptime(),
+      secrets: auditSecrets(),
     };
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(body));

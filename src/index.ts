@@ -33,6 +33,7 @@ import express from 'express';
 import cors from 'cors';
 import { config } from './config/index.js';
 import { logger } from './utils/logger.js';
+import { validateStartupSecrets, auditSecrets } from './utils/secrets.js';
 
 // --- Process-level error handling ---
 process.on('uncaughtException', (err) => {
@@ -342,6 +343,8 @@ app.get('/health', (_req, res) => {
       instagram: !!(process.env.META_ACCESS_TOKEN && process.env.META_INSTAGRAM_ACCOUNT_ID),
       facebook: !!(process.env.META_ACCESS_TOKEN && process.env.META_FACEBOOK_PAGE_ID),
     },
+    // Secrets audit — só presença/tamanho, nunca o valor
+    secrets: auditSecrets(),
     plans: {
       available: ['starter', 'pro', 'agency'],
       enforcement: 'active',
@@ -416,6 +419,11 @@ app.use('/api/public/v1', publicApiRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);
+
+// Validate secrets before listening. In production, missing required secrets
+// (SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET, REDIS_URL) will throw here
+// — failing fast is better than crashing later when first request comes in.
+validateStartupSecrets();
 
 app.listen(config.port, () => {
   const status = checkProviderStatus();
