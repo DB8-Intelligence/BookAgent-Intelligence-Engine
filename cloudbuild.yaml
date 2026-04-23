@@ -119,39 +119,43 @@ steps:
       - --allow-unauthenticated
       - --service-account=${_SA_EMAIL}
       - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},AI_PROVIDER=vertex,GCS_ENABLED=true,VIDEO_RENDERER=ffmpeg,NODE_ENV=production
-      - --set-secrets=ANTHROPIC_API_KEY=anthropic-key:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role:latest,SUPABASE_JWT_SECRET=supabase-jwt-secret:latest,REDIS_URL=redis-url:latest
+      - --set-secrets=ANTHROPIC_API_KEY=anthropic-key:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role:latest,SUPABASE_JWT_SECRET=supabase-jwt-secret:latest
       - --memory=2Gi
       - --cpu=2
       - --min-instances=0
       - --max-instances=10
-      - --timeout=300
-      - --concurrency=40
+      - --timeout=3600
+      - --concurrency=10
     waitFor: ['push-api']
 
   # 6. Deploy worker to Cloud Run ---------------------------------------------
-  # Worker always-on (min-instances=1) consumindo BullMQ/Redis.
-  # Sem no-cpu-throttling para manter workers processando mesmo idle HTTP.
-  - id: deploy-worker
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
-    args:
-      - run
-      - deploy
-      - ${_WORKER_SERVICE}
-      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker:${SHORT_SHA}
-      - --region=${_REGION}
-      - --platform=managed
-      - --no-allow-unauthenticated
-      - --service-account=${_SA_EMAIL}
-      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},AI_PROVIDER=vertex,GCS_ENABLED=true,VIDEO_RENDERER=ffmpeg,NODE_ENV=production
-      - --set-secrets=ANTHROPIC_API_KEY=anthropic-key:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role:latest,SUPABASE_JWT_SECRET=supabase-jwt-secret:latest,REDIS_URL=redis-url:latest
-      - --memory=4Gi
-      - --cpu=4
-      - --min-instances=1
-      - --max-instances=3
-      - --timeout=3600
-      - --no-cpu-throttling
-    waitFor: ['push-worker']
+  # DESLIGADO por enquanto — arquitetura atual roda em SYNC MODE (pipeline
+  # inline na request HTTP da API, sem BullMQ/Redis). Pra reativar o worker:
+  #   1. Provisionar Redis (Upstash ou Memorystore)
+  #   2. Criar secret 'redis-url' no Secret Manager
+  #   3. Descomentar o step abaixo + adicionar REDIS_URL às env vars da API
+  #
+  # - id: deploy-worker
+  #   name: gcr.io/google.com/cloudsdktool/cloud-sdk
+  #   entrypoint: gcloud
+  #   args:
+  #     - run
+  #     - deploy
+  #     - ${_WORKER_SERVICE}
+  #     - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker:${SHORT_SHA}
+  #     - --region=${_REGION}
+  #     - --platform=managed
+  #     - --no-allow-unauthenticated
+  #     - --service-account=${_SA_EMAIL}
+  #     - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},AI_PROVIDER=vertex,GCS_ENABLED=true,VIDEO_RENDERER=ffmpeg,NODE_ENV=production
+  #     - --set-secrets=ANTHROPIC_API_KEY=anthropic-key:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role:latest,SUPABASE_JWT_SECRET=supabase-jwt-secret:latest,REDIS_URL=redis-url:latest
+  #     - --memory=4Gi
+  #     - --cpu=4
+  #     - --min-instances=1
+  #     - --max-instances=3
+  #     - --timeout=3600
+  #     - --no-cpu-throttling
+  #   waitFor: ['push-worker']
 
 # Artifacts publicados
 images:

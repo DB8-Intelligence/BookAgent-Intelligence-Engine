@@ -86,13 +86,21 @@ const healthPort = Number(process.env.PORT ?? process.env.WORKER_HEALTH_PORT ?? 
 
 const healthServer = createServer((req, res) => {
   if (req.url === '/health' || req.url === '/') {
-    // ALWAYS return 200 — even in degraded state. Cloud Run keeps the
-    // container alive; body tells caller what's actually running.
+    // ALWAYS return 200 — Cloud Run keeps the container alive.
+    //
+    // Redis é OPCIONAL: sem Redis, API roda em sync mode (pipeline inline
+    // no request HTTP) e worker fica idle aguardando config futura. Nenhum
+    // dos dois é erro — só modos operacionais diferentes.
+    const redisConfigured = isRedisConfigured();
+    const mode = redisConfigured ? 'async-bullmq' : 'sync-inline';
+    const healthy = state.bootstrapFinished && (!redisConfigured || state.redisConnected);
+
     const body = {
-      status: state.bootstrapFinished && state.redisConnected ? 'ok' : 'degraded',
+      status: healthy ? 'ok' : 'degraded',
+      mode,
       workers: {
-        pipeline: state.pipelineWorker ? 'running' : 'stopped',
-        videoRender: state.videoWorker ? 'running' : 'stopped',
+        pipeline: state.pipelineWorker ? 'running' : (redisConfigured ? 'stopped' : 'not-needed'),
+        videoRender: state.videoWorker ? 'running' : (redisConfigured ? 'stopped' : 'not-needed'),
       },
       bootstrap: {
         started: state.bootstrapStarted,
@@ -100,7 +108,7 @@ const healthServer = createServer((req, res) => {
         error: state.bootstrapError,
       },
       redis: {
-        configured: isRedisConfigured(),
+        configured: redisConfigured,
         connected: state.redisConnected,
       },
       persistence: state.supabaseClient ? 'supabase' : 'in-memory',

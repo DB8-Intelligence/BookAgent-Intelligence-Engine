@@ -216,13 +216,15 @@ async function handleSyncMode(
         site:      user_context.site,
         region:    user_context.region,
         logoUrl:   user_context.logo_url,
+        // Propaga selectedFormats pro output-selection filtrar corretamente
+        selectedFormats: user_context.selectedFormats,
       },
     });
 
     const data: ProcessResponse = {
       job_id:  job.id,
       status:  job.status,
-      message: 'Processamento iniciado',
+      message: 'Processamento concluído (sync mode)',
     };
 
     sendSuccess(res, data, 202);

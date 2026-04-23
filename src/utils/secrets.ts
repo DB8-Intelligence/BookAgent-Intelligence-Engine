@@ -47,8 +47,8 @@ export const EXPECTED_SECRETS: SecretDef[] = [
   },
   {
     name: 'REDIS_URL',
-    requiredInProd: true,
-    description: 'Connection string Redis para BullMQ (ex: redis://user:pass@host:port)',
+    requiredInProd: false, // Opcional — sem Redis, API roda em sync mode (pipeline inline)
+    description: 'Connection string Redis para BullMQ async (opcional; default = sync mode)',
     expectedSource: 'secret-manager',
   },
   {

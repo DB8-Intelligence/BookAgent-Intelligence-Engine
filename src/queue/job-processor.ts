@@ -275,21 +275,55 @@ export async function processBookAgentJob(
         }
       }
 
+      // Detect Redis availability — sem Redis rodamos video render INLINE
+      // (mesmo processo). Com Redis, enfileiramos pro worker dedicado.
+      const { isRedisConfigured } = await import('./connection.js');
+      const hasRedis = isRedisConfigured();
+
       for (const spec of renderSpecs) {
         try {
           const specContent = typeof spec.content === 'string'
             ? spec.content
             : JSON.stringify(spec.content);
 
-          await enqueueVideoRender({
-            jobId,
-            artifactId: spec.id,
-            renderSpecJson: specContent,
-            assetUrls: assetUrlMap ?? {},
-          });
-          logger.info(
-            `[JobProcessor] Auto-triggered video render for artifact ${spec.id}`,
-          );
+          if (hasRedis) {
+            await enqueueVideoRender({
+              jobId,
+              artifactId: spec.id,
+              renderSpecJson: specContent,
+              assetUrls: assetUrlMap ?? {},
+            });
+            logger.info(
+              `[JobProcessor] Auto-triggered video render (queued) for artifact ${spec.id}`,
+            );
+          } else {
+            // Sync fallback — processa inline usando ffmpeg local.
+            // Bloqueia request, mas evita depender de Redis.
+            logger.info(
+              `[JobProcessor] Redis off — rendering video INLINE for artifact ${spec.id}`,
+            );
+            const { processVideoRenderJob } = await import('./video-processor.js');
+            // Fake BullJob shape esperado por processVideoRenderJob
+            const fakeJob = {
+              data: {
+                jobId,
+                artifactId: spec.id,
+                renderSpecJson: specContent,
+                assetUrls: assetUrlMap ?? {},
+              },
+              attemptsMade: 0,
+              opts: { attempts: 1 },
+            } as unknown as Parameters<typeof processVideoRenderJob>[0];
+
+            await processVideoRenderJob(fakeJob, {
+              supabase: supabase ?? null,
+              outputDir: 'storage/outputs/video',
+              tempDir: 'storage/temp/video',
+            });
+            logger.info(
+              `[JobProcessor] Inline video render complete for artifact ${spec.id}`,
+            );
+          }
         } catch (err) {
           // Log prominently — this was previously swallowed by safeExec
           const msg = err instanceof Error ? err.message : String(err);
