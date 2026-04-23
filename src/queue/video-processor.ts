@@ -14,7 +14,6 @@
  * Parte 59.2: Fechamento Operacional do Video Render Async
  */
 
-import type { Job as BullJob } from 'bullmq';
 import type { VideoRenderJobData } from './types.js';
 import type { SupabaseClient } from '../persistence/supabase-client.js';
 import type { RenderSpec } from '../types/render-spec.js';
@@ -43,18 +42,34 @@ export interface VideoProcessorDeps {
 // ============================================================================
 
 /**
- * Processes a single video render job from BullMQ.
+ * Input wrapper — aceita o payload direto ou embrulhado em { data: ... }
+ * para compat com chamadas antigas que passavam um BullJob-like.
+ */
+export type VideoRenderJobInput =
+  | VideoRenderJobData
+  | { data: VideoRenderJobData; attemptsMade?: number; opts?: { attempts?: number } };
+
+function unwrapPayload(input: VideoRenderJobInput): VideoRenderJobData {
+  if ('data' in input && typeof (input as { data: unknown }).data === 'object') {
+    return (input as { data: VideoRenderJobData }).data;
+  }
+  return input as VideoRenderJobData;
+}
+
+/**
+ * Processa um video render task. Aceita payload direto (Cloud Tasks)
+ * ou wrapped em { data } (compat com chamadas antigas inline).
  */
 export async function processVideoRenderJob(
-  bullJob: BullJob<VideoRenderJobData>,
+  input: VideoRenderJobInput,
   deps: VideoProcessorDeps,
 ): Promise<void> {
-  const { jobId, artifactId, renderSpecJson, assetUrls, webhookUrl } = bullJob.data;
-  const attempt = bullJob.attemptsMade + 1;
+  const payload = unwrapPayload(input);
+  const { jobId, artifactId, renderSpecJson, assetUrls, webhookUrl } = payload;
   const startTime = Date.now();
 
   logger.info(
-    `[VideoProcessor] Starting render: job=${jobId} artifact=${artifactId} attempt=${attempt}`
+    `[VideoProcessor] Starting render: job=${jobId} artifact=${artifactId}`
   );
 
   // Update status to processing
@@ -88,7 +103,7 @@ export async function processVideoRenderJob(
 
     // 2b. Resolve background music (Parte 62)
     let musicTrackPath: string | undefined;
-    const soundtrackHint = bullJob.data.soundtrackCategory;
+    const soundtrackHint = payload.soundtrackCategory;
     const specMusic = spec.backgroundMusic;
 
     if (specMusic?.trackPath && existsSync(specMusic.trackPath)) {
@@ -108,8 +123,8 @@ export async function processVideoRenderJob(
     }
 
     // 2c. Resolve narration audio path (Parte 62)
-    const narrationPath = bullJob.data.narrationAudioPath && existsSync(bullJob.data.narrationAudioPath)
-      ? bullJob.data.narrationAudioPath
+    const narrationPath = payload.narrationAudioPath && existsSync(payload.narrationAudioPath)
+      ? payload.narrationAudioPath
       : undefined;
 
     // 3. Generate subtitles (Parte 64)
@@ -235,7 +250,7 @@ export async function processVideoRenderJob(
     const message = err instanceof Error ? err.message : String(err);
 
     logger.error(
-      `[VideoProcessor] Failed: job=${jobId} attempt=${attempt} ` +
+      `[VideoProcessor] Failed: job=${jobId} ` +
       `after ${(durationMs / 1000).toFixed(1)}s: ${message}`
     );
 
@@ -245,26 +260,23 @@ export async function processVideoRenderJob(
       planTier: 'starter',
       jobId,
       errorCode: 'VIDEO_RENDER_FAILED',
-      metadata: { attempt, message },
+      metadata: { message },
     });
 
-    // Mark as failed on last attempt
-    const maxAttempts = bullJob.opts.attempts ?? 2;
-    if (attempt >= maxAttempts) {
-      await updateVideoStatus(deps.supabase, jobId, 'failed', {
-        video_render_error: message,
-      });
+    // Mark as failed — Cloud Tasks retries are controlled by HTTP 500 response
+    await updateVideoStatus(deps.supabase, jobId, 'failed', {
+      video_render_error: message,
+    });
 
-      if (webhookUrl) {
-        await sendVideoWebhook(webhookUrl, {
-          jobId,
-          status: 'failed',
-          error: message,
-        });
-      }
+    if (webhookUrl) {
+      await sendVideoWebhook(webhookUrl, {
+        jobId,
+        status: 'failed',
+        error: message,
+      });
     }
 
-    throw err; // Re-throw for BullMQ retry
+    throw err; // HTTP 500 → Cloud Tasks retry (se retries > 0)
   }
 }
 

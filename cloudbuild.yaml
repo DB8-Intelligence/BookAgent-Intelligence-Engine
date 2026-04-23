@@ -6,7 +6,23 @@
 #   # APIs
 #   gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
 #     artifactregistry.googleapis.com aiplatform.googleapis.com \
-#     storage.googleapis.com secretmanager.googleapis.com
+#     storage.googleapis.com secretmanager.googleapis.com \
+#     cloudtasks.googleapis.com
+#
+#   # Cloud Tasks queues (pipeline + video)
+#   gcloud tasks queues create bookagent-pipeline --location=us-central1 \
+#     --max-attempts=3 --max-backoff=600s
+#   gcloud tasks queues create bookagent-video --location=us-central1 \
+#     --max-attempts=2 --max-backoff=1800s
+#
+#   # Service Account precisa cloudtasks.enqueuer + cloudtasks.taskRunner
+#   gcloud projects add-iam-policy-binding bookreel \
+#     --member=serviceAccount:bookagent-runtime@bookreel.iam.gserviceaccount.com \
+#     --role=roles/cloudtasks.enqueuer
+#
+#   # Após primeiro deploy, PEGUE a URL do Cloud Run API e configure:
+#   gcloud run services update bookagent-api --region=us-central1 \
+#     --update-env-vars=CLOUD_TASKS_TARGET_URL=https://bookagent-api-<hash>-uc.a.run.app
 #
 #   # Artifact Registry
 #   gcloud artifacts repositories create bookagent \
@@ -69,19 +85,9 @@ steps:
       - --file=Dockerfile
       - .
 
-  # 2. Build worker image ------------------------------------------------------
-  - id: build-worker
-    name: gcr.io/cloud-builders/docker
-    args:
-      - build
-      - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker:${SHORT_SHA}
-      - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker:latest
-      - --cache-from=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker:latest
-      - --file=Dockerfile.worker
-      - .
-    waitFor: ['build-api']
-
-  # 3. Push API ---------------------------------------------------------------
+  # 2. Push API ---------------------------------------------------------------
+  # Worker foi removido — arquitetura usa Cloud Tasks + self-webhook
+  # no próprio API container (/internal/execute-pipeline, /internal/execute-video-render)
   - id: push-api
     name: gcr.io/cloud-builders/docker
     args:
@@ -89,15 +95,6 @@ steps:
       - --all-tags
       - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api
     waitFor: ['build-api']
-
-  # 4. Push worker ------------------------------------------------------------
-  - id: push-worker
-    name: gcr.io/cloud-builders/docker
-    args:
-      - push
-      - --all-tags
-      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker
-    waitFor: ['build-worker']
 
   # 5. Deploy API to Cloud Run ------------------------------------------------
   #
@@ -118,48 +115,21 @@ steps:
       - --platform=managed
       - --allow-unauthenticated
       - --service-account=${_SA_EMAIL}
-      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},AI_PROVIDER=vertex,GCS_ENABLED=true,VIDEO_RENDERER=ffmpeg,NODE_ENV=production
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},AI_PROVIDER=vertex,GCS_ENABLED=true,VIDEO_RENDERER=ffmpeg,NODE_ENV=production,CLOUD_TASKS_LOCATION=${_REGION},CLOUD_TASKS_SA_EMAIL=${_SA_EMAIL},CLOUD_TASKS_PIPELINE_QUEUE=bookagent-pipeline,CLOUD_TASKS_VIDEO_QUEUE=bookagent-video
       - --set-secrets=ANTHROPIC_API_KEY=anthropic-key:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role:latest,SUPABASE_JWT_SECRET=supabase-jwt-secret:latest
       - --memory=2Gi
       - --cpu=2
       - --min-instances=0
       - --max-instances=10
-      - --timeout=3600
-      - --concurrency=10
+      - --timeout=600
+      - --concurrency=40
     waitFor: ['push-api']
 
-  # 6. Deploy worker to Cloud Run ---------------------------------------------
-  # DESLIGADO por enquanto — arquitetura atual roda em SYNC MODE (pipeline
-  # inline na request HTTP da API, sem BullMQ/Redis). Pra reativar o worker:
-  #   1. Provisionar Redis (Upstash ou Memorystore)
-  #   2. Criar secret 'redis-url' no Secret Manager
-  #   3. Descomentar o step abaixo + adicionar REDIS_URL às env vars da API
-  #
-  # - id: deploy-worker
-  #   name: gcr.io/google.com/cloudsdktool/cloud-sdk
-  #   entrypoint: gcloud
-  #   args:
-  #     - run
-  #     - deploy
-  #     - ${_WORKER_SERVICE}
-  #     - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker:${SHORT_SHA}
-  #     - --region=${_REGION}
-  #     - --platform=managed
-  #     - --no-allow-unauthenticated
-  #     - --service-account=${_SA_EMAIL}
-  #     - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},AI_PROVIDER=vertex,GCS_ENABLED=true,VIDEO_RENDERER=ffmpeg,NODE_ENV=production
-  #     - --set-secrets=ANTHROPIC_API_KEY=anthropic-key:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role:latest,SUPABASE_JWT_SECRET=supabase-jwt-secret:latest,REDIS_URL=redis-url:latest
-  #     - --memory=4Gi
-  #     - --cpu=4
-  #     - --min-instances=1
-  #     - --max-instances=3
-  #     - --timeout=3600
-  #     - --no-cpu-throttling
-  #   waitFor: ['push-worker']
+  # Worker service removido — arquitetura Cloud Tasks não precisa worker
+  # separado. Cloud Tasks POST /internal/* no próprio container da API.
 
 # Artifacts publicados
 images:
   - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:${SHORT_SHA}
-  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker:${SHORT_SHA}
 
 timeout: 1800s

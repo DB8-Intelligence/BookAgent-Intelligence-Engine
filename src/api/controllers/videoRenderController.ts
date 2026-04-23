@@ -20,7 +20,8 @@ import { z } from 'zod';
 import { sendSuccess, sendError } from '../helpers/response.js';
 import { logger } from '../../utils/logger.js';
 import type { SupabaseClient } from '../../persistence/supabase-client.js';
-import { enqueueVideoRender, getVideoQueue } from '../../queue/video-queue.js';
+import { enqueueVideoRender } from '../../queue/video-queue.js';
+import { isCloudTasksConfigured } from '../../queue/cloud-tasks.js';
 import { metrics } from '../../observability/metrics.js';
 
 // ============================================================================
@@ -190,27 +191,46 @@ export async function renderVideo(req: Request, res: Response): Promise<void> {
       logger.warn(`[VideoRender] Failed to update job_meta for ${jobId}: ${err}`);
     }
 
-    // Enqueue to dedicated video queue
-    const videoQueue = getVideoQueue();
-    if (!videoQueue) {
-      // Fallback: no Redis configured — accept but warn
-      logger.warn(`[VideoRender] Redis not configured — video render queued in DB only`);
-      sendSuccess(res, {
-        jobId,
-        artifactId: artifact.id,
-        status: 'queued',
-        sceneCount,
-        format: spec.format,
-        resolution: spec.resolution,
-        message: 'Video render recorded. Worker will process when available.',
-        queueAvailable: false,
-      }, 202);
-      return;
-    }
-
+    // Enqueue via Cloud Tasks (async) OR process inline (sync fallback)
     const renderSpecJson = typeof artifact.content === 'string'
       ? artifact.content
       : JSON.stringify(artifact.content);
+
+    if (!isCloudTasksConfigured()) {
+      // Sync fallback — process inline with ffmpeg local
+      logger.info(`[VideoRender] Cloud Tasks off — rendering INLINE for ${artifact.id}`);
+      const { processVideoRenderJob } = await import('../../queue/video-processor.js');
+      try {
+        await processVideoRenderJob(
+          {
+            jobId,
+            artifactId: artifact.id,
+            renderSpecJson,
+            assetUrls,
+            webhookUrl: typeof req.body?.webhookUrl === 'string' ? req.body.webhookUrl : undefined,
+          },
+          {
+            supabase: supabase ?? null,
+            outputDir: 'storage/outputs/video',
+            tempDir: 'storage/temp/video',
+          },
+        );
+        sendSuccess(res, {
+          jobId,
+          artifactId: artifact.id,
+          status: 'completed',
+          sceneCount,
+          format: spec.format,
+          resolution: spec.resolution,
+          message: 'Video rendered inline (sync mode)',
+          queueAvailable: false,
+        }, 200);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        sendError(res, 'RENDER_FAILED', `Inline render failed: ${msg}`, 500);
+      }
+      return;
+    }
 
     const bullJobId = await enqueueVideoRender({
       jobId,

@@ -1,28 +1,29 @@
 /**
  * Job Processor — Lógica central de processamento de jobs
  *
- * Chamado pelo Worker para cada job retirado da fila.
+ * Chamado pelo endpoint /internal/execute-pipeline quando uma task Cloud
+ * Tasks é recebida. Também chamado inline em sync mode.
+ *
  * Responsável por:
  *   1. Registrar job no Supabase (status=pending)
  *   2. Marcar como processing
  *   3. Executar o pipeline via Orchestrator
  *   4. Persistir resultado (Supabase + disco)
  *   5. Enviar webhook de conclusão (se configurado)
- *   6. Em erro: marcar como failed + retry (BullMQ cuida dos retries)
- *
- * Operações de persistência são best-effort: falhas são logadas
- * mas não interrompem a execução do pipeline.
+ *   6. Em erro: marcar como failed + re-throw para Cloud Tasks retry (HTTP 500)
  */
 
-import type { Job as BullJob } from 'bullmq';
 import type { BookAgentJobData, WebhookPayload } from './types.js';
+import type { PipelineTaskPayload } from './cloud-tasks.js';
 import type { Orchestrator } from '../core/orchestrator.js';
+import type { PersistentOrchestrator } from '../persistence/persistent-orchestrator.js';
 import type { JobRepository } from '../persistence/job-repository.js';
 import type { ArtifactRepository } from '../persistence/artifact-repository.js';
 import type { StorageManager } from '../persistence/storage-manager.js';
 import { InputType, JobStatus } from '../domain/value-objects/index.js';
 import type { Job, JobInput } from '../domain/entities/job.js';
 import { enqueueVideoRender } from './video-queue.js';
+import { isCloudTasksConfigured } from './cloud-tasks.js';
 import { checkAndRecordUsage } from '../modules/billing/limit-checker.js';
 import { recordUsage } from '../modules/billing/usage-meter.js';
 import { UsageEventType, LimitCheckResult } from '../domain/entities/billing.js';
@@ -37,7 +38,7 @@ import { logger } from '../utils/logger.js';
 // ---------------------------------------------------------------------------
 
 export interface ProcessorDependencies {
-  orchestrator: Orchestrator;
+  orchestrator: Orchestrator | PersistentOrchestrator;
   jobRepo: JobRepository | null;
   artifactRepo: ArtifactRepository | null;
   storageManager: StorageManager | null;
@@ -57,21 +58,24 @@ const INPUT_TYPE_MAP: Record<string, InputType> = {
 // ---------------------------------------------------------------------------
 
 /**
- * Processa um job BullMQ completo: pipeline + persistência + webhook.
- * Lança erro em falhas de pipeline (BullMQ vai re-enfileirar).
+ * Processa um pipeline task. Aceita payload plain (vindo do Cloud Tasks
+ * via POST /internal/execute-pipeline) OU diretamente em sync mode.
+ *
+ * Lança erro em falhas de pipeline — caller decide o que fazer:
+ *   - Cloud Tasks HTTP handler: retorna 500, Cloud Tasks retry
+ *   - Sync mode: propaga pro controller que responde 500 ao client
+ *
  * Falhas de persistência são silenciosas (best-effort).
  */
-export async function processBookAgentJob(
-  bullJob: BullJob<BookAgentJobData>,
+export async function executePipelineForTask(
+  payload: PipelineTaskPayload | BookAgentJobData,
   deps: ProcessorDependencies,
 ): Promise<void> {
-  const { jobId, fileUrl, type, userContext, webhookUrl } = bullJob.data;
+  const { jobId, fileUrl, type, userContext, webhookUrl } = payload;
   const { orchestrator, jobRepo, artifactRepo, storageManager } = deps;
-  const attempt = bullJob.attemptsMade + 1;
 
   logger.info(
-    `[JobProcessor] Starting job ${jobId} ` +
-    `(type=${type}, attempt=${attempt}/${bullJob.opts.attempts ?? 3})`,
+    `[JobProcessor] Starting job ${jobId} (type=${type})`,
   );
 
   // Montar JobInput para o Orchestrator
@@ -91,30 +95,29 @@ export async function processBookAgentJob(
     },
   };
 
-  // Registrar job no Supabase na primeira tentativa
-  if (attempt === 1) {
-    await safeExec('pre-register job', async () => {
-      if (jobRepo) {
-        const now = new Date();
-        const stubJob: Job = {
-          id:        jobId,
-          status:    JobStatus.PENDING,
-          input,
-          createdAt: now,
-          updatedAt: now,
-        };
-        await jobRepo.createJob(stubJob);
-      }
-    });
-  }
+  // Registrar job no Supabase. Em Cloud Tasks retry, createJob é idempotent
+  // (upsert) — se falhar por duplicidade, safeExec loga e segue.
+  await safeExec('pre-register job', async () => {
+    if (jobRepo) {
+      const now = new Date();
+      const stubJob: Job = {
+        id:        jobId,
+        status:    JobStatus.PENDING,
+        input,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await jobRepo.createJob(stubJob);
+    }
+  });
 
   // Marcar como processing
   await safeExec('updateStatus processing', async () => {
     await jobRepo?.updateStatus(jobId, 'processing');
   });
 
-  // Build TenantContext for credit checks (from queue data)
-  const queueTenant = bullJob.data.tenantContext;
+  // Build TenantContext for credit checks (from task payload)
+  const queueTenant = payload.tenantContext;
   const planTier = (queueTenant?.planTier ?? 'starter') as PlanTier;
   const tenantCtx: TenantContext | null = queueTenant
     ? {
@@ -275,10 +278,10 @@ export async function processBookAgentJob(
         }
       }
 
-      // Detect Redis availability — sem Redis rodamos video render INLINE
-      // (mesmo processo). Com Redis, enfileiramos pro worker dedicado.
-      const { isRedisConfigured } = await import('./connection.js');
-      const hasRedis = isRedisConfigured();
+      // Detect Cloud Tasks availability — sem Cloud Tasks rodamos video
+      // render INLINE (mesmo processo via ffmpeg local). Com Cloud Tasks,
+      // enfileiramos pro endpoint /internal/execute-video-render.
+      const hasCloudTasks = isCloudTasksConfigured();
 
       for (const spec of renderSpecs) {
         try {
@@ -286,7 +289,7 @@ export async function processBookAgentJob(
             ? spec.content
             : JSON.stringify(spec.content);
 
-          if (hasRedis) {
+          if (hasCloudTasks) {
             await enqueueVideoRender({
               jobId,
               artifactId: spec.id,
@@ -297,29 +300,24 @@ export async function processBookAgentJob(
               `[JobProcessor] Auto-triggered video render (queued) for artifact ${spec.id}`,
             );
           } else {
-            // Sync fallback — processa inline usando ffmpeg local.
-            // Bloqueia request, mas evita depender de Redis.
+            // Sync fallback — processa inline via ffmpeg local.
             logger.info(
-              `[JobProcessor] Redis off — rendering video INLINE for artifact ${spec.id}`,
+              `[JobProcessor] Cloud Tasks off — rendering INLINE for artifact ${spec.id}`,
             );
             const { processVideoRenderJob } = await import('./video-processor.js');
-            // Fake BullJob shape esperado por processVideoRenderJob
-            const fakeJob = {
-              data: {
+            await processVideoRenderJob(
+              {
                 jobId,
                 artifactId: spec.id,
                 renderSpecJson: specContent,
                 assetUrls: assetUrlMap ?? {},
               },
-              attemptsMade: 0,
-              opts: { attempts: 1 },
-            } as unknown as Parameters<typeof processVideoRenderJob>[0];
-
-            await processVideoRenderJob(fakeJob, {
-              supabase: supabase ?? null,
-              outputDir: 'storage/outputs/video',
-              tempDir: 'storage/temp/video',
-            });
+              {
+                supabase: supabase ?? null,
+                outputDir: 'storage/outputs/video',
+                tempDir: 'storage/temp/video',
+              },
+            );
             logger.info(
               `[JobProcessor] Inline video render complete for artifact ${spec.id}`,
             );
@@ -376,36 +374,37 @@ export async function processBookAgentJob(
     }
   } catch (err) {
     // -----------------------------------------------------------------------
-    // Pipeline lançou exceção — marcar como failed + re-throw para BullMQ
+    // Pipeline lançou exceção — marcar como failed + re-throw
+    // Cloud Tasks: HTTP 500 response triggera retry automático
+    // Sync mode: exceção propaga pro controller que responde 500 ao client
     // -----------------------------------------------------------------------
     const durationMs = Date.now() - startTime;
     const message = err instanceof Error ? err.message : String(err);
 
     logger.error(
-      `[JobProcessor] ✗ Job ${jobId} failed after ${durationMs}ms (attempt ${attempt}): ${message}`,
+      `[JobProcessor] ✗ Job ${jobId} failed after ${durationMs}ms: ${message}`,
     );
 
-    // Só marcar como failed na última tentativa (BullMQ não reprocessa depois)
-    const maxAttempts = bullJob.opts.attempts ?? 3;
-    if (attempt >= maxAttempts) {
-      await safeExec('failJob on last attempt', async () => {
-        await jobRepo?.failJob(jobId, message);
-      });
+    await safeExec('failJob', async () => {
+      await jobRepo?.failJob(jobId, message);
+    });
 
-      if (webhookUrl) {
-        await sendWebhook(webhookUrl, {
-          source:    'bookagent',
-          timestamp: new Date().toISOString(),
-          jobId,
-          status:    'failed',
-          error:     message,
-        });
-      }
+    if (webhookUrl) {
+      await sendWebhook(webhookUrl, {
+        source:    'bookagent',
+        timestamp: new Date().toISOString(),
+        jobId,
+        status:    'failed',
+        error:     message,
+      });
     }
 
-    throw err; // Re-throw → BullMQ gerencia retry com backoff
+    throw err;
   }
 }
+
+// Alias de compatibilidade — código antigo importava processBookAgentJob
+export { executePipelineForTask as processBookAgentJob };
 
 // ---------------------------------------------------------------------------
 // Helpers

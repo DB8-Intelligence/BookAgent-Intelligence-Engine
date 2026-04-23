@@ -96,9 +96,10 @@ import { setKiwifyWebhookClient } from './api/controllers/kiwifyWebhookControlle
 import { metrics } from './observability/metrics.js';
 
 // --- Queue ---
-import { getQueue, QUEUE_NAME } from './queue/queue.js';
-import { isRedisConfigured } from './queue/connection.js';
+import { isQueueAvailable } from './queue/queue.js';
+import { isCloudTasksConfigured } from './queue/cloud-tasks.js';
 import { JobRepository } from './persistence/job-repository.js';
+import { ArtifactRepository } from './persistence/artifact-repository.js';
 
 // --- Routes ---
 import processRoutes from './api/routes/process.js';
@@ -140,6 +141,7 @@ import distributionRoutes from './api/routes/distribution.js';
 import customerDashboardRoutes from './api/routes/customer-dashboard.js';
 import videoRoutes from './api/routes/video.js';
 import bugsRoutes, { setSupabaseClientForBugs } from './api/routes/bugs.js';
+import internalRoutes, { setInternalRoutesDeps } from './api/routes/internal.js';
 import { setSupabaseClientForJobsDelete } from './api/routes/jobs.js';
 
 // --- Middleware ---
@@ -279,17 +281,25 @@ if (supabaseClient) {
   metrics.setSupabaseClient(supabaseClient);
 }
 
-// Inicializar fila (se Redis configurado)
-const queueMode = isRedisConfigured();
+// Internal routes (Cloud Tasks webhooks) — precisam do orchestrator
+// + repos pra executar pipelines/renders quando o Cloud Tasks chamar.
+setInternalRoutesDeps({
+  orchestrator,
+  jobRepo: supabaseClient ? new JobRepository(supabaseClient) : null,
+  artifactRepo: supabaseClient ? new ArtifactRepository(supabaseClient) : null,
+  storageManager,
+  supabaseClient,
+});
+
+// Queue mode — Cloud Tasks async ou sync inline fallback
+const queueMode = isQueueAvailable();
 if (queueMode) {
-  const q = getQueue();
-  if (q) {
-    logger.info(`[Bootstrap] Queue mode: BullMQ (queue="${QUEUE_NAME}")`);
-  } else {
-    logger.warn('[Bootstrap] Redis configured but queue init failed — using sync mode');
-  }
+  logger.info('[Bootstrap] Queue mode: Cloud Tasks async');
 } else {
-  logger.info('[Bootstrap] Queue mode: sync (configure REDIS_URL to enable async processing)');
+  logger.info(
+    '[Bootstrap] Queue mode: sync inline ' +
+    '(configure CLOUD_TASKS_QUEUE + CLOUD_TASKS_LOCATION + CLOUD_TASKS_SA_EMAIL + CLOUD_TASKS_TARGET_URL)',
+  );
 }
 
 // ============================================================================
@@ -331,8 +341,9 @@ app.get('/health', (_req, res) => {
       supabase: persistenceMode === 'supabase',
     },
     queue: {
-      mode:    queueMode ? 'bullmq' : 'sync',
-      enabled: queueMode,
+      mode:     queueMode ? 'cloud-tasks-async' : 'sync-inline',
+      enabled:  queueMode,
+      provider: queueMode ? 'google-cloud-tasks' : null,
     },
     providers: {
       ai: providers.ai,
@@ -407,6 +418,10 @@ app.use(`${prefix}/acquisition`, acquisitionRoutes);
 app.use(`${prefix}/integrations`, integrationHubRoutes);
 app.use(`${prefix}/distribution`, distributionRoutes);
 app.use(`${prefix}/bugs`, bugsRoutes);
+
+// Internal routes — chamadas pelo Cloud Tasks (OIDC authenticated).
+// Fora do prefix /api/v1 porque não são endpoints de usuário.
+app.use('/internal', internalRoutes);
 
 // Webhooks externos (Kiwify, Hotmart) — sem tenant guard
 app.use('/webhooks', webhooksRoutes);

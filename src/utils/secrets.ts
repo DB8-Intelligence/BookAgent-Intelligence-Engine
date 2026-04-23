@@ -45,12 +45,8 @@ export const EXPECTED_SECRETS: SecretDef[] = [
     description: 'JWT secret pra validação de tokens Supabase (HS256 legacy)',
     expectedSource: 'secret-manager',
   },
-  {
-    name: 'REDIS_URL',
-    requiredInProd: false, // Opcional — sem Redis, API roda em sync mode (pipeline inline)
-    description: 'Connection string Redis para BullMQ async (opcional; default = sync mode)',
-    expectedSource: 'secret-manager',
-  },
+  // REDIS_URL removido — arquitetura migrou para Cloud Tasks.
+  // Nenhum secret de Redis/BullMQ é esperado.
   {
     name: 'ANTHROPIC_API_KEY',
     requiredInProd: false, // opcional quando AI_PROVIDER=vertex

@@ -1,72 +1,37 @@
 /**
- * Video Render Queue — Dedicated BullMQ Queue
+ * Video Render Queue — Cloud Tasks based
  *
- * Separate from the main pipeline queue to avoid:
- *   - Video renders blocking document processing
- *   - Different concurrency/timeout requirements
- *   - Different retry strategies (video is CPU-heavy, needs longer timeouts)
+ * Substitui BullMQ. Enfileira video renders como tasks Cloud Tasks
+ * que fazem POST /internal/execute-video-render.
  *
- * Queue name: bookagent-video-render
- *
- * Parte 59.2: Fechamento Operacional do Video Render Async
+ * Sync fallback: se Cloud Tasks não configurado, caller faz render inline.
  */
 
-import { Queue } from 'bullmq';
 import type { VideoRenderJobData } from './types.js';
-import { getSharedConnection } from './connection.js';
+import { isCloudTasksConfigured, enqueueVideoRenderTask } from './cloud-tasks.js';
 import { logger } from '../utils/logger.js';
 
-export const VIDEO_QUEUE_NAME = 'bookagent-video-render';
-
-let videoQueueInstance: Queue<VideoRenderJobData> | null = null;
-
 /**
- * Returns the video render queue (lazy singleton).
- * Null if Redis is not configured.
- */
-export function getVideoQueue(): Queue<VideoRenderJobData> | null {
-  if (videoQueueInstance) return videoQueueInstance;
-
-  const connection = getSharedConnection();
-  if (!connection) return null;
-
-  videoQueueInstance = new Queue<VideoRenderJobData>(VIDEO_QUEUE_NAME, {
-    connection,
-    defaultJobOptions: {
-      attempts: 2,
-      backoff: {
-        type: 'exponential',
-        delay: 10_000, // 10s, 20s (video render is slow, give more time between retries)
-      },
-      removeOnComplete: { count: 50 },
-      removeOnFail: { count: 100 },
-    },
-  });
-
-  videoQueueInstance.on('error', (err) => {
-    logger.error(`[VideoQueue] Error: ${err.message}`);
-  });
-
-  logger.info(`[VideoQueue] Initialized — name="${VIDEO_QUEUE_NAME}"`);
-  return videoQueueInstance;
-}
-
-/**
- * Enqueues a video render job.
- * Returns the BullMQ job ID.
+ * Enfileira uma renderização de vídeo via Cloud Tasks.
+ * Lança se Cloud Tasks não estiver configurado (caller deve cair em sync).
  */
 export async function enqueueVideoRender(data: VideoRenderJobData): Promise<string> {
-  const queue = getVideoQueue();
-  if (!queue) {
-    throw new Error('[VideoQueue] Redis not configured — cannot enqueue video render');
+  if (!isCloudTasksConfigured()) {
+    throw new Error(
+      '[VideoQueue] Cloud Tasks not configured — sync render only. ' +
+      'Caller must handle inline fallback.',
+    );
   }
 
-  const job = await queue.add('video-render', data, {
-    jobId: `video-${data.jobId}-${data.artifactId}-${Date.now()}`,
+  const taskName = await enqueueVideoRenderTask({
+    jobId: data.jobId,
+    artifactId: data.artifactId,
+    renderSpecJson: data.renderSpecJson,
+    assetUrls: data.assetUrls,
   });
 
   logger.info(
-    `[VideoQueue] Enqueued video render: job=${data.jobId} artifact=${data.artifactId}`
+    `[VideoQueue] Render task enqueued: job=${data.jobId} artifact=${data.artifactId}`,
   );
-  return job.id ?? data.jobId;
+  return taskName;
 }
