@@ -50,6 +50,17 @@ export interface ProcessingContext {
   // --- Populado pelo Book Compatibility Analysis ---
   bookCompatibility?: BookCompatibilityProfile;
 
+  // --- Populado pelo Gemini PDF Analyzer (opt-in shortcut) ---
+  /** Resultado da análise multimodal Gemini do PDF inteiro.
+   *  Ligado via PIPELINE_USE_GEMINI_ANALYZER=true + AI_PROVIDER=vertex.
+   *  Módulos downstream podem consumir para enriquecer decisões. */
+  pdfAnalysis?: {
+    top_images: Array<{ description: string; page: number; crop: string; reason: string }>;
+    color_scheme: { primary: string; secondary: string; accent: string; background: string; text: string };
+    hooks: Array<{ text: string; tone: string; suggestedImageIndex: number }>;
+    meta: { pages_analyzed: number; model: string; analyzed_at: string; raw_response_length: number };
+  };
+
   // --- Populado pelo Book Reverse Engineering ---
   bookPrototype?: BookPrototype;
 

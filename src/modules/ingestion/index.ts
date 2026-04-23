@@ -79,11 +79,38 @@ export class IngestionModule implements IModule {
       logger.warn(`Ingestion: extração de texto não suportada para tipo "${type}" na v1`);
     }
 
+    // --- Passo 3 (opt-in): Gemini multimodal shortcut ---
+    // Quando PIPELINE_USE_GEMINI_ANALYZER=true + AI_PROVIDER=vertex, rodamos
+    // o pdf-analyzer.ts em paralelo com o resto do pipeline para obter top
+    // images + color scheme + hooks em uma chamada só. Módulos downstream
+    // podem consumir context.pdfAnalysis para enriquecer decisões.
+    let pdfAnalysis: ProcessingContext['pdfAnalysis'];
+    const useGeminiAnalyzer =
+      process.env.PIPELINE_USE_GEMINI_ANALYZER === 'true' &&
+      process.env.AI_PROVIDER === 'vertex' &&
+      type === InputType.PDF;
+
+    if (useGeminiAnalyzer) {
+      try {
+        const { analyzePDF } = await import('../../services/gemini/pdf-analyzer.js');
+        logger.info('Ingestion: chamando Gemini PDF Analyzer (opt-in shortcut)');
+        pdfAnalysis = await analyzePDF(localFilePath, { provider: 'vertex' });
+        logger.info(
+          `Ingestion: Gemini analyzer retornou ${pdfAnalysis.top_images.length} imgs, ` +
+          `${pdfAnalysis.hooks.length} hooks`,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn(`Ingestion: Gemini analyzer falhou (não-fatal): ${msg}`);
+      }
+    }
+
     return {
       ...context,
       localFilePath,
       extractedText,
       pageTexts,
+      ...(pdfAnalysis && { pdfAnalysis }),
     };
   }
 }

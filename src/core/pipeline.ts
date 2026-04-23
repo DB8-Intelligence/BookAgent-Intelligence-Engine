@@ -82,22 +82,59 @@ export class Pipeline {
     const logs: ModuleExecutionLog[] = [];
     const parallelGenerators = process.env.PIPELINE_PARALLEL_GENERATORS !== 'false';
 
+    // Conditional execution: skip generator stages whose outputs the user
+    // didn't request (wizard step 4). If user picked only "reel", we don't
+    // waste time generating blog/LP plans. Big win for focused jobs.
+    const skipGenerators = this.computeGeneratorSkips(context);
+
+    // FAST_MODE: skip book-analysis + reverse-engineering (saves ~2-3 min).
+    // Downstream modules already handle bookCompatibility/bookPrototype as
+    // optional — assets still extract via default strategy, scene composer
+    // falls back to role-based layouts.
+    const fastMode = process.env.PIPELINE_FAST_MODE === 'true';
+    if (fastMode) {
+      skipGenerators.add(PipelineStage.BOOK_ANALYSIS);
+      skipGenerators.add(PipelineStage.REVERSE_ENGINEERING);
+      logger.info('[Pipeline] FAST_MODE on — skipping book-analysis + reverse-engineering');
+    }
+
+    if (skipGenerators.size > 0) {
+      logger.info(
+        `[Pipeline] Skipping stages: ${[...skipGenerators].join(', ')}`,
+      );
+    }
+
     // Parallel generator stages (media, blog, LP) — rodam juntos após OUTPUT_SELECTION
     const PARALLEL_STAGES: PipelineStage[] = [
       PipelineStage.MEDIA_GENERATION,
       PipelineStage.BLOG,
       PipelineStage.LANDING_PAGE,
-    ];
+    ].filter((s) => !skipGenerators.has(s));
 
     let i = 0;
     while (i < STAGE_ORDER.length) {
       const stage = STAGE_ORDER[i];
 
+      // Skip generator stages the user didn't ask for (saves 1-2 min per skip)
+      if (skipGenerators.has(stage)) {
+        logger.info(`[Pipeline] Skipping [${stage}] — not in userSelectedFormats`);
+        i++;
+        continue;
+      }
+
       // Check if we hit the parallelizable group
       if (parallelGenerators && stage === PipelineStage.MEDIA_GENERATION) {
-        await this.runParallelGenerators(context, PARALLEL_STAGES, logs)
-          .then((merged) => { context = merged; });
-        i += PARALLEL_STAGES.length;
+        // Advance past the full parallel group even if we filtered some
+        const oldI = i;
+        i += 3; // media, blog, LP always occupy indices 9,10,11
+        if (PARALLEL_STAGES.length > 0) {
+          await this.runParallelGenerators(context, PARALLEL_STAGES, logs)
+            .then((merged) => { context = merged; });
+        } else {
+          logger.info('[Pipeline] All parallel generators skipped');
+        }
+        // Guard: if MEDIA_GENERATION wasn't at index oldI for some reason, fallback
+        if (STAGE_ORDER[oldI] !== PipelineStage.MEDIA_GENERATION) i = oldI + 1;
         continue;
       }
 
@@ -167,6 +204,38 @@ export class Pipeline {
    */
   getRegisteredStages(): PipelineStage[] {
     return Array.from(this.modules.keys());
+  }
+
+  /**
+   * Decide quais generator stages (Media / Blog / LP) podem ser pulados
+   * baseado em userSelectedFormats. Se o user marcou só "reel", não faz
+   * sentido rodar BlogModule.
+   *
+   * Mapeamento format → stage necessário:
+   *   reel, carousel, story, post, presentation, video_long → MEDIA_GENERATION
+   *   blog                                                   → BLOG
+   *   landing_page                                           → LANDING_PAGE
+   *
+   * Se userSelectedFormats vazio/undefined, NÃO skipa nada (comportamento legado).
+   */
+  private computeGeneratorSkips(ctx: ProcessingContext): Set<PipelineStage> {
+    const skips = new Set<PipelineStage>();
+    const selected = ctx.userSelectedFormats;
+    if (!selected || selected.length === 0) return skips;
+
+    const normalized = new Set(
+      selected.map((f) => f.toLowerCase().replace(/-/g, '_')),
+    );
+
+    // Media stage produces: reel, carousel, story, post, presentation, video_long
+    const mediaFormats = ['reel', 'carousel', 'story', 'post', 'presentation', 'video_long'];
+    const hasMedia = mediaFormats.some((f) => normalized.has(f));
+    if (!hasMedia) skips.add(PipelineStage.MEDIA_GENERATION);
+
+    if (!normalized.has('blog')) skips.add(PipelineStage.BLOG);
+    if (!normalized.has('landing_page')) skips.add(PipelineStage.LANDING_PAGE);
+
+    return skips;
   }
 
   /**

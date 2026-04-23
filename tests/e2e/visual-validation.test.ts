@@ -322,9 +322,10 @@ describe('Visual Validation — FFmpeg Filter Chain', () => {
     expect(cmd).toContain('-c:v');
     expect(cmd).toContain('libx264');
     expect(cmd).toContain('-preset');
-    expect(cmd).toContain('medium');
+    // Prioritizing speed for Cloud Run (was 'medium' CRF 18, now 'ultrafast' CRF 23)
+    expect(cmd).toContain('ultrafast');
     expect(cmd).toContain('-crf');
-    expect(cmd).toContain('18');
+    expect(cmd).toContain('23');
     expect(cmd).toContain('-pix_fmt');
     expect(cmd).toContain('yuv420p');
     expect(cmd[cmd.length - 1]).toBe('output/reel.mp4');

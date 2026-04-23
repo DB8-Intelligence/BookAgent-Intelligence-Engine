@@ -47,11 +47,11 @@ export class FFmpegStoryboardRenderer {
     // Map concatenated output
     args.push('-map', '[final]');
 
-    // Encoder
+    // Encoder — ultrafast prioritizes speed over filesize (Cloud Run is CPU-bound)
     args.push(
       '-c:v', 'libx264',
-      '-preset', 'medium',
-      '-crf', '18',
+      '-preset', 'ultrafast',
+      '-crf', '23', // 23 is visually lossless enough; was 18 (overkill for social media)
       '-pix_fmt', 'yuv420p',
       outputPath,
     );
