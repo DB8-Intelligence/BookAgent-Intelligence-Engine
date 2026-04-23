@@ -1,20 +1,49 @@
 # =============================================================================
 # BookAgent — Google Cloud Build pipeline
 # =============================================================================
-# Trigger via: gcloud builds submit --config=cloudbuild.yaml
-# Or via Cloud Build trigger on every push to main branch.
+# Setup (uma vez, no projeto bookreel):
 #
-# O que faz:
-#   1. Build Docker image (API + worker)
-#   2. Push para Artifact Registry
-#   3. Deploy no Cloud Run (api) e Cloud Run Jobs (worker)
+#   # APIs
+#   gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
+#     artifactregistry.googleapis.com aiplatform.googleapis.com \
+#     storage.googleapis.com secretmanager.googleapis.com
 #
-# Substitutions passadas pelo trigger:
-#   _REGION           default us-central1
-#   _REPO             default bookagent (Artifact Registry repo)
-#   _API_SERVICE      default bookagent-api
-#   _WORKER_SERVICE   default bookagent-worker
-#   _SA_EMAIL         service account email com roles Vertex AI User + GCS Admin
+#   # Artifact Registry
+#   gcloud artifacts repositories create bookagent \
+#     --repository-format=docker --location=us-central1
+#
+#   # Service Account runtime (Workload Identity — sem JSON key)
+#   gcloud iam service-accounts create bookagent-runtime \
+#     --display-name="BookAgent Runtime"
+#
+#   # Roles
+#   for role in aiplatform.user storage.objectAdmin secretmanager.secretAccessor; do
+#     gcloud projects add-iam-policy-binding bookreel \
+#       --member=serviceAccount:bookagent-runtime@bookreel.iam.gserviceaccount.com \
+#       --role=roles/${role}
+#   done
+#
+#   # Cloud Build SA precisa deployer Cloud Run
+#   PROJECT_NUMBER=$(gcloud projects describe bookreel --format='value(projectNumber)')
+#   gcloud projects add-iam-policy-binding bookreel \
+#     --member=serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com \
+#     --role=roles/run.admin
+#   gcloud iam service-accounts add-iam-policy-binding \
+#     bookagent-runtime@bookreel.iam.gserviceaccount.com \
+#     --member=serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com \
+#     --role=roles/iam.serviceAccountUser
+#
+# Secrets (rodar UMA VEZ por secret):
+#   printf "sk-ant-..." | gcloud secrets create anthropic-key --data-file=-
+#   printf "eyJ..."     | gcloud secrets create supabase-service-role --data-file=-
+#   printf "eyJ..."     | gcloud secrets create supabase-jwt-secret --data-file=-
+#   printf "redis://..." | gcloud secrets create redis-url --data-file=-
+#
+# Autenticação:
+#   Cloud Run usa Workload Identity automático — a SA bookagent-runtime é
+#   anexada ao serviço e o SDK Google detecta credentials via metadata server.
+#   NENHUM arquivo JSON é copiado para o container. .dockerignore bloqueia
+#   service-account*.json como defesa em profundidade.
 # =============================================================================
 
 substitutions:
@@ -22,7 +51,7 @@ substitutions:
   _REPO: bookagent
   _API_SERVICE: bookagent-api
   _WORKER_SERVICE: bookagent-worker
-  _SA_EMAIL: ''  # preencher via trigger
+  _SA_EMAIL: bookagent-runtime@bookreel.iam.gserviceaccount.com
 
 options:
   machineType: E2_HIGHCPU_8
@@ -71,6 +100,12 @@ steps:
     waitFor: ['build-worker']
 
   # 5. Deploy API to Cloud Run ------------------------------------------------
+  #
+  # Secrets são mapeados via --set-secrets (Secret Manager → env var).
+  # Formato: NOME_ENV=nome-do-secret:versão  (use :latest pra auto-atualizar)
+  #
+  # Adicione/remova secrets conforme o .env do seu deploy.
+  # Não-sensíveis ficam em --set-env-vars.
   - id: deploy-api
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
@@ -83,7 +118,8 @@ steps:
       - --platform=managed
       - --allow-unauthenticated
       - --service-account=${_SA_EMAIL}
-      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},AI_PROVIDER=vertex,GCS_ENABLED=true
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},AI_PROVIDER=vertex,GCS_ENABLED=true,VIDEO_RENDERER=ffmpeg,NODE_ENV=production
+      - --set-secrets=ANTHROPIC_API_KEY=anthropic-key:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role:latest,SUPABASE_JWT_SECRET=supabase-jwt-secret:latest,REDIS_URL=redis-url:latest
       - --memory=2Gi
       - --cpu=2
       - --min-instances=0
@@ -93,6 +129,8 @@ steps:
     waitFor: ['push-api']
 
   # 6. Deploy worker to Cloud Run ---------------------------------------------
+  # Worker always-on (min-instances=1) consumindo BullMQ/Redis.
+  # Sem no-cpu-throttling para manter workers processando mesmo idle HTTP.
   - id: deploy-worker
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
@@ -105,7 +143,8 @@ steps:
       - --platform=managed
       - --no-allow-unauthenticated
       - --service-account=${_SA_EMAIL}
-      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},AI_PROVIDER=vertex,GCS_ENABLED=true
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},AI_PROVIDER=vertex,GCS_ENABLED=true,VIDEO_RENDERER=ffmpeg,NODE_ENV=production
+      - --set-secrets=ANTHROPIC_API_KEY=anthropic-key:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role:latest,SUPABASE_JWT_SECRET=supabase-jwt-secret:latest,REDIS_URL=redis-url:latest
       - --memory=4Gi
       - --cpu=4
       - --min-instances=1
@@ -114,10 +153,9 @@ steps:
       - --no-cpu-throttling
     waitFor: ['push-worker']
 
-# Built images go to Artifact Registry
+# Artifacts publicados
 images:
   - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:${SHORT_SHA}
   - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker:${SHORT_SHA}
 
-# Max 30 min build
 timeout: 1800s

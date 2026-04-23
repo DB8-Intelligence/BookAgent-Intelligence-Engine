@@ -3,9 +3,39 @@ dist
 storage
 .env
 .env.local
+.env.*
 *.log
 .git
+.gitignore
+.gitattributes
 web
 docs
 scripts
 *.md
+
+# Credentials — NUNCA entrar no container.
+# Auth em Cloud Run usa Workload Identity (SA atachada ao serviço, automática)
+# Auth local usa GOOGLE_APPLICATION_CREDENTIALS pointing to arquivo fora do build context
+service-account*.json
+gcp-sa*.json
+*-credentials.json
+*.pem
+*.p12
+*.pfx
+*-private-key*
+google-application-credentials*
+
+# Test fixtures e misc (evita inflar a imagem)
+tests/
+coverage/
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.tmp
+
+# CI/CD files não precisam no container
+cloudbuild.yaml
+deploy.sh
+Dockerfile
+Dockerfile.worker

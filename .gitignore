@@ -21,3 +21,13 @@ web/node_modules/
 web/.next/
 web/tsconfig.tsbuildinfo
 .claude/settings.local.json
+
+# Credentials — NUNCA commitar
+service-account*.json
+gcp-sa*.json
+*-credentials.json
+*.pem
+*.p12
+*.pfx
+*-private-key*
+google-application-credentials*
