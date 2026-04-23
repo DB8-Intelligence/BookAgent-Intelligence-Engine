@@ -1,0 +1,123 @@
+# =============================================================================
+# BookAgent — Google Cloud Build pipeline
+# =============================================================================
+# Trigger via: gcloud builds submit --config=cloudbuild.yaml
+# Or via Cloud Build trigger on every push to main branch.
+#
+# O que faz:
+#   1. Build Docker image (API + worker)
+#   2. Push para Artifact Registry
+#   3. Deploy no Cloud Run (api) e Cloud Run Jobs (worker)
+#
+# Substitutions passadas pelo trigger:
+#   _REGION           default us-central1
+#   _REPO             default bookagent (Artifact Registry repo)
+#   _API_SERVICE      default bookagent-api
+#   _WORKER_SERVICE   default bookagent-worker
+#   _SA_EMAIL         service account email com roles Vertex AI User + GCS Admin
+# =============================================================================
+
+substitutions:
+  _REGION: us-central1
+  _REPO: bookagent
+  _API_SERVICE: bookagent-api
+  _WORKER_SERVICE: bookagent-worker
+  _SA_EMAIL: ''  # preencher via trigger
+
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # 1. Build API image ---------------------------------------------------------
+  - id: build-api
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:${SHORT_SHA}
+      - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:latest
+      - --cache-from=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:latest
+      - --file=Dockerfile
+      - .
+
+  # 2. Build worker image ------------------------------------------------------
+  - id: build-worker
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker:${SHORT_SHA}
+      - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker:latest
+      - --cache-from=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker:latest
+      - --file=Dockerfile.worker
+      - .
+    waitFor: ['build-api']
+
+  # 3. Push API ---------------------------------------------------------------
+  - id: push-api
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api
+    waitFor: ['build-api']
+
+  # 4. Push worker ------------------------------------------------------------
+  - id: push-worker
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker
+    waitFor: ['build-worker']
+
+  # 5. Deploy API to Cloud Run ------------------------------------------------
+  - id: deploy-api
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_API_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --service-account=${_SA_EMAIL}
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},AI_PROVIDER=vertex,GCS_ENABLED=true
+      - --memory=2Gi
+      - --cpu=2
+      - --min-instances=0
+      - --max-instances=10
+      - --timeout=300
+      - --concurrency=40
+    waitFor: ['push-api']
+
+  # 6. Deploy worker to Cloud Run ---------------------------------------------
+  - id: deploy-worker
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_WORKER_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --no-allow-unauthenticated
+      - --service-account=${_SA_EMAIL}
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},AI_PROVIDER=vertex,GCS_ENABLED=true
+      - --memory=4Gi
+      - --cpu=4
+      - --min-instances=1
+      - --max-instances=3
+      - --timeout=3600
+      - --no-cpu-throttling
+    waitFor: ['push-worker']
+
+# Built images go to Artifact Registry
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:${SHORT_SHA}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/worker:${SHORT_SHA}
+
+# Max 30 min build
+timeout: 1800s

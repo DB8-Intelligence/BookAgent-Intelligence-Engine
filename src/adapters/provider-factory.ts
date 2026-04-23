@@ -43,7 +43,7 @@ export type AIProviderName = 'anthropic' | 'openai' | 'gemini' | 'vertex';
  * Lança erro se a API key não estiver configurada.
  */
 export function createAIAdapter(provider?: AIProviderName): IAIAdapter {
-  const name = provider ?? (process.env.AI_PROVIDER as AIProviderName) ?? 'anthropic';
+  const name = provider ?? (process.env.AI_PROVIDER as AIProviderName) ?? 'vertex';
 
   switch (name) {
     case 'anthropic':
@@ -64,7 +64,7 @@ export function createAIAdapter(provider?: AIProviderName): IAIAdapter {
  * Ideal para graceful degradation: sem key → usa geração local.
  */
 export function tryCreateAIAdapter(provider?: AIProviderName): IAIAdapter | null {
-  const name = provider ?? (process.env.AI_PROVIDER as AIProviderName) ?? 'anthropic';
+  const name = provider ?? (process.env.AI_PROVIDER as AIProviderName) ?? 'vertex';
 
   switch (name) {
     case 'anthropic':
@@ -154,7 +154,7 @@ export interface ProviderStatus {
  * Reflete todos os providers com API key, não apenas o padrão (AI_PROVIDER).
  */
 export function checkProviderStatus(): ProviderStatus {
-  const aiProvider = (process.env.AI_PROVIDER as AIProviderName) ?? 'anthropic';
+  const aiProvider = (process.env.AI_PROVIDER as AIProviderName) ?? 'vertex';
   const ttsProvider = (process.env.TTS_PROVIDER as TTSProviderName) ?? 'openai-tts';
   const aiMode = process.env.AI_GENERATION_MODE ?? 'auto';
 

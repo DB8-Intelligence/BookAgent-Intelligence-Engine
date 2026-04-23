@@ -1,44 +1,90 @@
-# ============================================================================
-# BookAgent Intelligence Engine — Dockerfile (API Server)
-# ============================================================================
-# Multi-stage build: compile TypeScript → lightweight runtime with ffmpeg
-# ============================================================================
+# =============================================================================
+# BookAgent Intelligence Engine — Dockerfile
+# =============================================================================
+# Multi-stage build otimizado para Google Cloud Run.
+#
+# Target: Cloud Run / GKE (ou qualquer container orchestrator)
+#
+# Features:
+#   - Multi-stage: build em node:20 completo, runtime em node:20-slim
+#   - ffmpeg + poppler-utils + python3 (dependências do pipeline)
+#   - Usuário não-root (security best practice do Cloud Run)
+#   - Honra a env var PORT (convenção Cloud Run, default 3000)
+#   - HEALTHCHECK em /health
+#   - Layer cache otimizada (package.json antes do código)
+# =============================================================================
 
-# --- Stage 1: Build ---
-FROM node:20-alpine AS builder
+# --- Stage 1: Build ----------------------------------------------------------
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache libc6-compat
+# Install build deps (sharp, canvas, etc. precisam de gcc/python)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
+# Dep install first for layer caching
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
-COPY . .
+# Copy source and build TypeScript
+COPY tsconfig.json ./
+COPY src ./src
 RUN npm run build
 
-# --- Stage 2: Runtime ---
-FROM node:20-alpine
+# Prune dev dependencies for leaner runtime
+RUN npm prune --production --no-audit --no-fund
 
-RUN apk add --no-cache ffmpeg python3 py3-pip poppler-utils libc6-compat \
-    && mkdir -p /tmp/videos
+# --- Stage 2: Runtime --------------------------------------------------------
+FROM node:20-slim
+
+# Runtime deps for the pipeline:
+#   ffmpeg       — video rendering fallback + audio processing
+#   poppler-utils — PDF rendering (pdftoppm, pdftotext)
+#   python3      — pdfjs enhanced extraction (optional)
+#   fonts-liberation — fallback fonts for PDF text rendering
+#   libvips42 (sharp runtime) — image processing
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    poppler-utils \
+    python3 \
+    fonts-liberation \
+    libvips42 \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system bookagent --gid 1001 \
+    && useradd --system --uid 1001 --gid bookagent bookagent
 
 WORKDIR /app
 
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json .
+# Copy built app from builder stage
+COPY --from=builder --chown=bookagent:bookagent /app/dist ./dist
+COPY --from=builder --chown=bookagent:bookagent /app/node_modules ./node_modules
+COPY --from=builder --chown=bookagent:bookagent /app/package.json ./
 
-# Video generation: Python modules + music files
-COPY video/ ./video/
-COPY musics/ ./musics/
+# Static assets required at runtime (music catalog, video templates)
+COPY --chown=bookagent:bookagent video/ ./video/
+COPY --chown=bookagent:bookagent musics/ ./musics/
 
-# Storage directories (created at runtime by StorageManager)
-RUN mkdir -p storage/assets storage/outputs storage/temp
+# Writable runtime directories (asset extraction, temp files)
+RUN mkdir -p storage/assets storage/outputs storage/temp \
+    && chown -R bookagent:bookagent storage
 
-EXPOSE 3000
+# Drop privileges for runtime
+USER bookagent
 
+# Cloud Run sets PORT env var (default 8080) and expects the server to honor it.
+# Our server already reads from process.env.PORT (src/config/index.ts).
+ENV PORT=8080
+EXPOSE 8080
+
+# Healthcheck — used by orchestrator for zero-downtime restarts
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s \
-  CMD wget -qO- http://localhost:3000/health || exit 1
+  CMD curl -fs http://localhost:${PORT}/health || exit 1
 
+# For Cloud Run, the container must listen on $PORT (not hardcoded)
 CMD ["node", "dist/index.js"]
