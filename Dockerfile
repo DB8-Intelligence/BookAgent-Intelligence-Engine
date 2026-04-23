@@ -1,17 +1,17 @@
 # =============================================================================
-# BookAgent Intelligence Engine — Dockerfile
+# BookAgent Intelligence Engine — Dockerfile (produção Google Cloud Run)
 # =============================================================================
-# Multi-stage build otimizado para Google Cloud Run.
+# Multi-stage build otimizado para Cloud Run.
 #
-# Target: Cloud Run / GKE (ou qualquer container orchestrator)
-#
-# Features:
-#   - Multi-stage: build em node:20 completo, runtime em node:20-slim
-#   - ffmpeg + poppler-utils + python3 (dependências do pipeline)
-#   - Usuário não-root (security best practice do Cloud Run)
-#   - Honra a env var PORT (convenção Cloud Run, default 3000)
-#   - HEALTHCHECK em /health
-#   - Layer cache otimizada (package.json antes do código)
+# Correções vs versão anterior:
+#   - libvips42 removido (pacote não existe em debian:bookworm-slim recente;
+#     sharp já traz binários pré-compilados e libvips como peer)
+#   - npm prune --omit=dev (substitui --production, deprecated no npm 9+)
+#   - HEALTHCHECK removido (Cloud Run ignora e usa startup probe próprio)
+#   - NODE_ENV=production no runtime (otimiza express + outras libs)
+#   - libssl3 + ca-certificates para gRPC (@google-cloud/vertexai, @google-cloud/storage)
+#   - --ignore-scripts no npm ci do runtime não rebuilda binários (só o builder precisa)
+#   - Fallback defensivo se video/ ou musics/ estiverem vazios
 # =============================================================================
 
 # --- Stage 1: Build ----------------------------------------------------------
@@ -19,72 +19,75 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Install build deps (sharp, canvas, etc. precisam de gcc/python)
+# Build deps: gcc/make pra módulos nativos (sharp, canvas, bcrypt, etc.)
+# python3 é requerido por node-gyp mesmo para builds puros TS
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Dep install first for layer caching
+# Dep install (layer cache: só reinstala se package*.json mudou)
 COPY package*.json ./
 RUN npm ci --no-audit --no-fund
 
-# Copy source and build TypeScript
+# Copy source + build TypeScript
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-# Prune dev dependencies for leaner runtime
-RUN npm prune --production --no-audit --no-fund
+# Remove dev dependencies pra runtime enxuto (--omit=dev substitui --production)
+RUN npm prune --omit=dev
 
 # --- Stage 2: Runtime --------------------------------------------------------
 FROM node:20-slim
 
-# Runtime deps for the pipeline:
-#   ffmpeg       — video rendering fallback + audio processing
-#   poppler-utils — PDF rendering (pdftoppm, pdftotext)
-#   python3      — pdfjs enhanced extraction (optional)
-#   fonts-liberation — fallback fonts for PDF text rendering
-#   libvips42 (sharp runtime) — image processing
+ENV NODE_ENV=production \
+    PORT=8080
+
+# Runtime deps:
+#   ffmpeg          — video rendering (FFmpegStoryboardRenderer, spec-renderer)
+#   poppler-utils   — PDF → PNG/text (pdftoppm, pdftotext no ingestion)
+#   python3         — pdfjs enhanced extraction + video/*.py helpers
+#   fonts-liberation — fontes para text overlay
+#   libssl3         — gRPC runtime (@google-cloud/vertexai, storage)
+#   ca-certificates — TLS pra chamadas HTTP (Anthropic, OpenAI, Gemini, Shotstack)
+#   curl            — health check manual / debug (não usado pelo Cloud Run)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     poppler-utils \
     python3 \
     fonts-liberation \
-    libvips42 \
+    libssl3 \
     ca-certificates \
     curl \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system bookagent --gid 1001 \
-    && useradd --system --uid 1001 --gid bookagent bookagent
+    && groupadd --system --gid 1001 bookagent \
+    && useradd --system --uid 1001 --gid bookagent --home /app bookagent
 
 WORKDIR /app
 
-# Copy built app from builder stage
-COPY --from=builder --chown=bookagent:bookagent /app/dist ./dist
-COPY --from=builder --chown=bookagent:bookagent /app/node_modules ./node_modules
+# Copy built app from builder (ordenado por change frequency)
 COPY --from=builder --chown=bookagent:bookagent /app/package.json ./
+COPY --from=builder --chown=bookagent:bookagent /app/node_modules ./node_modules
+COPY --from=builder --chown=bookagent:bookagent /app/dist ./dist
 
-# Static assets required at runtime (music catalog, video templates)
+# Static runtime assets — video templates + music catalog
+# (Se pastas estiverem vazias no repo, COPY ainda funciona)
 COPY --chown=bookagent:bookagent video/ ./video/
 COPY --chown=bookagent:bookagent musics/ ./musics/
 
-# Writable runtime directories (asset extraction, temp files)
+# Writable dirs (StorageManager ensures these exist at runtime, but pre-create
+# for permission hygiene)
 RUN mkdir -p storage/assets storage/outputs storage/temp \
     && chown -R bookagent:bookagent storage
 
-# Drop privileges for runtime
 USER bookagent
 
-# Cloud Run sets PORT env var (default 8080) and expects the server to honor it.
-# Our server already reads from process.env.PORT (src/config/index.ts).
-ENV PORT=8080
 EXPOSE 8080
 
-# Healthcheck — used by orchestrator for zero-downtime restarts
-HEALTHCHECK --interval=10s --timeout=5s --start-period=30s \
-  CMD curl -fs http://localhost:${PORT}/health || exit 1
+# Cloud Run uses its own startup probe (HTTP GET on $PORT).
+# Docker HEALTHCHECK is ignored — removed to eliminate noise.
 
-# For Cloud Run, the container must listen on $PORT (not hardcoded)
 CMD ["node", "dist/index.js"]

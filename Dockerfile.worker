@@ -1,39 +1,51 @@
 # =============================================================================
-# BookAgent Worker — Dockerfile
+# BookAgent Worker — Dockerfile (produção Google Cloud Run)
 # =============================================================================
-# Para Cloud Run Jobs (processamento batch) ou serviço always-on.
-# Mesma base image do API mas roda `node dist/worker.js` (BullMQ consumer).
-#
-# Cloud Run Services: workers always-on (com Redis como trigger, não HTTP)
-# Cloud Run Jobs: execução pontual disparada por webhook
+# Mesmas correções do Dockerfile (API), mas rodando o worker BullMQ.
+# Cloud Run Service com min-instances=1 + no-cpu-throttling (consome fila Redis).
 # =============================================================================
 
 FROM node:20-slim AS builder
+
 WORKDIR /app
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 make g++ && rm -rf /var/lib/apt/lists/*
+    python3 \
+    make \
+    g++ \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY package*.json ./
 RUN npm ci --no-audit --no-fund
+
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build && npm prune --production --no-audit --no-fund
+RUN npm run build
+
+RUN npm prune --omit=dev
 
 FROM node:20-slim
+
+ENV NODE_ENV=production \
+    PORT=8080
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     poppler-utils \
     python3 \
     fonts-liberation \
-    libvips42 \
+    libssl3 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system bookagent --gid 1001 \
-    && useradd --system --uid 1001 --gid bookagent bookagent
+    && groupadd --system --gid 1001 bookagent \
+    && useradd --system --uid 1001 --gid bookagent --home /app bookagent
 
 WORKDIR /app
-COPY --from=builder --chown=bookagent:bookagent /app/dist ./dist
-COPY --from=builder --chown=bookagent:bookagent /app/node_modules ./node_modules
+
 COPY --from=builder --chown=bookagent:bookagent /app/package.json ./
+COPY --from=builder --chown=bookagent:bookagent /app/node_modules ./node_modules
+COPY --from=builder --chown=bookagent:bookagent /app/dist ./dist
 COPY --chown=bookagent:bookagent video/ ./video/
 COPY --chown=bookagent:bookagent musics/ ./musics/
 
@@ -42,5 +54,8 @@ RUN mkdir -p storage/assets storage/outputs storage/temp \
 
 USER bookagent
 
-# Worker não expõe HTTP — consome BullMQ. Redis URL vem via env.
+# Worker embute um mini HTTP server em worker.ts que expõe GET /health
+# para Cloud Run Service health check. Porta via env PORT (default 8080).
+EXPOSE 8080
+
 CMD ["node", "dist/worker.js"]

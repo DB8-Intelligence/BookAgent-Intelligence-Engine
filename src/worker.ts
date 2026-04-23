@@ -18,6 +18,7 @@
  *   TTS_PROVIDER + TTS_SYNTHESIS_ENABLED      (síntese de áudio)
  */
 
+import { createServer } from 'node:http';
 import { isRedisConfigured } from './queue/connection.js';
 import { createWorker } from './queue/worker.js';
 import { createVideoWorker } from './queue/video-worker.js';
@@ -132,6 +133,36 @@ if (videoWorker) {
 logger.info('[Worker] BookAgent workers running. Waiting for jobs...');
 
 // ============================================================================
+// Health HTTP server — required for Cloud Run Service (mas também útil
+// em Railway). Expõe GET /health com status dos workers.
+// ============================================================================
+
+const healthPort = Number(process.env.PORT ?? process.env.WORKER_HEALTH_PORT ?? 8080);
+
+const healthServer = createServer((req, res) => {
+  if (req.url === '/health' || req.url === '/') {
+    const body = {
+      status: 'ok',
+      workers: {
+        pipeline: worker ? 'running' : 'stopped',
+        videoRender: videoWorker ? 'running' : 'stopped',
+      },
+      persistence: supabaseClient ? 'supabase' : 'in-memory',
+      uptime: process.uptime(),
+    };
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(body));
+    return;
+  }
+  res.writeHead(404, { 'Content-Type': 'text/plain' });
+  res.end('not found');
+});
+
+healthServer.listen(healthPort, () => {
+  logger.info(`[Worker] Health server listening on :${healthPort} (GET /health)`);
+});
+
+// ============================================================================
 // Graceful shutdown
 // ============================================================================
 
@@ -142,6 +173,7 @@ async function shutdown(signal: string): Promise<void> {
   await Promise.all([
     worker?.close(),
     videoWorker?.close(),
+    new Promise<void>((resolve) => healthServer.close(() => resolve())),
   ]);
   logger.info('[Worker] All workers stopped. In-flight jobs completed.');
   process.exit(0);
