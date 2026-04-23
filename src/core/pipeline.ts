@@ -32,6 +32,13 @@ import { createEmptyMetrics } from '../domain/entities/module-log.js';
 import { EMPTY_BRANDING } from '../domain/entities/branding.js';
 import { PipelineStage, ModuleStatus } from '../domain/value-objects/index.js';
 import { logger } from '../utils/logger.js';
+import {
+  emitPdfIngested,
+  emitAssetsExtracted,
+  emitScriptReady,
+  emitMediaPlanReady,
+  emitPipelineFailed,
+} from './task-orchestrator.js';
 
 /** Ordem fixa de execução dos 17 estágios */
 const STAGE_ORDER: PipelineStage[] = [
@@ -158,6 +165,12 @@ export class Pipeline {
           warnings: [],
           metrics: createEmptyMetrics(),
         });
+
+        // Emit pub/sub events for event-driven consumers (workers)
+        // Fire-and-forget — errors in handlers don't break the pipeline
+        await this.emitStageEvents(stage, context).catch((err) => {
+          logger.warn(`[Pipeline] emitStageEvents failed for ${stage}: ${err}`);
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         logger.error(`Pipeline: falha em [${stage}] → ${mod.name}: ${message}`);
@@ -173,6 +186,10 @@ export class Pipeline {
           warnings: [],
           metrics: createEmptyMetrics(),
         });
+
+        // Publish failure event for any listeners (retry, alert, etc)
+        await emitPipelineFailed(context.jobId, { stage: String(stage), error: message })
+          .catch(() => {});
 
         // Propagar o erro para o orchestrator decidir
         throw error;
@@ -204,6 +221,60 @@ export class Pipeline {
    */
   getRegisteredStages(): PipelineStage[] {
     return Array.from(this.modules.keys());
+  }
+
+  /**
+   * Emite eventos Pub/Sub conforme o pipeline avança.
+   * Workers (TTS, image processor, etc.) escutam esses tópicos e começam
+   * trabalho em paralelo. Não bloqueia o pipeline — errors nos handlers
+   * são logged mas ignored.
+   */
+  private async emitStageEvents(stage: PipelineStage, ctx: ProcessingContext): Promise<void> {
+    switch (stage) {
+      case PipelineStage.INGESTION:
+        if (ctx.localFilePath) {
+          await emitPdfIngested(ctx.jobId, {
+            filePath: ctx.localFilePath,
+            extractedText: ctx.extractedText ?? '',
+            pageCount: ctx.pageTexts?.length ?? 0,
+          });
+        }
+        break;
+
+      case PipelineStage.EXTRACTION:
+        if (ctx.assets && ctx.assets.length > 0) {
+          await emitAssetsExtracted(ctx.jobId, {
+            assetIds: ctx.assets.map((a) => a.id),
+            assetUrlMap: ctx.assetUrlMap ?? {},
+          });
+        }
+        break;
+
+      case PipelineStage.NARRATIVE:
+        if (ctx.narratives && ctx.narratives.length > 0) {
+          await emitScriptReady(ctx.jobId, {
+            narrativePlanIds: ctx.narratives.map((n) => n.id),
+            scripts: ctx.narratives.map((n) => ({
+              narrativeId: n.id,
+              title: n.title,
+              wordCount: n.estimatedWordCount ?? 0,
+            })),
+          });
+        }
+        break;
+
+      case PipelineStage.MEDIA_GENERATION:
+        if (ctx.mediaPlans && ctx.mediaPlans.length > 0) {
+          await emitMediaPlanReady(ctx.jobId, {
+            mediaPlanIds: ctx.mediaPlans.map((m) => m.id),
+          });
+        }
+        break;
+
+      // Other stages can be added as workers need them
+      default:
+        break;
+    }
   }
 
   /**

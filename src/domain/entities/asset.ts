@@ -74,4 +74,24 @@ export interface Asset {
    * opcional, populado apenas no fluxo enhanced.
    */
   readonly imageMetadata?: PDFImageMetadata;
+
+  /**
+   * Análise multimodal via Gemini (VisualParser). Opt-in via
+   * VISUAL_PARSER_ENABLED=true. Contém categoria, crop 9:16 sugerido
+   * e relevance para Reels. Consumido pelo SceneComposer para ordenar
+   * assets e aplicar crops inteligentes.
+   */
+  readonly visualAnalysis?: {
+    description: string;
+    category: string;
+    qualityScore: number;
+    relevanceForReel: number;
+    cropSuggestion: {
+      aspectRatio: string;
+      x: number; y: number; width: number; height: number;
+      reason: string;
+    };
+    hasText: boolean;
+    model: string;
+  };
 }

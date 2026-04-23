@@ -196,10 +196,51 @@ export class AssetExtractionModule implements IModule {
       `(${individualCount} individual photos, ${pageFallbackCount} page fallbacks)`,
     );
 
+    // Visual Parser enrichment (opt-in via VISUAL_PARSER_ENABLED=true).
+    // Chama Gemini 1.5 Pro por imagem em paralelo para obter category,
+    // cropSuggestion 9:16 e relevanceForReel. SceneComposer usa depois
+    // para ordenar por relevância e aplicar crop inteligente.
+    const visualParserEnabled =
+      process.env.VISUAL_PARSER_ENABLED === 'true' &&
+      process.env.AI_PROVIDER === 'vertex';
+
+    let enrichedAssets = assetsWithPOI;
+    if (visualParserEnabled && assetsWithPOI.length > 0) {
+      try {
+        const { analyzeImageBatch } = await import('../../services/ai/visual-parser.js');
+        const { readFile } = await import('fs/promises');
+
+        const imagesToAnalyze = await Promise.all(
+          assetsWithPOI.map(async (a) => ({
+            id: a.id,
+            buffer: await readFile(a.filePath).catch(() => Buffer.alloc(0)),
+            mimeType: a.format === 'png' ? 'image/png' : 'image/jpeg',
+          })),
+        );
+        const validImages = imagesToAnalyze.filter((i) => i.buffer.length > 0);
+
+        logger.info(`[AssetExtraction] Visual parser analyzing ${validImages.length}/${imagesToAnalyze.length} images`);
+
+        const analyses = await analyzeImageBatch(validImages, { targetAspect: '9:16' });
+        const analysisMap = new Map(analyses.map((a) => [a.id, a]));
+
+        enrichedAssets = assetsWithPOI.map((asset) => {
+          const analysis = analysisMap.get(asset.id);
+          if (!analysis) return asset;
+          const { id: _id, ...visualAnalysis } = analysis;
+          void _id;
+          return { ...asset, visualAnalysis };
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn(`[AssetExtraction] Visual parser failed (non-fatal): ${msg}`);
+      }
+    }
+
     return {
       ...context,
       pageFormats: result.pageFormats,
-      assets: assetsWithPOI,
+      assets: enrichedAssets,
       assetUrlMap,
     };
   }
