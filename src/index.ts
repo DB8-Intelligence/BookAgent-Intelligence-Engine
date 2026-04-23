@@ -420,15 +420,20 @@ app.use('/api/public/v1', publicApiRoutes);
 // Error handler (must be last)
 app.use(errorHandler);
 
-// Validate secrets before listening. In production, missing required secrets
-// (SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET, REDIS_URL) will throw here
-// — failing fast is better than crashing later when first request comes in.
-validateStartupSecrets();
-
+// IMPORTANT: app.listen opens the HTTP port IMMEDIATELY. Everything that
+// could block (secrets validation, Redis/Supabase checks) happens in the
+// callback AFTER the port is open, so Cloud Run startup probe succeeds
+// within its timeout window.
 app.listen(config.port, () => {
+  // Port is open — Cloud Run startup probe will succeed now.
+  logger.info(`BookAgent Intelligence Engine listening on port ${config.port}`);
+
+  // Post-listen validations (non-blocking, logs only — NEVER throw here or
+  // the Cloud Run container will crash after startup probe succeeded).
+  validateStartupSecrets();
+
   const status = checkProviderStatus();
 
-  logger.info(`BookAgent Intelligence Engine running on port ${config.port}`);
   logger.info(`API prefix: ${prefix}`);
   logger.info(`Persistence: ${persistenceMode}`);
   logger.info(`AI Provider: ${status.ai.provider} (${status.ai.available ? 'configured' : 'no key — local mode'})`);

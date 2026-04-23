@@ -135,10 +135,12 @@ export function auditSecrets(): SecretAuditEntry[] {
  * Validação de startup: verifica secrets obrigatórios.
  *
  * Comportamento:
- *   - Em produção (NODE_ENV=production): LANÇA se required+ausente
- *   - Em dev: WARN mas permite continuar (graceful degradation)
+ *   - Não lança NUNCA (serviços precisam subir pro Cloud Run não matar
+ *     o container por startup probe timeout). Secrets faltantes viram
+ *     LOG WARN/ERROR e o /health reflete. O primeiro request que precisa
+ *     do secret vai falhar com erro claro, mas o servidor HTTP está up.
  *
- * Chamado em src/index.ts e src/worker.ts logo no boot.
+ * Chamado em src/index.ts e src/worker.ts — DEPOIS do listen, não antes.
  */
 export function validateStartupSecrets(): void {
   const isProd = process.env.NODE_ENV === 'production';
@@ -164,10 +166,12 @@ export function validateStartupSecrets(): void {
 
     if (isProd) {
       logger.error(
-        `[Secrets] FATAL: required secrets missing in production: ${names}. ` +
-        `Check Cloud Run --set-secrets mapping against Secret Manager.`,
+        `[Secrets] required secrets MISSING in production: ${names}. ` +
+        `Check Cloud Run --set-secrets mapping. Server will run in degraded ` +
+        `mode — requests depending on these secrets will fail with 5xx until fixed.`,
       );
-      throw new Error(`[Secrets] Missing required: ${names}`);
+      // NÃO lança. Container precisa subir pro Cloud Run aceitar /health.
+      return;
     }
 
     logger.warn(

@@ -2,23 +2,30 @@
  * Worker Entry Point — BookAgent Processing Queue
  *
  * Processo independente que consome jobs da fila BullMQ.
- * Pode rodar na mesma máquina que o API server ou em Railway separado.
+ * Roda como Cloud Run Service (always-on) com mini HTTP server pra health.
+ *
+ * BOOT NON-BLOCKING (crítico para Cloud Run startup probe):
+ *   1. Abre HTTP health server em $PORT IMEDIATAMENTE (<100ms)
+ *   2. Responde GET /health com 200 sempre (nunca falha startup probe)
+ *   3. Bootstrap do Orchestrator + Redis workers acontece async em background
+ *   4. Se Redis/Supabase demoram ou falham, /health fica em "degraded" mas
+ *      o container continua UP — pode recuperar quando Redis voltar
  *
  * Uso:
  *   npm run worker         (desenvolvimento)
  *   node dist/worker.js    (produção)
  *
- * Requisitos:
- *   REDIS_URL ou REDIS_HOST  (obrigatório)
- *
- * Opcionais:
- *   SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY  (persistência no banco)
- *   QUEUE_CONCURRENCY                          (padrão: 2)
- *   AI_PROVIDER + chaves de IA                (geração real de conteúdo)
- *   TTS_PROVIDER + TTS_SYNTHESIS_ENABLED      (síntese de áudio)
+ * Env:
+ *   REDIS_URL             (obrigatório; sem ele worker fica idle)
+ *   SUPABASE_URL          (opcional; persistência)
+ *   SUPABASE_SERVICE_ROLE_KEY (opcional; persistência)
+ *   QUEUE_CONCURRENCY     (padrão: 2)
+ *   AI_PROVIDER           (default vertex)
+ *   PORT                  (default 8080; Cloud Run seta automaticamente)
  */
 
 import { createServer } from 'node:http';
+import type { Worker as BullMQWorker } from 'bullmq';
 import { isRedisConfigured } from './queue/connection.js';
 import { validateStartupSecrets, auditSecrets } from './utils/secrets.js';
 import { createWorker } from './queue/worker.js';
@@ -30,7 +37,6 @@ import { ArtifactRepository } from './persistence/artifact-repository.js';
 import { StorageManager } from './persistence/storage-manager.js';
 import { logger } from './utils/logger.js';
 
-// --- Pipeline modules (todos os 15 estágios) ---
 import { IngestionModule } from './modules/ingestion/index.js';
 import { BookCompatibilityAnalysisModule } from './modules/book-compatibility-analysis/index.js';
 import { BookReverseEngineeringModule } from './modules/book-reverse-engineering/index.js';
@@ -48,113 +54,56 @@ import { RenderExportModule } from './modules/render-export/index.js';
 import { DeliveryModule } from './modules/delivery/index.js';
 
 // ============================================================================
-// Validar configuração
+// Mutable worker state (set by bootstrap, read by health endpoint)
 // ============================================================================
 
-// Startup secrets validation — lança em produção se required faltarem.
-// Em Cloud Run, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET e REDIS_URL
-// vêm do Secret Manager via --set-secrets. Se a mapeamento no cloudbuild.yaml
-// estiver errado, isso falha rápido aqui (antes de aceitar jobs).
-validateStartupSecrets();
-
-if (!isRedisConfigured()) {
-  logger.error('[Worker] REDIS_URL or REDIS_HOST not configured. Worker cannot start.');
-  process.exit(1);
+interface WorkerState {
+  pipelineWorker: BullMQWorker | null;
+  videoWorker: BullMQWorker | null;
+  supabaseClient: SupabaseClient | null;
+  bootstrapStarted: boolean;
+  bootstrapFinished: boolean;
+  bootstrapError: string | null;
+  redisConnected: boolean;
 }
 
-// ============================================================================
-// Montar Orchestrator com todos os módulos
-// ============================================================================
-
-const orchestrator = new Orchestrator();
-
-orchestrator.registerModule(new IngestionModule());
-orchestrator.registerModule(new BookCompatibilityAnalysisModule());
-orchestrator.registerModule(new BookReverseEngineeringModule());
-orchestrator.registerModule(new AssetExtractionModule());
-orchestrator.registerModule(new BrandingModule());
-orchestrator.registerModule(new CorrelationModule());
-orchestrator.registerModule(new SourceIntelligenceModule());
-orchestrator.registerModule(new NarrativeModule());
-orchestrator.registerModule(new OutputSelectionModule());
-orchestrator.registerModule(new MediaGenerationModule());
-orchestrator.registerModule(new BlogModule());
-orchestrator.registerModule(new LandingPageModule());
-orchestrator.registerModule(new PersonalizationModule());
-orchestrator.registerModule(new RenderExportModule());
-orchestrator.registerModule(new DeliveryModule());
+const state: WorkerState = {
+  pipelineWorker: null,
+  videoWorker: null,
+  supabaseClient: null,
+  bootstrapStarted: false,
+  bootstrapFinished: false,
+  bootstrapError: null,
+  redisConnected: false,
+};
 
 // ============================================================================
-// Persistência (opcional — graceful degradation se Supabase não configurado)
-// ============================================================================
-
-const supabaseClient = SupabaseClient.tryFromEnv();
-const jobRepo        = supabaseClient ? new JobRepository(supabaseClient)      : null;
-const artifactRepo   = supabaseClient ? new ArtifactRepository(supabaseClient) : null;
-const storageManager = new StorageManager();
-
-// Garantir diretórios de storage
-storageManager.ensureDirectories().catch((err) => {
-  logger.warn(`[Worker] Failed to create storage directories: ${err}`);
-});
-
-if (supabaseClient) {
-  logger.info('[Worker] Persistence: Supabase (jobs + artifacts will be persisted)');
-} else {
-  logger.info('[Worker] Persistence: in-memory only (SUPABASE_URL not configured)');
-}
-
-// ============================================================================
-// Iniciar Worker
-// ============================================================================
-
-const worker = createWorker({
-  orchestrator,
-  jobRepo,
-  artifactRepo,
-  storageManager,
-  supabaseClient,
-});
-
-if (!worker) {
-  logger.error('[Worker] Failed to create worker (Redis connection failed).');
-  process.exit(1);
-}
-
-// ============================================================================
-// Video Render Worker (dedicated queue)
-// ============================================================================
-
-const videoWorker = createVideoWorker({
-  supabase: supabaseClient,
-  outputDir: 'storage/outputs/video',
-  tempDir:   'storage/temp/video',
-});
-
-if (videoWorker) {
-  logger.info('[Worker] Video render worker started (bookagent-video-render).');
-} else {
-  logger.info('[Worker] Video render worker not started (same Redis required).');
-}
-
-logger.info('[Worker] BookAgent workers running. Waiting for jobs...');
-
-// ============================================================================
-// Health HTTP server — required for Cloud Run Service (mas também útil
-// em Railway). Expõe GET /health com status dos workers.
+// HEALTH SERVER — opens IMMEDIATELY, before any Redis/Supabase connection.
+// Cloud Run startup probe succeeds within ~1s.
 // ============================================================================
 
 const healthPort = Number(process.env.PORT ?? process.env.WORKER_HEALTH_PORT ?? 8080);
 
 const healthServer = createServer((req, res) => {
   if (req.url === '/health' || req.url === '/') {
+    // ALWAYS return 200 — even in degraded state. Cloud Run keeps the
+    // container alive; body tells caller what's actually running.
     const body = {
-      status: 'ok',
+      status: state.bootstrapFinished && state.redisConnected ? 'ok' : 'degraded',
       workers: {
-        pipeline: worker ? 'running' : 'stopped',
-        videoRender: videoWorker ? 'running' : 'stopped',
+        pipeline: state.pipelineWorker ? 'running' : 'stopped',
+        videoRender: state.videoWorker ? 'running' : 'stopped',
       },
-      persistence: supabaseClient ? 'supabase' : 'in-memory',
+      bootstrap: {
+        started: state.bootstrapStarted,
+        finished: state.bootstrapFinished,
+        error: state.bootstrapError,
+      },
+      redis: {
+        configured: isRedisConfigured(),
+        connected: state.redisConnected,
+      },
+      persistence: state.supabaseClient ? 'supabase' : 'in-memory',
       uptime: process.uptime(),
       secrets: auditSecrets(),
     };
@@ -167,8 +116,115 @@ const healthServer = createServer((req, res) => {
 });
 
 healthServer.listen(healthPort, () => {
-  logger.info(`[Worker] Health server listening on :${healthPort} (GET /health)`);
+  logger.info(`[Worker] Health server listening on :${healthPort} — bootstrap starting async`);
+  // Fire-and-forget bootstrap. If it throws, health endpoint reflects but
+  // HTTP server keeps responding — container stays up.
+  bootstrap().catch((err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    state.bootstrapError = msg;
+    state.bootstrapFinished = true;
+    logger.error(`[Worker] Bootstrap failed (non-fatal): ${msg}`);
+  });
 });
+
+// ============================================================================
+// ASYNC BOOTSTRAP — runs after HTTP server is listening
+// ============================================================================
+
+async function bootstrap(): Promise<void> {
+  state.bootstrapStarted = true;
+  logger.info('[Worker] Bootstrap started');
+
+  // 1. Validate secrets (log only, never throws)
+  validateStartupSecrets();
+
+  // 2. Setup Orchestrator with all 15 pipeline modules
+  const orchestrator = new Orchestrator();
+  orchestrator.registerModule(new IngestionModule());
+  orchestrator.registerModule(new BookCompatibilityAnalysisModule());
+  orchestrator.registerModule(new BookReverseEngineeringModule());
+  orchestrator.registerModule(new AssetExtractionModule());
+  orchestrator.registerModule(new BrandingModule());
+  orchestrator.registerModule(new CorrelationModule());
+  orchestrator.registerModule(new SourceIntelligenceModule());
+  orchestrator.registerModule(new NarrativeModule());
+  orchestrator.registerModule(new OutputSelectionModule());
+  orchestrator.registerModule(new MediaGenerationModule());
+  orchestrator.registerModule(new BlogModule());
+  orchestrator.registerModule(new LandingPageModule());
+  orchestrator.registerModule(new PersonalizationModule());
+  orchestrator.registerModule(new RenderExportModule());
+  orchestrator.registerModule(new DeliveryModule());
+
+  // 3. Supabase persistence (optional — graceful degradation)
+  state.supabaseClient = SupabaseClient.tryFromEnv();
+  const jobRepo = state.supabaseClient ? new JobRepository(state.supabaseClient) : null;
+  const artifactRepo = state.supabaseClient ? new ArtifactRepository(state.supabaseClient) : null;
+  const storageManager = new StorageManager();
+
+  storageManager.ensureDirectories().catch((err) => {
+    logger.warn(`[Worker] Failed to create storage dirs: ${err}`);
+  });
+
+  if (state.supabaseClient) {
+    logger.info('[Worker] Persistence: Supabase');
+  } else {
+    logger.info('[Worker] Persistence: in-memory only (SUPABASE_URL not set)');
+  }
+
+  // 4. Redis check — without Redis the worker can't consume jobs, but the
+  // container stays up so you can see the problem via /health.
+  if (!isRedisConfigured()) {
+    logger.warn(
+      '[Worker] REDIS_URL not set — worker will not consume jobs. ' +
+      'Add REDIS_URL via Secret Manager and the next container boot will connect.',
+    );
+    state.bootstrapFinished = true;
+    return;
+  }
+
+  // 5. Create BullMQ workers
+  try {
+    const pipelineWorker = createWorker({
+      orchestrator,
+      jobRepo,
+      artifactRepo,
+      storageManager,
+      supabaseClient: state.supabaseClient,
+    });
+
+    if (!pipelineWorker) {
+      logger.error('[Worker] createWorker returned null — Redis connection failed');
+      state.bootstrapError = 'Pipeline worker failed to initialize (Redis issue)';
+      state.bootstrapFinished = true;
+      return;
+    }
+
+    state.pipelineWorker = pipelineWorker;
+    state.redisConnected = true;
+
+    const videoWorker = createVideoWorker({
+      supabase: state.supabaseClient,
+      outputDir: 'storage/outputs/video',
+      tempDir: 'storage/temp/video',
+    });
+
+    if (videoWorker) {
+      state.videoWorker = videoWorker;
+      logger.info('[Worker] Video render worker started');
+    } else {
+      logger.info('[Worker] Video render worker not started');
+    }
+
+    logger.info('[Worker] Bootstrap complete — consuming BullMQ jobs');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    state.bootstrapError = msg;
+    logger.error(`[Worker] Failed to create workers: ${msg}`);
+  }
+
+  state.bootstrapFinished = true;
+}
 
 // ============================================================================
 // Graceful shutdown
@@ -176,11 +232,9 @@ healthServer.listen(healthPort, () => {
 
 async function shutdown(signal: string): Promise<void> {
   logger.info(`[Worker] Received ${signal}. Shutting down gracefully...`);
-
-  // Parar de aceitar novos jobs, aguardar os em andamento
   await Promise.all([
-    worker?.close(),
-    videoWorker?.close(),
+    state.pipelineWorker?.close(),
+    state.videoWorker?.close(),
     new Promise<void>((resolve) => healthServer.close(() => resolve())),
   ]);
   logger.info('[Worker] All workers stopped. In-flight jobs completed.');
@@ -188,4 +242,4 @@ async function shutdown(signal: string): Promise<void> {
 }
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT',  () => shutdown('SIGINT'));
+process.on('SIGINT', () => shutdown('SIGINT'));
