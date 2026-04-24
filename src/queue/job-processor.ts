@@ -26,6 +26,12 @@ import { enqueueVideoRender } from './video-queue.js';
 import { isCloudTasksConfigured } from './cloud-tasks.js';
 import { checkAndRecordUsage } from '../modules/billing/limit-checker.js';
 import { recordUsage } from '../modules/billing/usage-meter.js';
+import {
+  createJob as createJobInFirestore,
+  updateJob as updateJobInFirestore,
+  saveArtifact as saveArtifactInFirestore,
+  incrementCredits as incrementCreditsInFirestore,
+} from '../persistence/google-persistence.js';
 import { UsageEventType, LimitCheckResult } from '../domain/entities/billing.js';
 import { TenantRole, PLAN_FEATURES, PLAN_TENANT_LIMITS, LearningScope } from '../domain/entities/tenant.js';
 import type { TenantContext } from '../domain/entities/tenant.js';
@@ -111,9 +117,34 @@ export async function executePipelineForTask(
     }
   });
 
+  // Dual-write: registra também no Firestore (fonte primária do dashboard)
+  await safeExec('firestore createJob', async () => {
+    const qt = payload.tenantContext;
+    await createJobInFirestore({
+      jobId,
+      tenantId: qt?.tenantId ?? jobId,
+      userId: qt?.userId ?? jobId,
+      inputType: (type as 'pdf' | 'video' | 'audio' | 'pptx' | 'document') ?? 'pdf',
+      inputFileUrl: fileUrl ?? null,
+      status: 'pending',
+      currentStage: null,
+      stageIndex: -1,
+      totalStages: 17,
+      errorMessage: null,
+      selectedFormats: userContext.selectedFormats
+        ? userContext.selectedFormats.split(',').map((s) => s.trim()).filter(Boolean)
+        : [],
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+    });
+  });
+
   // Marcar como processing
   await safeExec('updateStatus processing', async () => {
     await jobRepo?.updateStatus(jobId, 'processing');
+  });
+  await safeExec('firestore processing', async () => {
+    await updateJobInFirestore(jobId, { status: 'processing' });
   });
 
   // Build TenantContext for credit checks (from task payload)
@@ -188,6 +219,16 @@ export async function executePipelineForTask(
         await jobRepo?.completeJob(jobId, result, durationMs);
       });
 
+      // Dual-write: atualiza Firestore (status + completion time)
+      await safeExec('firestore completeJob', async () => {
+        await updateJobInFirestore(jobId, {
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+          currentStage: null,
+          stageIndex: 17,
+        });
+      });
+
       // Persist asset URL map for video rendering (if available)
       const resultAny = result as unknown as Record<string, unknown>;
       const assetUrlMap = resultAny.assetUrlMap as Record<string, string> | undefined;
@@ -217,6 +258,44 @@ export async function executePipelineForTask(
 
         await safeExec('saveFiles', async () => {
           await storageManager?.saveArtifactFiles(artifacts);
+        });
+
+        // Dual-write: grava artifacts no Firestore com tenantId denormalizado
+        // pra a galeria do dashboard encontrar por tenant sem precisar de JOIN.
+        const tid = tenantCtx?.tenantId ?? jobId;
+        await safeExec('firestore saveArtifacts', async () => {
+          await Promise.all(
+            artifacts.map((a) =>
+              saveArtifactInFirestore({
+                artifactId: a.id,
+                jobId,
+                tenantId: tid,
+                artifactType: a.artifactType,
+                exportFormat: a.exportFormat ?? null,
+                title: a.title ?? a.artifactType,
+                sizeBytes: a.sizeBytes ?? null,
+                publicUrl: (a as unknown as { publicUrl?: string }).publicUrl ?? null,
+                filePath: (a as unknown as { filePath?: string }).filePath ?? null,
+                mimeType: inferMimeTypeFromArtifact(a),
+                status: (a.status === 'valid' || a.status === 'partial' || a.status === 'invalid')
+                  ? a.status
+                  : 'valid',
+              }),
+            ),
+          );
+        });
+      }
+
+      // Dual-write: incrementa créditos consumidos no profile Firestore
+      if (tenantCtx) {
+        await safeExec('firestore incrementCredits', async () => {
+          await incrementCreditsInFirestore(tenantCtx.userId, 'jobsUsed', 1);
+          const renderCount = artifacts.filter(
+            (a) => a.artifactType === 'media-render-spec',
+          ).length;
+          if (renderCount > 0) {
+            await incrementCreditsInFirestore(tenantCtx.userId, 'rendersUsed', renderCount);
+          }
         });
       }
 
@@ -361,6 +440,13 @@ export async function executePipelineForTask(
       await safeExec('failJob', async () => {
         await jobRepo?.failJob(jobId, job.error ?? 'Pipeline failed without error message');
       });
+      await safeExec('firestore failJob', async () => {
+        await updateJobInFirestore(jobId, {
+          status: 'failed',
+          errorMessage: job.error ?? 'Pipeline failed without error message',
+          completedAt: new Date().toISOString(),
+        });
+      });
 
       if (webhookUrl) {
         await sendWebhook(webhookUrl, {
@@ -388,6 +474,13 @@ export async function executePipelineForTask(
     await safeExec('failJob', async () => {
       await jobRepo?.failJob(jobId, message);
     });
+    await safeExec('firestore failJob exception', async () => {
+      await updateJobInFirestore(jobId, {
+        status: 'failed',
+        errorMessage: message,
+        completedAt: new Date().toISOString(),
+      });
+    });
 
     if (webhookUrl) {
       await sendWebhook(webhookUrl, {
@@ -401,6 +494,29 @@ export async function executePipelineForTask(
 
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Helper — infer MIME type from artifact shape (used by Firestore writes)
+// ---------------------------------------------------------------------------
+function inferMimeTypeFromArtifact(a: {
+  artifactType: string;
+  exportFormat?: string | null;
+  publicUrl?: string;
+  filePath?: string;
+}): string | null {
+  const url = (a.publicUrl ?? a.filePath ?? '').toLowerCase();
+  if (url.endsWith('.mp4') || url.endsWith('.mov')) return 'video/mp4';
+  if (url.endsWith('.webm')) return 'video/webm';
+  if (url.endsWith('.png')) return 'image/png';
+  if (url.endsWith('.jpg') || url.endsWith('.jpeg')) return 'image/jpeg';
+  if (url.endsWith('.pdf')) return 'application/pdf';
+  if (url.endsWith('.mp3')) return 'audio/mpeg';
+  if (a.artifactType.toUpperCase().includes('VIDEO')) return 'video/mp4';
+  if (a.exportFormat === 'html') return 'text/html';
+  if (a.exportFormat === 'json') return 'application/json';
+  if (a.exportFormat === 'markdown') return 'text/markdown';
+  return null;
 }
 
 // Alias de compatibilidade — código antigo importava processBookAgentJob

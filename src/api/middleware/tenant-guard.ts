@@ -19,6 +19,12 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { TenantContext } from '../../domain/entities/tenant.js';
 import {
+  TenantRole,
+  PLAN_FEATURES,
+  PLAN_TENANT_LIMITS,
+  LearningScope,
+} from '../../domain/entities/tenant.js';
+import {
   resolveTenantContext,
   createDefaultTenantContext,
 } from '../../core/tenant-resolver.js';
@@ -61,9 +67,27 @@ export async function tenantGuard(
   next: NextFunction,
 ): Promise<void> {
   try {
+    // Firebase path: quando authUser.id é Firebase UID, tratamos como solo
+    // tenant (tenantId = userId = uid). Evita lookup Supabase desnecessário
+    // e é consistente com o schema Firestore (profiles/{uid}).
+    if (req.authUser?.id) {
+      const tier: 'starter' = 'starter';
+      req.tenantContext = {
+        tenantId: req.authUser.id,
+        userId: req.authUser.id,
+        userRole: TenantRole.OWNER,
+        planTier: tier,
+        features: PLAN_FEATURES[tier],
+        limits: PLAN_TENANT_LIMITS[tier],
+        learningScope: LearningScope.TENANT,
+      };
+      logger.debug(`[TenantGuard] firebase-uid tenant=${req.authUser.id}`);
+      next();
+      return;
+    }
+
     const tenantContext = await resolveTenantContext(
       {
-        // JWT auth user takes priority over headers
         authUserId: req.authUser?.id,
         tenantIdHeader: asString(req.headers['x-tenant-id']),
         userIdHeader: req.authUser?.id ?? asString(req.headers['x-user-id']),
@@ -80,7 +104,6 @@ export async function tenantGuard(
       `user=${tenantContext.userId} plan=${tenantContext.planTier}`,
     );
   } catch (err) {
-    // Fallback: create default context
     logger.warn(`[TenantGuard] Failed to resolve tenant: ${err}`);
     req.tenantContext = createDefaultTenantContext();
   }

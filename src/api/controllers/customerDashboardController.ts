@@ -16,16 +16,21 @@
 import type { Request, Response } from 'express';
 import { sendSuccess, sendError } from '../helpers/response.js';
 import {
-  getOverview,
-  getJobList,
-  getJobDetail,
+  // Legacy (Supabase) — ainda usado por /usage, /billing, /insights,
+  // /publications, /campaigns enquanto esses módulos não migram
   getUsageView,
   getBillingView,
   getInsightsView,
   getPublicationsOverview,
   getCampaignsOverview,
-  getGallery,
 } from '../../modules/customer-dashboard/index.js';
+import {
+  // Firestore-backed — primários para /overview, /jobs, /jobs/:id, /gallery
+  getOverviewFromFirestore,
+  getJobListFromFirestore,
+  getJobDetailFromFirestore,
+  getGalleryFromFirestore,
+} from '../../modules/customer-dashboard/firestore-views.js';
 import { createDefaultTenantContext } from '../../core/tenant-resolver.js';
 import { logger } from '../../utils/logger.js';
 
@@ -55,7 +60,7 @@ function getTenantCtx(req: Request) {
 
 export async function getDashboardOverview(req: Request, res: Response): Promise<void> {
   try {
-    const overview = await getOverview(getTenantCtx(req), supabaseClient);
+    const overview = await getOverviewFromFirestore(getTenantCtx(req));
     sendSuccess(res, overview);
   } catch (err) {
     logger.error(`[customerDashboard] overview error: ${err}`);
@@ -70,7 +75,7 @@ export async function getDashboardOverview(req: Request, res: Response): Promise
 export async function getDashboardJobs(req: Request, res: Response): Promise<void> {
   try {
     const limit = req.query.limit ? Math.min(Number(req.query.limit), 100) : 20;
-    const jobs = await getJobList(getTenantCtx(req), supabaseClient, limit);
+    const jobs = await getJobListFromFirestore(getTenantCtx(req), limit);
     sendSuccess(res, { jobs, total: jobs.length });
   } catch (err) {
     sendError(res, 'INTERNAL_ERROR', 'Falha ao listar jobs', 500, err);
@@ -85,7 +90,7 @@ export async function getDashboardJobDetail(req: Request, res: Response): Promis
   const { jobId } = req.params;
 
   try {
-    const detail = await getJobDetail(getTenantCtx(req), jobId, supabaseClient);
+    const detail = await getJobDetailFromFirestore(getTenantCtx(req), jobId);
     if (!detail) {
       sendError(res, 'NOT_FOUND', 'Job não encontrado', 404);
       return;
@@ -169,7 +174,7 @@ export async function getDashboardCampaigns(req: Request, res: Response): Promis
 
 export async function getDashboardGallery(req: Request, res: Response): Promise<void> {
   try {
-    const items = await getGallery(getTenantCtx(req), supabaseClient, {
+    const items = await getGalleryFromFirestore(getTenantCtx(req), {
       type: typeof req.query.type === 'string' ? req.query.type : undefined,
       onlyWithDownload: req.query.onlyWithDownload === 'true',
       limit: req.query.limit ? Math.min(Number(req.query.limit), 200) : 50,
