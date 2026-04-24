@@ -9,7 +9,7 @@ import {
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { EmptyState } from "@/components/dashboard/EmptyState";
-import { useRealtimeJobs } from "@/hooks/useRealtimeJobs";
+import { useRealtimeJobs } from "@/hooks/useJobsList";
 import { extractMaterialName } from "@/lib/materialName";
 
 type FilterKey = "ALL" | "PROCESSING" | "AWAITING_REVIEW" | "APPROVED" | "PUBLISHED" | "FAILED";

@@ -1,26 +1,30 @@
 "use client";
 
 /**
- * Auth Context — provides user session state across the app.
+ * Auth Context — provê o estado de sessão do Firebase pra todo o app.
  *
- * Wraps the app with Supabase auth state listener.
- * Provides useAuth() hook for consuming user/session/loading.
+ * Substitui o antigo AuthProvider do Supabase. Consumido via useAuth().
  */
 
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
-import { getSupabaseBrowser } from "@/lib/supabase/client";
-import type { User, Session } from "@supabase/supabase-js";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import { onAuthStateChanged, signOut as firebaseSignOut, type User } from "firebase/auth";
+import { getFirebaseAuth } from "@/lib/firebase/client";
 
 interface AuthContextValue {
   user: User | null;
-  session: Session | null;
   loading: boolean;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   user: null,
-  session: null,
   loading: true,
   signOut: async () => {},
 });
@@ -31,40 +35,26 @@ export function useAuth() {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const supabase = getSupabaseBrowser();
-
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
+    const auth = getFirebaseAuth();
+    // onAuthStateChanged dispara imediatamente com o user atual (ou null),
+    // depois escuta mudanças (login/logout/token refresh).
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
       setLoading(false);
     });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, s) => {
-        setSession(s);
-        setUser(s?.user ?? null);
-        setLoading(false);
-      },
-    );
-
-    return () => subscription.unsubscribe();
+    return () => unsub();
   }, []);
 
   const signOut = useCallback(async () => {
-    const supabase = getSupabaseBrowser();
-    await supabase.auth.signOut();
+    await firebaseSignOut(getFirebaseAuth());
     setUser(null);
-    setSession(null);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   );

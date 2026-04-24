@@ -16,7 +16,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from 'react';
-import { getSupabaseBrowser } from '@/lib/supabase/client';
+import { getFirebaseAuth } from '@/lib/firebase/client';
 
 // ---------------------------------------------------------------------------
 // Types — espelham os event payloads definidos no backend
@@ -121,10 +121,9 @@ export function useJobEvents(jobId: string | undefined): UseJobEventsResult {
       setStatus('connecting');
       setError(null);
 
-      // EventSource não aceita headers — token vai via query param
-      const supabase = getSupabaseBrowser();
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
+      // EventSource não aceita headers — token (Firebase ID token) vai via query param
+      const user = getFirebaseAuth().currentUser;
+      const token = user ? await user.getIdToken() : null;
       if (!token) {
         setError('Sem sessão ativa. Faça login novamente.');
         setStatus('error');

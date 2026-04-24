@@ -437,20 +437,20 @@ async function request<T>(
 
   const apiKey = process.env.NEXT_PUBLIC_BOOKAGENT_API_KEY ?? "";
 
-  // Get Supabase session token + user id for authenticated requests.
-  // x-user-id is a fallback for when the backend can't validate the JWT
-  // (e.g. SUPABASE_JWT_SECRET not configured on Railway).
+  // Firebase ID token + uid. O backend valida via firebase-admin em
+  // firebaseAuthMiddleware; x-user-id é fallback só pra dev sem Firebase.
   let accessToken = "";
   let userId = "";
   if (typeof window !== "undefined") {
     try {
-      const { getSupabaseBrowser } = await import("@/lib/supabase/client");
-      const supabase = getSupabaseBrowser();
-      const { data: { session } } = await supabase.auth.getSession();
-      accessToken = session?.access_token ?? "";
-      userId = session?.user?.id ?? "";
+      const { getFirebaseAuth } = await import("@/lib/firebase/client");
+      const user = getFirebaseAuth().currentUser;
+      if (user) {
+        accessToken = await user.getIdToken();
+        userId = user.uid;
+      }
     } catch {
-      // Supabase not available — fall back to API key
+      // Firebase não inicializado — cai no api key / auth-less
     }
   }
 

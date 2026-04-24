@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { bookagent, type InputType, type UserContext } from "@/lib/bookagentApi";
-import { getSupabaseBrowser } from "@/lib/supabase/client";
+import { getFirebaseAuth } from "@/lib/firebase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -176,37 +176,63 @@ export function UploadWizard() {
     update({ uploadStatus: "uploading", uploadProgress: 10, error: null });
 
     try {
-      const supabase = getSupabaseBrowser();
-      const path = `pending/${crypto.randomUUID()}-${file.name}`;
+      // 1. Pede signed URL pro backend (/api/v1/uploads/signed-url)
+      const user = getFirebaseAuth().currentUser;
+      if (!user) {
+        update({ uploadStatus: "error", error: "Sessão expirada. Faça login.", uploadProgress: 0 });
+        return;
+      }
+      const token = await user.getIdToken();
 
-      update({ uploadProgress: 30 });
+      update({ uploadProgress: 20 });
 
-      const { error: uploadError } = await supabase.storage
-        .from("uploads")
-        .upload(path, file, { contentType: file.type, upsert: false });
+      const signedRes = await fetch("/api/v1/uploads/signed-url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          fileName: file.name,
+          contentType: file.type || "application/octet-stream",
+        }),
+      });
 
-      if (uploadError) {
-        update({ uploadStatus: "error", error: uploadError.message, uploadProgress: 0 });
+      if (!signedRes.ok) {
+        update({ uploadStatus: "error", error: `Falha ao gerar URL (${signedRes.status})`, uploadProgress: 0 });
+        return;
+      }
+      const signedJson = await signedRes.json();
+      const { uploadUrl, gcsPath, publicUrl, path } = signedJson.data ?? {};
+
+      if (!uploadUrl || !gcsPath) {
+        update({ uploadStatus: "error", error: "Resposta inválida do servidor", uploadProgress: 0 });
         return;
       }
 
-      update({ uploadProgress: 70 });
+      update({ uploadProgress: 40 });
 
-      const { data: signed, error: signError } = await supabase.storage
-        .from("uploads")
-        .createSignedUrl(path, 7200);
+      // 2. PUT direto no GCS via signed URL
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
 
-      if (signError || !signed) {
-        update({ uploadStatus: "error", error: "Falha ao gerar link seguro", uploadProgress: 0 });
+      if (!putRes.ok) {
+        update({ uploadStatus: "error", error: `Upload falhou (${putRes.status})`, uploadProgress: 0 });
         return;
       }
 
       update({
-        fileUrl: signed.signedUrl,
+        // Pipeline consome gs:// URI — não precisa de signed URL de download
+        fileUrl: gcsPath,
         filePath: path,
         uploadStatus: "success",
         uploadProgress: 100,
-      });
+        // publicUrl exposto pra debug; não usado no pipeline
+        publicUrl,
+      } as Parameters<typeof update>[0]);
 
       delete (window as unknown as Record<string, File>).__pendingUploadFile;
     } catch (err) {

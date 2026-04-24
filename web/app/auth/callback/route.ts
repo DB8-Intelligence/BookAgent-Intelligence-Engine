@@ -1,46 +1,20 @@
 /**
- * Auth Callback — handles Supabase email confirmation redirect.
+ * Auth Callback — não mais necessário com Firebase Auth.
  *
- * When a user clicks the confirmation link in their email,
- * Supabase redirects to this route with a code parameter.
- * We exchange the code for a session and redirect to the dashboard.
+ * Firebase Auth usa `signInWithPopup` (fluxo totalmente client-side) ou
+ * `signInWithRedirect` (que também retorna pro mesmo domínio e é
+ * interceptado pelo SDK client automaticamente). Não há code exchange
+ * server-side como o Supabase fazia.
+ *
+ * Mantemos a rota só como fallback de redirect pra backward-compat de
+ * links antigos. Redireciona pra /dashboard (ou /login se user não logado).
  */
 
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get('code');
-  const next = searchParams.get('next') ?? '/dashboard';
-
-  if (code) {
-    const response = NextResponse.redirect(`${origin}${next}`);
-
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return request.cookies.getAll();
-          },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              response.cookies.set(name, value, options);
-            });
-          },
-        },
-      },
-    );
-
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      return response;
-    }
-  }
-
-  // Error or no code — redirect to login with error
-  return NextResponse.redirect(`${origin}/login?error=auth_failed`);
+  const { origin, searchParams } = new URL(request.url);
+  const next = searchParams.get("next") ?? "/dashboard";
+  return NextResponse.redirect(`${origin}${next}`);
 }

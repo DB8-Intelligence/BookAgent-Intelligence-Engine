@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { getSupabaseBrowser } from "@/lib/supabase/client";
+import {
+  createUserWithEmailAndPassword,
+  updateProfile,
+  signInWithPopup,
+  GoogleAuthProvider,
+} from "firebase/auth";
+import { getFirebaseAuth } from "@/lib/firebase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -17,6 +23,21 @@ function GoogleIcon() {
   );
 }
 
+function humanizeAuthError(code: string | undefined, fallback: string): string {
+  switch (code) {
+    case "auth/email-already-in-use":
+      return "Esse email já está cadastrado. Tente fazer login.";
+    case "auth/invalid-email":
+      return "Email inválido.";
+    case "auth/weak-password":
+      return "Senha muito fraca. Use ao menos 6 caracteres.";
+    case "auth/popup-closed-by-user":
+      return "Cadastro cancelado.";
+    default:
+      return fallback;
+  }
+}
+
 export default function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -24,23 +45,18 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
 
   async function handleGoogleSignIn() {
     setError(null);
     setGoogleLoading(true);
-
-    const supabase = getSupabaseBrowser();
-
-    const { error: authError } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-
-    if (authError) {
-      setError(authError.message);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(getFirebaseAuth(), provider);
+      // Profile é auto-provisionado no backend no primeiro request autenticado
+      window.location.href = "/dashboard";
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      setError(humanizeAuthError(code, "Erro ao criar conta com Google."));
       setGoogleLoading(false);
     }
   }
@@ -49,43 +65,22 @@ export default function RegisterPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-
-    const supabase = getSupabaseBrowser();
-
-    const { error: authError } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: {
-        data: { name: name.trim() },
-      },
-    });
-
-    if (authError) {
-      setError(authError.message);
+    try {
+      const cred = await createUserWithEmailAndPassword(
+        getFirebaseAuth(),
+        email.trim(),
+        password,
+      );
+      if (name.trim()) {
+        await updateProfile(cred.user, { displayName: name.trim() });
+      }
+      // Firebase loga o usuário automaticamente após signup
+      window.location.href = "/dashboard";
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      setError(humanizeAuthError(code, (err as Error).message ?? "Erro ao criar conta."));
       setLoading(false);
-      return;
     }
-
-    setSuccess(true);
-    setLoading(false);
-  }
-
-  if (success) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <div className="max-w-sm mx-auto px-6 w-full text-center">
-          <div className="text-4xl mb-4">📬</div>
-          <h1 className="text-xl font-bold text-slate-900 mb-2">Verifique seu email</h1>
-          <p className="text-sm text-slate-500 mb-6">
-            Enviamos um link de confirmacao para <strong>{email}</strong>.
-            Clique no link para ativar sua conta.
-          </p>
-          <Link href="/login">
-            <Button variant="outline" className="w-full">Voltar para login</Button>
-          </Link>
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -100,7 +95,7 @@ export default function RegisterPage() {
           Criar conta
         </h1>
         <p className="text-sm text-slate-500 text-center mb-6">
-          Comece a transformar seus books em conteudo.
+          Comece a transformar seus books em conteúdo.
         </p>
 
         <Button
@@ -159,7 +154,7 @@ export default function RegisterPage() {
             <Input
               id="password"
               type="password"
-              placeholder="Minimo 6 caracteres"
+              placeholder="Mínimo 6 caracteres"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -181,7 +176,7 @@ export default function RegisterPage() {
         </form>
 
         <p className="text-sm text-slate-500 text-center mt-6">
-          Ja tem uma conta?{" "}
+          Já tem uma conta?{" "}
           <Link href="/login" className="text-slate-900 font-medium underline">
             Entrar
           </Link>

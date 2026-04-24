@@ -2,7 +2,12 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { getSupabaseBrowser } from "@/lib/supabase/client";
+import {
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+} from "firebase/auth";
+import { getFirebaseAuth } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/auth/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,36 +23,47 @@ function GoogleIcon() {
   );
 }
 
+function humanizeAuthError(code: string | undefined, fallback: string): string {
+  switch (code) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+      return "Email ou senha incorretos.";
+    case "auth/too-many-requests":
+      return "Muitas tentativas. Tente novamente em alguns minutos.";
+    case "auth/user-disabled":
+      return "Conta desativada. Contate o suporte.";
+    case "auth/popup-closed-by-user":
+      return "Login cancelado.";
+    default:
+      return fallback;
+  }
+}
+
 export default function LoginPage() {
-  const { session, loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  // Redireciona se ja estiver logado
   useEffect(() => {
-    if (!authLoading && session) {
+    if (!authLoading && user) {
       window.location.href = "/dashboard";
     }
-  }, [authLoading, session]);
+  }, [authLoading, user]);
 
   async function handleGoogleSignIn() {
     setError(null);
     setGoogleLoading(true);
-
-    const supabase = getSupabaseBrowser();
-
-    const { error: authError } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-
-    if (authError) {
-      setError(authError.message);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(getFirebaseAuth(), provider);
+      window.location.href = "/dashboard";
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      setError(humanizeAuthError(code, "Erro ao entrar com Google."));
       setGoogleLoading(false);
     }
   }
@@ -56,26 +72,14 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-
-    const supabase = getSupabaseBrowser();
-
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-
-    if (authError) {
-      setError(
-        authError.message === "Invalid login credentials"
-          ? "Email ou senha incorretos."
-          : authError.message,
-      );
+    try {
+      await signInWithEmailAndPassword(getFirebaseAuth(), email.trim(), password);
+      window.location.href = "/dashboard";
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      setError(humanizeAuthError(code, (err as Error).message ?? "Erro ao entrar."));
       setLoading(false);
-      return;
     }
-
-    // Full page reload para garantir que o middleware veja os cookies novos
-    window.location.href = "/dashboard";
   }
 
   return (
@@ -157,7 +161,7 @@ export default function LoginPage() {
         </form>
 
         <p className="text-sm text-slate-500 text-center mt-6">
-          Nao tem uma conta?{" "}
+          Não tem uma conta?{" "}
           <Link href="/register" className="text-slate-900 font-medium underline">
             Criar conta
           </Link>
