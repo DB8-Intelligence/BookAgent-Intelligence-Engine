@@ -35,6 +35,7 @@ import {
   type ArtifactDoc,
   type Profile,
 } from '../../persistence/google-persistence.js';
+import { materializePeriodReset } from '../billing/firestore-billing.js';
 import type { GalleryItem, GalleryFilters } from './dashboard-service.js';
 import { logger } from '../../utils/logger.js';
 
@@ -100,6 +101,10 @@ export async function getOverviewFromFirestore(
 ): Promise<CustomerDashboardOverview> {
   const uid = tenantCtx.userId;
   const tid = tenantCtx.tenantId;
+
+  // Se o período virou, grava os contadores zerados antes de ler o profile
+  // (best-effort — não bloqueia render se falhar)
+  await materializePeriodReset(uid).catch(() => {});
 
   // Profile (credits) + recent jobs em paralelo
   const [profile, recentJobsRaw] = await Promise.all([

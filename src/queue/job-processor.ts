@@ -30,8 +30,13 @@ import {
   createJob as createJobInFirestore,
   updateJob as updateJobInFirestore,
   saveArtifact as saveArtifactInFirestore,
-  incrementCredits as incrementCreditsInFirestore,
 } from '../persistence/google-persistence.js';
+import {
+  checkJobAllowed,
+  consumeJobCredit,
+  consumeRenderCredit,
+  CreditLimitError,
+} from '../modules/billing/firestore-billing.js';
 import { UsageEventType, LimitCheckResult } from '../domain/entities/billing.js';
 import { TenantRole, PLAN_FEATURES, PLAN_TENANT_LIMITS, LearningScope } from '../domain/entities/tenant.js';
 import type { TenantContext } from '../domain/entities/tenant.js';
@@ -164,8 +169,56 @@ export async function executePipelineForTask(
 
   const supabase = deps.supabaseClient ?? null;
 
-  // Credit check: verify tenant has remaining quota before processing
+  // Credit check: primary path é Firestore transaction (atômico por uid).
+  // Fallback Supabase rola só se não tem tenantCtx firebase-uid-like.
   if (tenantCtx) {
+    try {
+      // consumeJobCredit transação: valida limite + incrementa. Se estoura,
+      // lança CreditLimitError e o pipeline nem começa. Idempotência em
+      // Cloud Tasks retry: se createJob já rodou antes, este é o 2º retry
+      // e o consume vai rodar 2x — aceita-se a duplicação pra MVP; pra
+      // idempotência forte, marcar jobId como "credit-consumed" num flag.
+      await consumeJobCredit(tenantCtx.userId, 1);
+      logger.info(`[JobProcessor] credit consumed uid=${tenantCtx.userId}`);
+    } catch (err) {
+      if (err instanceof CreditLimitError) {
+        logger.warn(
+          `[JobProcessor] BLOCKED by Firestore credit limit: ${err.message} ` +
+          `(uid=${tenantCtx.userId}, remaining=${err.remaining}/${err.limit})`,
+        );
+
+        await safeExec('failJob credit block', async () => {
+          await jobRepo?.failJob(jobId, `Limite atingido: ${err.message}`);
+        });
+        await safeExec('firestore failJob credit', async () => {
+          await updateJobInFirestore(jobId, {
+            status: 'failed',
+            errorMessage: `Limite atingido: ${err.message}`,
+            completedAt: new Date().toISOString(),
+          });
+        });
+
+        if (webhookUrl) {
+          await sendWebhook(webhookUrl, {
+            source: 'bookagent',
+            timestamp: new Date().toISOString(),
+            jobId,
+            status: 'failed',
+            error: err.message,
+          });
+        }
+        return; // credit exhausted — bail out
+      }
+      // Erro diferente (Firestore offline, etc) → loga e cai no fallback
+      // Supabase abaixo. Preferimos deixar o user processar do que bloquear
+      // por falha de infra.
+      logger.error(
+        `[JobProcessor] Firestore credit check failed, falling back to Supabase: ${err}`,
+      );
+    }
+
+    // Supabase legacy path — registra usage event só pra analytics/billing
+    // legados (bookagent_monthly_usage). Não bloqueia: já consumimos acima.
     const creditCheck = await checkAndRecordUsage(
       tenantCtx,
       UsageEventType.JOB_CREATED,
@@ -175,8 +228,7 @@ export async function executePipelineForTask(
 
     if (creditCheck.result === LimitCheckResult.BLOCKED) {
       logger.warn(
-        `[JobProcessor] BLOCKED by credit limit: ${creditCheck.message} ` +
-        `(tenant=${tenantCtx.tenantId}, plan=${tenantCtx.planTier})`,
+        `[JobProcessor] Supabase secondary block: ${creditCheck.message}`,
       );
 
       await safeExec('failJob credit block', async () => {
@@ -286,17 +338,30 @@ export async function executePipelineForTask(
         });
       }
 
-      // Dual-write: incrementa créditos consumidos no profile Firestore
+      // Render credits — jobCredit já foi consumido no pre-flight, agora
+      // cobra os renders produzidos. consumeRenderCredit também faz check,
+      // mas se estourar aqui o job já completou: loga e segue (não rollback).
       if (tenantCtx) {
-        await safeExec('firestore incrementCredits', async () => {
-          await incrementCreditsInFirestore(tenantCtx.userId, 'jobsUsed', 1);
-          const renderCount = artifacts.filter(
-            (a) => a.artifactType === 'media-render-spec',
-          ).length;
-          if (renderCount > 0) {
-            await incrementCreditsInFirestore(tenantCtx.userId, 'rendersUsed', renderCount);
-          }
-        });
+        const renderCount = artifacts.filter(
+          (a) => a.artifactType === 'media-render-spec',
+        ).length;
+        if (renderCount > 0) {
+          await safeExec('firestore consume renders', async () => {
+            try {
+              await consumeRenderCredit(tenantCtx.userId, renderCount);
+            } catch (err) {
+              if (err instanceof CreditLimitError) {
+                logger.warn(
+                  `[JobProcessor] Render credit overflow uid=${tenantCtx.userId} ` +
+                  `tried=${renderCount} remaining=${err.remaining}. ` +
+                  `Artifact gerou mas ultrapassou limite — admin review.`,
+                );
+              } else {
+                throw err;
+              }
+            }
+          });
+        }
       }
 
       // Record usage for generated artifacts (best-effort)

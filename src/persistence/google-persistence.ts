@@ -120,16 +120,21 @@ export async function getProfile(uid: string): Promise<Profile | null> {
 
 /**
  * Upsert "just-in-time" do perfil na primeira login.
- * Se o doc não existe, cria com plano starter + créditos mensais.
+ * Se o doc não existe, cria com plano starter + limites derivados de
+ * PLAN_TENANT_LIMITS (fonte de verdade pros planos).
  */
 export async function ensureProfile(user: FirebaseUser): Promise<Profile> {
   const ref = firestore().collection(PROFILES).doc(user.uid);
   const snap = await ref.get();
   if (snap.exists) return snap.data() as Profile;
 
+  // Import tardio pra evitar ciclo (billing importa deste módulo também)
+  const { planLimitsFor } = await import('../modules/billing/firestore-billing.js');
+  const limits = planLimitsFor('starter');
+
   const now = new Date();
   const periodEnd = new Date(now);
-  periodEnd.setMonth(periodEnd.getMonth() + 1);
+  periodEnd.setDate(periodEnd.getDate() + 30);
 
   const profile: Profile = {
     uid: user.uid,
@@ -139,9 +144,9 @@ export async function ensureProfile(user: FirebaseUser): Promise<Profile> {
     planTier: 'starter',
     credits: {
       jobsUsed: 0,
-      jobsLimit: 1,
+      jobsLimit: limits.jobsLimit,
       rendersUsed: 0,
-      rendersLimit: 1,
+      rendersLimit: limits.rendersLimit,
       periodStart: now.toISOString(),
       periodEnd: periodEnd.toISOString(),
     },
@@ -149,7 +154,10 @@ export async function ensureProfile(user: FirebaseUser): Promise<Profile> {
     updatedAt: now.toISOString(),
   };
   await ref.set(profile);
-  logger.info(`[GooglePersistence] Profile provisioned for uid=${user.uid} plan=starter`);
+  logger.info(
+    `[GooglePersistence] Profile provisioned uid=${user.uid} plan=starter ` +
+    `limits=${limits.jobsLimit}j/${limits.rendersLimit}r`,
+  );
   return profile;
 }
 
