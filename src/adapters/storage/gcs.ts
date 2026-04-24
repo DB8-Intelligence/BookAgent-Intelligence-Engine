@@ -4,7 +4,7 @@
  * Storage nativo GCP usando @google-cloud/storage com Service Account.
  * Coexiste com LocalStorageAdapter e SupabaseStorageUploader — ativado
  * via env var GCS_ENABLED=true. Quando ligado, a pipeline lê PDFs direto
- * do bucket (gs://) sem round-trip por Supabase/Railway.
+ * do bucket (gs://) sem round-trip por storage externo.
  *
  * Vantagem quando processando no Cloud Run:
  *   - Arquivo e compute no mesmo datacenter → latência ~5ms

@@ -88,7 +88,7 @@ export interface GetSecretOptions {
  * Lê um secret via process.env. Lança se required=true e ausente.
  *
  * Em Cloud Run com --set-secrets, process.env.X vem do Secret Manager.
- * Em Railway/local, vem do .env ou env var normal.
+ * Em dev local, vem do .env ou env var exportada no shell.
  * O código não sabe nem precisa saber a origem — só que está no env.
  */
 export function getSecret(name: string, opts: GetSecretOptions = {}): string | undefined {

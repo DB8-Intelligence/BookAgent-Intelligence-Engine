@@ -24,8 +24,14 @@ import { SoundtrackCategory } from '../domain/entities/audio-plan.js';
 import { logger } from '../utils/logger.js';
 import { metrics } from '../observability/metrics.js';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { v4 as uuid } from 'uuid';
+import {
+  saveArtifact as saveArtifactInFirestore,
+  updateJob as updateJobInFirestore,
+  getJob as getJobFromFirestore,
+} from '../persistence/google-persistence.js';
+import { GCSStorageAdapter } from '../adapters/storage/gcs.js';
 
 // ============================================================================
 // Types
@@ -182,16 +188,36 @@ export async function processVideoRenderJob(
 
     const durationMs = Date.now() - startTime;
 
-    // 5. Persist .mp4 as artifact
+    // 5a. Upload .mp4 ao GCS public bucket (URL pública permanente)
+    const artifactId = uuid();
+    const gcsPath = `outputs/${jobId}/videos/${artifactId}.mp4`;
+    const artifactTitle = `Video: ${spec.format} (${result.resolution[0]}x${result.resolution[1]})`;
+    const artifactStatus: 'valid' | 'partial' | 'invalid' =
+      result.warnings.length > 0 ? 'partial' : 'valid';
+    let publicUrl: string | null = null;
+
+    try {
+      const gcs = new GCSStorageAdapter({});
+      const buf = readFileSync(result.outputPath);
+      publicUrl = await gcs.uploadPublic(gcsPath, buf, 'video/mp4');
+      logger.info(`[VideoProcessor] uploaded to GCS: ${publicUrl}`);
+    } catch (err) {
+      logger.warn(
+        `[VideoProcessor] GCS upload failed (arquivo local continua válido): ${(err as Error).message}`,
+      );
+    }
+
+    // 5b. Persistir no Supabase (analytics legacy — mantém visibilidade)
     if (deps.supabase) {
       const artifactRow = {
-        id: uuid(),
+        id: artifactId,
         job_id: jobId,
         artifact_type: 'VIDEO_RENDER',
         export_format: 'MP4',
         output_format: spec.format,
-        title: `Video: ${spec.format} (${result.resolution[0]}x${result.resolution[1]})`,
+        title: artifactTitle,
         file_path: result.outputPath,
+        public_url: publicUrl,
         size_bytes: result.sizeBytes,
         status: result.warnings.length > 0 ? 'PARTIAL' : 'VALID',
         warnings: result.warnings,
@@ -202,11 +228,36 @@ export async function processVideoRenderJob(
       try {
         await deps.supabase.insert('bookagent_job_artifacts', artifactRow);
       } catch (err) {
-        logger.warn(`[VideoProcessor] Failed to persist video artifact: ${err}`);
+        logger.warn(`[VideoProcessor] Failed to persist Supabase artifact: ${err}`);
       }
     }
 
-    // 6. Update status to completed
+    // 5c. Persistir no Firestore — fonte de verdade pra galeria do dashboard.
+    // tenantId denormalizado a partir de jobs/{jobId} pra permitir query
+    // direta `artifacts where tenantId == X` sem JOIN.
+    try {
+      const jobDoc = await getJobFromFirestore(jobId);
+      const tenantId = jobDoc?.tenantId ?? jobId;
+
+      await saveArtifactInFirestore({
+        artifactId,
+        jobId,
+        tenantId,
+        artifactType: 'VIDEO_RENDER',
+        exportFormat: 'mp4',
+        title: artifactTitle,
+        sizeBytes: result.sizeBytes,
+        publicUrl,
+        filePath: result.outputPath,
+        mimeType: 'video/mp4',
+        status: artifactStatus,
+      });
+      logger.info(`[VideoProcessor] Firestore artifact saved: ${artifactId} tenant=${tenantId}`);
+    } catch (err) {
+      logger.warn(`[VideoProcessor] Firestore artifact save failed: ${(err as Error).message}`);
+    }
+
+    // 6. Update status to completed (Supabase legacy + Firestore dual-write)
     await updateVideoStatus(deps.supabase, jobId, 'completed', {
       video_render_completed_at: new Date().toISOString(),
       video_render_output_path: result.outputPath,
@@ -214,6 +265,14 @@ export async function processVideoRenderJob(
       video_render_duration_seconds: result.durationSeconds,
       video_render_scene_count: result.sceneCount,
     });
+    try {
+      await updateJobInFirestore(jobId, {
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      logger.warn(`[VideoProcessor] Firestore job status update failed: ${(err as Error).message}`);
+    }
 
     // 7. Track metrics
     metrics.track('job_completed', {
@@ -267,6 +326,15 @@ export async function processVideoRenderJob(
     await updateVideoStatus(deps.supabase, jobId, 'failed', {
       video_render_error: message,
     });
+    try {
+      await updateJobInFirestore(jobId, {
+        status: 'failed',
+        errorMessage: message,
+        completedAt: new Date().toISOString(),
+      });
+    } catch (fireErr) {
+      logger.warn(`[VideoProcessor] Firestore failure update failed: ${(fireErr as Error).message}`);
+    }
 
     if (webhookUrl) {
       await sendVideoWebhook(webhookUrl, {

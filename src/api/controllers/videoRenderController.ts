@@ -361,11 +361,17 @@ export async function getVideoStatus(req: Request, res: Response): Promise<void>
 // ============================================================================
 // Helpers — Asset URL Resolution
 // ============================================================================
+//
+// Fallback legado: reconstrói URLs de páginas que ficaram no Supabase Storage
+// em jobs antigos. Novos jobs usam GCS direto (gs:// URIs no assetUrlMap
+// do Firestore). Este helper só dispara quando jobs pré-migração precisam
+// re-renderizar — se SUPABASE_URL não estiver configurado, retorna path vazio.
 
-const SUPABASE_URL = process.env.SUPABASE_URL ?? 'https://xhfiyukhjzwhqbacuyxq.supabase.co';
+const SUPABASE_URL = process.env.SUPABASE_URL ?? '';
 const BOOK_ASSETS_BUCKET = process.env.BOOK_ASSETS_BUCKET ?? 'book-assets';
 
 function buildPageUrl(processingId: string, pageNum: number): string {
+  if (!SUPABASE_URL) return '';
   return `${SUPABASE_URL}/storage/v1/object/public/${BOOK_ASSETS_BUCKET}/${processingId}/pages/png/page-${pageNum}.png`;
 }
 
