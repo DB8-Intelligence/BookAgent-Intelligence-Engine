@@ -51,11 +51,28 @@
 #
 # Secrets (rodar UMA VEZ por secret):
 #   printf "sk-ant-..."         | gcloud secrets create anthropic-key           --data-file=-
+#   # NEXT_PUBLIC_FIREBASE_* — inlineados no bundle em build-time + runtime
+#   printf "AIzaSy..."          | gcloud secrets create firebase-api-key        --data-file=-
+#   printf "bookreel.firebaseapp.com" | gcloud secrets create firebase-auth-domain --data-file=-
+#
+# Setup Firebase (rodar UMA VEZ no projeto):
+#   # Converte o projeto GCP em projeto Firebase
+#   firebase projects:addfirebase bookreel
+#   # Cria Firestore em modo Native
+#   gcloud firestore databases create --location=us-central1
+#   # Habilita Identity Platform (Firebase Auth)
+#   gcloud services enable identitytoolkit.googleapis.com
+#   # Roles pro bookagent-runtime SA
+#   for role in datastore.user firebaseauth.admin; do
+#     gcloud projects add-iam-policy-binding bookreel \
+#       --member=serviceAccount:bookagent-runtime@bookreel.iam.gserviceaccount.com \
+#       --role=roles/${role}
+#   done
+#
+# Secrets legados ainda em uso (billing/analytics/admin — módulos não migrados):
 #   printf "eyJ..."             | gcloud secrets create supabase-service-role   --data-file=-
-#   printf "eyJ..."             | gcloud secrets create supabase-jwt-secret     --data-file=-
-#   # NEXT_PUBLIC_* — usados no build do Next (inline no bundle) E em runtime no middleware
-#   printf "https://xxx.supabase.co" | gcloud secrets create supabase-url      --data-file=-
-#   printf "eyJ..."             | gcloud secrets create supabase-anon-key      --data-file=-
+#   printf "https://xxx.supabase.co" | gcloud secrets create supabase-url       --data-file=-
+# (o supabase-jwt-secret foi removido — firebase-admin valida os tokens agora)
 #
 # Autenticação:
 #   Cloud Run usa Workload Identity automático — a SA bookagent-runtime é
@@ -76,23 +93,20 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 steps:
-  # 0. Fetch NEXT_PUBLIC_* secrets pra build do Next (inlineadas no bundle) -----
+  # 0. Fetch NEXT_PUBLIC_FIREBASE_* secrets pro build do Next (inline no bundle)
   #
-  # Next embute variáveis NEXT_PUBLIC_* no JS do browser em build-time, então
-  # elas precisam chegar ao Dockerfile via --build-arg. Puxamos do Secret
-  # Manager aqui e passamos no próximo step.
-  #
-  # Setup (uma vez):
-  #   printf "https://xxx.supabase.co" | gcloud secrets create supabase-url --data-file=-
-  #   printf "eyJhbGc..."              | gcloud secrets create supabase-anon-key --data-file=-
+  # Firebase client SDK precisa apiKey + authDomain + projectId inlineados no
+  # JS do browser em build-time. Puxamos do Secret Manager aqui e passamos
+  # via --build-arg no próximo step. (projectId vem de ${PROJECT_ID} que o
+  # Cloud Build já expõe — sem secret separado.)
   - id: fetch-next-public-envs
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
     args:
       - -c
       - |
-        gcloud secrets versions access latest --secret=supabase-url > /workspace/NEXT_PUBLIC_SUPABASE_URL
-        gcloud secrets versions access latest --secret=supabase-anon-key > /workspace/NEXT_PUBLIC_SUPABASE_ANON_KEY
+        gcloud secrets versions access latest --secret=firebase-api-key > /workspace/NEXT_PUBLIC_FIREBASE_API_KEY
+        gcloud secrets versions access latest --secret=firebase-auth-domain > /workspace/NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
 
   # 1. Build image (API + Next.js unificados) ----------------------------------
   - id: build-api
@@ -101,14 +115,15 @@ steps:
     args:
       - -c
       - |
-        SUPABASE_URL=$(cat /workspace/NEXT_PUBLIC_SUPABASE_URL)
-        SUPABASE_ANON=$(cat /workspace/NEXT_PUBLIC_SUPABASE_ANON_KEY)
+        FIREBASE_API_KEY=$(cat /workspace/NEXT_PUBLIC_FIREBASE_API_KEY)
+        FIREBASE_AUTH_DOMAIN=$(cat /workspace/NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN)
         docker build \
           --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:${SHORT_SHA} \
           --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:latest \
           --cache-from=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:latest \
-          --build-arg=NEXT_PUBLIC_SUPABASE_URL="$$SUPABASE_URL" \
-          --build-arg=NEXT_PUBLIC_SUPABASE_ANON_KEY="$$SUPABASE_ANON" \
+          --build-arg=NEXT_PUBLIC_FIREBASE_API_KEY="$$FIREBASE_API_KEY" \
+          --build-arg=NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="$$FIREBASE_AUTH_DOMAIN" \
+          --build-arg=NEXT_PUBLIC_FIREBASE_PROJECT_ID="${PROJECT_ID}" \
           --file=Dockerfile \
           .
     waitFor: ['fetch-next-public-envs']
@@ -143,9 +158,12 @@ steps:
       - --platform=managed
       - --allow-unauthenticated
       - --service-account=${_SA_EMAIL}
-      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},AI_PROVIDER=vertex,GCS_ENABLED=true,VIDEO_RENDERER=ffmpeg,NODE_ENV=production,CLOUD_TASKS_LOCATION=${_REGION},CLOUD_TASKS_SA_EMAIL=${_SA_EMAIL},CLOUD_TASKS_PIPELINE_QUEUE=bookagent-pipeline,CLOUD_TASKS_VIDEO_QUEUE=bookagent-video
-      # NEXT_PUBLIC_* também em runtime — middleware.ts do Next lê via process.env
-      - --set-secrets=ANTHROPIC_API_KEY=anthropic-key:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role:latest,SUPABASE_JWT_SECRET=supabase-jwt-secret:latest,NEXT_PUBLIC_SUPABASE_URL=supabase-url:latest,NEXT_PUBLIC_SUPABASE_ANON_KEY=supabase-anon-key:latest
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},FIREBASE_PROJECT_ID=${PROJECT_ID},AI_PROVIDER=vertex,GCS_ENABLED=true,VIDEO_RENDERER=ffmpeg,NODE_ENV=production,CLOUD_TASKS_LOCATION=${_REGION},CLOUD_TASKS_SA_EMAIL=${_SA_EMAIL},CLOUD_TASKS_PIPELINE_QUEUE=bookagent-pipeline,CLOUD_TASKS_VIDEO_QUEUE=bookagent-video
+      # Secrets ativos: Anthropic (AI), Firebase NEXT_PUBLIC_* (runtime middleware),
+      # Supabase-service-role mantido pros módulos legados (billing/analytics/admin)
+      # que ainda leem de Supabase. supabase-jwt-secret foi removido — firebase-admin
+      # valida todos os tokens agora.
+      - --set-secrets=ANTHROPIC_API_KEY=anthropic-key:latest,NEXT_PUBLIC_FIREBASE_API_KEY=firebase-api-key:latest,NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=firebase-auth-domain:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role:latest,SUPABASE_URL=supabase-url:latest
       - --memory=2Gi
       - --cpu=2
       - --min-instances=0

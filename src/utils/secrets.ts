@@ -33,20 +33,20 @@ export interface SecretDef {
 }
 
 export const EXPECTED_SECRETS: SecretDef[] = [
+  // --- Firebase (auth + Firestore) — pilar primário da arquitetura ---------
   {
-    name: 'SUPABASE_SERVICE_ROLE_KEY',
+    name: 'GOOGLE_CLOUD_PROJECT',
     requiredInProd: true,
-    description: 'Service role key para backend Supabase (bypass RLS)',
-    expectedSource: 'secret-manager',
+    description: 'Project ID do GCP/Firebase — usado pelo Firestore, Vertex AI, Cloud Tasks',
+    expectedSource: 'env',
   },
   {
-    name: 'SUPABASE_JWT_SECRET',
+    name: 'NEXT_PUBLIC_FIREBASE_API_KEY',
     requiredInProd: true,
-    description: 'JWT secret pra validação de tokens Supabase (HS256 legacy)',
+    description: 'Firebase API key (browser) — inlineado no bundle em build-time',
     expectedSource: 'secret-manager',
   },
-  // REDIS_URL removido — arquitetura migrou para Cloud Tasks.
-  // Nenhum secret de Redis/BullMQ é esperado.
+  // --- AI providers --------------------------------------------------------
   {
     name: 'ANTHROPIC_API_KEY',
     requiredInProd: false, // opcional quando AI_PROVIDER=vertex
@@ -57,6 +57,14 @@ export const EXPECTED_SECRETS: SecretDef[] = [
     name: 'SHOTSTACK_API_KEY',
     requiredInProd: false, // opcional quando VIDEO_RENDERER=ffmpeg
     description: 'Shotstack cloud video rendering (opcional, default é ffmpeg local)',
+    expectedSource: 'secret-manager',
+  },
+  // --- Supabase legado — ainda usado por módulos não migrados --------------
+  // (billing/analytics/admin/bugs/leads/campaigns). Remover quando migrarmos.
+  {
+    name: 'SUPABASE_SERVICE_ROLE_KEY',
+    requiredInProd: false,
+    description: 'Supabase service role (legacy modules only — billing/analytics/admin)',
     expectedSource: 'secret-manager',
   },
   {
