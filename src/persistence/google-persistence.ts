@@ -1,0 +1,297 @@
+/**
+ * Google Persistence — Firebase Auth + Firestore adapter
+ *
+ * Substitui Supabase Auth + Postgres pra 3 collections do ecossistema
+ * principal: profiles, jobs, artifacts. Os outros 56 módulos
+ * (billing, analytics, admin, etc.) continuam em Supabase por enquanto.
+ *
+ * Auth: Firebase Admin SDK valida ID tokens do frontend. Em Cloud Run,
+ * credentials vêm automaticamente via Workload Identity — não precisa
+ * de service-account.json. Em dev local, `gcloud auth application-default
+ * login` funciona igual.
+ *
+ * Firestore: Cloud Firestore em modo Native. Collections:
+ *   - profiles/{uid}       — perfil do usuário + créditos
+ *   - jobs/{jobId}          — metadata de cada job (jobId = UUID v4)
+ *   - artifacts/{artifactId} — artifacts produzidos (reels, posts, etc.)
+ *
+ * Segurança: todos os docs têm `tenantId` denormalizado. O backend sempre
+ * filtra WHERE tenantId == authUser.uid. Security Rules ficam pra sessão
+ * seguinte (por enquanto, é backend-only — nenhum cliente acessa Firestore
+ * diretamente).
+ */
+
+import admin from 'firebase-admin';
+import { logger } from '../utils/logger.js';
+
+// ---------------------------------------------------------------------------
+// Singleton initialization
+// ---------------------------------------------------------------------------
+
+let appInstance: admin.app.App | null = null;
+
+function getApp(): admin.app.App {
+  if (appInstance) return appInstance;
+
+  if (admin.apps.length > 0) {
+    appInstance = admin.app();
+    return appInstance;
+  }
+
+  const projectId = process.env.GOOGLE_CLOUD_PROJECT ?? process.env.FIREBASE_PROJECT_ID;
+  if (!projectId) {
+    throw new Error(
+      '[GooglePersistence] GOOGLE_CLOUD_PROJECT env var obrigatório (FIREBASE_PROJECT_ID também aceito).',
+    );
+  }
+
+  appInstance = admin.initializeApp({
+    projectId,
+    // Em Cloud Run: Workload Identity (SA atachada ao serviço) fornece
+    // credentials automaticamente via ADC. Em dev: `gcloud auth
+    // application-default login` resolve o mesmo caminho.
+  });
+
+  logger.info(`[GooglePersistence] Firebase Admin initialized for project=${projectId}`);
+  return appInstance;
+}
+
+// ---------------------------------------------------------------------------
+// Auth — verify Firebase ID token
+// ---------------------------------------------------------------------------
+
+export interface FirebaseUser {
+  uid: string;
+  email: string;
+  name?: string;
+  emailVerified: boolean;
+}
+
+/**
+ * Valida um ID token vindo do frontend.
+ * Retorna o usuário extraído ou lança.
+ */
+export async function verifyFirebaseToken(idToken: string): Promise<FirebaseUser> {
+  const decoded = await getApp().auth().verifyIdToken(idToken, true);
+  return {
+    uid: decoded.uid,
+    email: (decoded.email as string | undefined) ?? '',
+    name: decoded.name as string | undefined,
+    emailVerified: !!decoded.email_verified,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Firestore — collection wrappers
+// ---------------------------------------------------------------------------
+
+export function firestore(): FirebaseFirestore.Firestore {
+  return getApp().firestore();
+}
+
+// --- profiles ---------------------------------------------------------------
+
+export interface Profile {
+  uid: string;
+  email: string;
+  name: string | null;
+  tenantId: string;                 // MVP: tenantId = uid (solo tenant)
+  planTier: 'starter' | 'pro' | 'agency';
+  credits: {
+    jobsUsed: number;
+    jobsLimit: number;
+    rendersUsed: number;
+    rendersLimit: number;
+    periodStart: string;            // ISO — início do ciclo atual
+    periodEnd: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+const PROFILES = 'profiles';
+const JOBS = 'jobs';
+const ARTIFACTS = 'artifacts';
+
+export async function getProfile(uid: string): Promise<Profile | null> {
+  const snap = await firestore().collection(PROFILES).doc(uid).get();
+  return snap.exists ? (snap.data() as Profile) : null;
+}
+
+/**
+ * Upsert "just-in-time" do perfil na primeira login.
+ * Se o doc não existe, cria com plano starter + créditos mensais.
+ */
+export async function ensureProfile(user: FirebaseUser): Promise<Profile> {
+  const ref = firestore().collection(PROFILES).doc(user.uid);
+  const snap = await ref.get();
+  if (snap.exists) return snap.data() as Profile;
+
+  const now = new Date();
+  const periodEnd = new Date(now);
+  periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+  const profile: Profile = {
+    uid: user.uid,
+    email: user.email,
+    name: user.name ?? null,
+    tenantId: user.uid,
+    planTier: 'starter',
+    credits: {
+      jobsUsed: 0,
+      jobsLimit: 1,
+      rendersUsed: 0,
+      rendersLimit: 1,
+      periodStart: now.toISOString(),
+      periodEnd: periodEnd.toISOString(),
+    },
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+  await ref.set(profile);
+  logger.info(`[GooglePersistence] Profile provisioned for uid=${user.uid} plan=starter`);
+  return profile;
+}
+
+export async function incrementCredits(
+  uid: string,
+  field: 'jobsUsed' | 'rendersUsed',
+  delta: number = 1,
+): Promise<void> {
+  await firestore()
+    .collection(PROFILES)
+    .doc(uid)
+    .update({
+      [`credits.${field}`]: admin.firestore.FieldValue.increment(delta),
+      updatedAt: new Date().toISOString(),
+    });
+}
+
+// --- jobs -------------------------------------------------------------------
+
+export interface JobDoc {
+  jobId: string;
+  tenantId: string;
+  userId: string;
+  inputType: 'pdf' | 'video' | 'audio' | 'pptx' | 'document';
+  inputFileUrl: string | null;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  currentStage: string | null;
+  stageIndex: number;
+  totalStages: number;
+  errorMessage: string | null;
+  selectedFormats: string[];
+  startedAt: string;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function createJob(doc: Omit<JobDoc, 'createdAt' | 'updatedAt'>): Promise<void> {
+  const now = new Date().toISOString();
+  await firestore()
+    .collection(JOBS)
+    .doc(doc.jobId)
+    .set({ ...doc, createdAt: now, updatedAt: now });
+}
+
+export async function updateJob(jobId: string, patch: Partial<JobDoc>): Promise<void> {
+  await firestore()
+    .collection(JOBS)
+    .doc(jobId)
+    .set({ ...patch, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+export async function getJob(jobId: string): Promise<JobDoc | null> {
+  const snap = await firestore().collection(JOBS).doc(jobId).get();
+  return snap.exists ? (snap.data() as JobDoc) : null;
+}
+
+export async function listJobsByTenant(
+  tenantId: string,
+  opts: { limit?: number; status?: JobDoc['status'] } = {},
+): Promise<JobDoc[]> {
+  let q = firestore()
+    .collection(JOBS)
+    .where('tenantId', '==', tenantId)
+    .orderBy('createdAt', 'desc');
+  if (opts.status) q = q.where('status', '==', opts.status);
+  if (opts.limit) q = q.limit(opts.limit);
+  const snap = await q.get();
+  return snap.docs.map((d) => d.data() as JobDoc);
+}
+
+// --- artifacts --------------------------------------------------------------
+
+export interface ArtifactDoc {
+  artifactId: string;
+  jobId: string;
+  tenantId: string;               // denormalizado pra query direto
+  artifactType: string;           // VIDEO_RENDER, media-render-spec, blog-article, landing-page, media-metadata
+  exportFormat: string | null;    // mp4, json, html, markdown, render-spec
+  title: string;
+  sizeBytes: number | null;
+  publicUrl: string | null;       // GCS signed/public URL
+  filePath: string | null;        // GCS path (gs://bucket/path)
+  mimeType: string | null;
+  status: 'valid' | 'partial' | 'invalid';
+  createdAt: string;
+}
+
+export async function saveArtifact(doc: Omit<ArtifactDoc, 'createdAt'>): Promise<void> {
+  await firestore()
+    .collection(ARTIFACTS)
+    .doc(doc.artifactId)
+    .set({ ...doc, createdAt: new Date().toISOString() });
+}
+
+export async function listArtifactsByJob(jobId: string): Promise<ArtifactDoc[]> {
+  const snap = await firestore()
+    .collection(ARTIFACTS)
+    .where('jobId', '==', jobId)
+    .orderBy('createdAt', 'desc')
+    .get();
+  return snap.docs.map((d) => d.data() as ArtifactDoc);
+}
+
+export async function listArtifactsByTenant(
+  tenantId: string,
+  opts: { type?: string; onlyWithDownload?: boolean; limit?: number } = {},
+): Promise<ArtifactDoc[]> {
+  let q = firestore()
+    .collection(ARTIFACTS)
+    .where('tenantId', '==', tenantId)
+    .orderBy('createdAt', 'desc');
+  if (opts.type) q = q.where('artifactType', '==', opts.type);
+  if (opts.limit) q = q.limit(opts.limit);
+  const snap = await q.get();
+  let items = snap.docs.map((d) => d.data() as ArtifactDoc);
+  if (opts.onlyWithDownload) items = items.filter((a) => !!a.publicUrl || !!a.filePath);
+  return items;
+}
+
+// ---------------------------------------------------------------------------
+// Health check
+// ---------------------------------------------------------------------------
+
+export async function googlePersistenceHealth(): Promise<{
+  firestore: boolean;
+  auth: boolean;
+  projectId: string | null;
+}> {
+  const projectId = process.env.GOOGLE_CLOUD_PROJECT ?? process.env.FIREBASE_PROJECT_ID ?? null;
+  let firestoreOk = false;
+  let authOk = false;
+
+  try {
+    getApp();
+    authOk = true;
+    // touch firestore com read barato (root metadata)
+    await firestore().listCollections();
+    firestoreOk = true;
+  } catch (err) {
+    logger.warn(`[GooglePersistence] health check failed: ${err}`);
+  }
+
+  return { firestore: firestoreOk, auth: authOk, projectId };
+}

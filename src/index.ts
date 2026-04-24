@@ -88,7 +88,7 @@ import { setSupabaseClientForAcquisition } from './api/controllers/acquisitionCo
 import { setSupabaseClientForIntegrationHub } from './api/controllers/integrationHubController.js';
 import { setSupabaseClientForDistribution } from './api/controllers/distributionController.js';
 import { setTenantGuardSupabaseClient, tenantGuard } from './api/middleware/tenant-guard.js';
-import { supabaseAuthMiddleware } from './api/middleware/supabase-auth.js';
+import { firebaseAuthMiddleware } from './api/middleware/firebase-auth.js';
 import { autoProvisionMiddleware, setAutoProvisionClient } from './api/middleware/auto-provision.js';
 import { setVideoRenderSupabaseClient } from './api/controllers/videoRenderController.js';
 import { setPlanGuardSupabaseClient } from './api/middleware/plan-guard.js';
@@ -335,7 +335,7 @@ const apiOnly = (mw: RequestHandler): RequestHandler =>
   (req, res, next) => (isApiRequest(req) ? mw(req, res, next) : next());
 
 // Auth chain: só roda em requests de API, não em assets do Next
-app.use(apiOnly(supabaseAuthMiddleware));
+app.use(apiOnly(firebaseAuthMiddleware));
 app.use(apiOnly(autoProvisionMiddleware));
 app.use(apiOnly(tenantGuard));
 
@@ -349,8 +349,19 @@ app.get('/health', (_req, res) => {
     version: '1.0.0',
     uptime: process.uptime(),
     persistence: {
-      mode: persistenceMode,
-      supabase: persistenceMode === 'supabase',
+      // Firestore é o primário pras 3 coleções migradas (profiles, jobs,
+      // artifacts). Supabase permanece pros módulos não-migrados
+      // (billing, analytics, admin, bugs, leads, campaigns, etc.).
+      primary: 'firestore',
+      firestore: {
+        enabled: !!(process.env.GOOGLE_CLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID),
+        projectId: process.env.GOOGLE_CLOUD_PROJECT ?? process.env.FIREBASE_PROJECT_ID ?? null,
+      },
+      supabase: {
+        mode: persistenceMode,
+        enabled: persistenceMode === 'supabase',
+        scope: 'legacy-modules-only',
+      },
     },
     queue: {
       mode:     queueMode ? 'cloud-tasks-async' : 'sync-inline',
