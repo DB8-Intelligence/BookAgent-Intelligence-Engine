@@ -130,14 +130,17 @@ cyan "════════════════════════�
 # --- URLs dos serviços -------------------------------------------------------
 API_URL=$(gcloud run services describe "$API_SERVICE" --region="$REGION" --format="value(status.url)" 2>/dev/null || echo "(não encontrado)")
 echo
-yellow "API URL:    $API_URL"
-yellow "Worker:     Cloud Run (private, trigged via Redis queue)"
+yellow "App URL:    $API_URL  (frontend + backend unificados)"
 echo
 cyan "Health check:"
 echo "  curl $API_URL/health"
 echo
 cyan "Próximos passos:"
-echo "  1. Atualizar NEXT_PUBLIC_API_URL no Vercel para $API_URL"
-echo "  2. Configurar Redis (Memorystore ou Upstash) — env REDIS_URL"
+echo "  1. Configurar CLOUD_TASKS_TARGET_URL=$API_URL no Cloud Run"
+echo "     gcloud run services update $API_SERVICE --region=$REGION \\"
+echo "       --update-env-vars=CLOUD_TASKS_TARGET_URL=$API_URL"
+echo "  2. Criar filas Cloud Tasks (se ainda não criou):"
+echo "     gcloud tasks queues create bookagent-pipeline --location=$REGION"
+echo "     gcloud tasks queues create bookagent-video    --location=$REGION"
 echo "  3. Criar bucket GCS: gsutil mb gs://\${PROJECT_ID}-uploads"
-echo "  4. Testar um upload end-to-end"
+echo "  4. Testar: abrir $API_URL no browser (landing) e $API_URL/dashboard"

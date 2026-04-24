@@ -13,8 +13,8 @@
  *
  * Parte 55: Escala Real e Monetização
  *
- * Nota de escala: este limitador é por instância. Para múltiplas instâncias
- * (horizontal scale), substituir por Redis-backed rate limiter (ex: ioredis + sliding window).
+ * Nota de escala: este limitador é por instância (in-memory). Com múltiplas
+ * instâncias Cloud Run, substituir por Memorystore/Firestore distribuído.
  */
 
 import type { Request, Response, NextFunction } from 'express';

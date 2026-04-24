@@ -1,8 +1,8 @@
 /**
- * Queue Types — Definições de tipos para a fila BullMQ
+ * Queue Types — payloads serializados para enfileirar jobs
  *
- * BookAgentJobData é o payload armazenado em cada job da fila.
- * É serializado para Redis e recebido pelo worker.
+ * BookAgentJobData é o payload enviado ao Google Cloud Tasks (base64 JSON)
+ * e recebido de volta no endpoint /internal/execute-pipeline via OIDC.
  *
  * Parte 74: adicionado tenantContext para isolamento multi-tenant.
  */

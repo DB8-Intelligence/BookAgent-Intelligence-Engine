@@ -29,13 +29,6 @@ export const config = {
     jwtSecret: process.env.SUPABASE_JWT_SECRET ?? process.env.NEXOIMOB_SUPABASE_JWT_SECRET ?? null,
   },
 
-  queue: {
-    /** Redis configurado → modo assíncrono; não configurado → modo síncrono */
-    redisUrl:      process.env.REDIS_URL      ?? null,
-    redisHost:     process.env.REDIS_HOST     ?? null,
-    redisPort:     parseInt(process.env.REDIS_PORT     ?? '6379', 10),
-    redisPassword: process.env.REDIS_PASSWORD ?? null,
-    concurrency:   parseInt(process.env.QUEUE_CONCURRENCY ?? '2', 10),
-    queueName:     'bookagent-processing',
-  },
+  // Queue config removido — arquitetura usa Google Cloud Tasks + self-webhook.
+  // Env vars relevantes (CLOUD_TASKS_*) são lidas diretamente em src/queue/cloud-tasks.ts.
 };

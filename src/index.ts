@@ -24,13 +24,15 @@
  *   POST /api/v1/leads/:phone/event                 → Log de evento
  *   POST /api/v1/leads/:phone/demo                  → Incrementar uso de demo (trial)
  *   GET  /api/v1/ops/dashboard                      → Dashboard operacional (protegido)
- *   GET  /api/v1/ops/queue                          → Saúde da fila BullMQ
+ *   GET  /api/v1/ops/queue                          → Saúde da fila (Cloud Tasks)
  *   GET  /api/v1/ops/costs                          → Análise de custos e margem
  *   GET  /api/v1/ops/growth                         → Fase de crescimento e recomendações
  */
 
-import express from 'express';
+import express, { type Request, type Response, type NextFunction, type RequestHandler } from 'express';
 import cors from 'cors';
+import { createRequire } from 'node:module';
+import { resolve as resolvePath } from 'node:path';
 import { config } from './config/index.js';
 import { logger } from './utils/logger.js';
 import { validateStartupSecrets, auditSecrets } from './utils/secrets.js';
@@ -322,10 +324,19 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 
-// Auth chain: JWT extraction → auto-provision tenant → resolve tenant context
-app.use(supabaseAuthMiddleware);
-app.use(autoProvisionMiddleware);
-app.use(tenantGuard);
+// Paths que NÃO são frontend Next — qualquer coisa que não comece com esses
+// prefixos é tratada como asset/rota do Next e pula auth middlewares.
+const API_PATHS = ['/api', '/internal', '/webhooks', '/generate-video', '/health'];
+const isApiRequest = (req: Request): boolean =>
+  API_PATHS.some((p) => req.path === p || req.path.startsWith(`${p}/`));
+
+const apiOnly = (mw: RequestHandler): RequestHandler =>
+  (req, res, next) => (isApiRequest(req) ? mw(req, res, next) : next());
+
+// Auth chain: só roda em requests de API, não em assets do Next
+app.use(apiOnly(supabaseAuthMiddleware));
+app.use(apiOnly(autoProvisionMiddleware));
+app.use(apiOnly(tenantGuard));
 
 // Health check — inclui status de providers e persistence
 app.get('/health', (_req, res) => {
@@ -432,7 +443,60 @@ app.use('/generate-video', videoRoutes);
 // Public API (separate prefix, API key auth)
 app.use('/api/public/v1', publicApiRoutes);
 
-// Error handler (must be last)
+// ============================================================================
+// Next.js custom server — serve web/ (landing + dashboard) no mesmo processo
+// ============================================================================
+// Tudo que não é API/webhook/internal cai aqui. Next.js faz SSR + static +
+// App Router + middleware (web/middleware.ts — auth Supabase das rotas
+// protegidas). Carregado async em bootstrap: porta abre rápido pro Cloud Run
+// e o handler fica pronto em ~1-3s.
+
+type NextRequestHandler = (req: Request, res: Response) => Promise<void>;
+let nextHandler: NextRequestHandler | null = null;
+let nextBootstrapError: Error | null = null;
+
+async function bootstrapNext(): Promise<void> {
+  const webDir = resolvePath(process.cwd(), 'web');
+  try {
+    // Resolve `next` a partir de web/node_modules — a versão que o app
+    // foi construído usa, sem duplicar no root package.json.
+    const webRequire = createRequire(resolvePath(webDir, 'package.json'));
+    const nextModule = webRequire('next');
+    const nextFactory = (nextModule.default ?? nextModule) as (opts: {
+      dev: boolean;
+      dir: string;
+    }) => { prepare: () => Promise<void>; getRequestHandler: () => NextRequestHandler };
+
+    const nextApp = nextFactory({ dev: false, dir: webDir });
+    await nextApp.prepare();
+    nextHandler = nextApp.getRequestHandler();
+    logger.info(`[Next] handler ready — serving web/ from ${webDir}`);
+  } catch (err) {
+    nextBootstrapError = err instanceof Error ? err : new Error(String(err));
+    logger.error(`[Next] bootstrap failed: ${nextBootstrapError.message}`);
+  }
+}
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  // Requests de API seguem pra errorHandler / 404 padrão do Express.
+  if (isApiRequest(req)) return next();
+
+  if (!nextHandler) {
+    if (nextBootstrapError) {
+      res.status(500).send(`Frontend bootstrap error: ${nextBootstrapError.message}`);
+      return;
+    }
+    res.status(503).set('Retry-After', '2').send('Frontend starting up. Retry in a moment.');
+    return;
+  }
+
+  nextHandler(req, res).catch((err: unknown) => {
+    logger.error(`[Next] handler error for ${req.path}: ${err}`);
+    if (!res.headersSent) res.status(500).send('Internal server error');
+  });
+});
+
+// Error handler (must be last — só pega erros de rotas Express/API)
 app.use(errorHandler);
 
 // IMPORTANT: app.listen opens the HTTP port IMMEDIATELY. Everything that
@@ -442,6 +506,10 @@ app.use(errorHandler);
 app.listen(config.port, () => {
   // Port is open — Cloud Run startup probe will succeed now.
   logger.info(`BookAgent Intelligence Engine listening on port ${config.port}`);
+
+  // Bootstrap Next.js async — frontend responde 503 até ficar pronto
+  // (geralmente 1-3s). Não bloqueia o health check nem API requests.
+  bootstrapNext().catch((err) => logger.error(`[Next] bootstrap rejected: ${err}`));
 
   // Post-listen validations (non-blocking, logs only — NEVER throw here or
   // the Cloud Run container will crash after startup probe succeeded).

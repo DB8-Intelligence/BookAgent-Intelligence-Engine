@@ -109,10 +109,10 @@ else
 fi
 
 # Check queue
-if echo "$HEALTH_RESPONSE" | grep -q '"mode":"bullmq"'; then
-  ok "Queue BullMQ ativo (processamento assíncrono)"
-elif echo "$HEALTH_RESPONSE" | grep -q '"mode":"sync"'; then
-  warn "Queue em modo sync (configure REDIS_URL para assíncrono)"
+if echo "$HEALTH_RESPONSE" | grep -q '"mode":"cloud-tasks-async"'; then
+  ok "Queue Cloud Tasks ativa (processamento assíncrono)"
+elif echo "$HEALTH_RESPONSE" | grep -q '"mode":"sync-inline"'; then
+  warn "Queue em modo sync-inline (configure CLOUD_TASKS_* pra assíncrono)"
 fi
 
 # ---------------------------------------------------------------------------
