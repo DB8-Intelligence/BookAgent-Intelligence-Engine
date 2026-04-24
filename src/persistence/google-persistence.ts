@@ -81,6 +81,25 @@ export async function verifyFirebaseToken(idToken: string): Promise<FirebaseUser
   };
 }
 
+/**
+ * Resolve o Firebase UID a partir do email. Usado pelos webhooks de
+ * pagamento (Kiwify/Hotmart/Stripe) que identificam o cliente pelo email.
+ * Retorna null se o usuário ainda não se cadastrou no Firebase — caller
+ * pode ignorar ou armazenar upgrade pendente.
+ */
+export async function resolveUidByEmail(email: string): Promise<string | null> {
+  if (!email) return null;
+  try {
+    const record = await getApp().auth().getUserByEmail(email);
+    return record.uid;
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === 'auth/user-not-found') return null;
+    logger.warn(`[GooglePersistence] resolveUidByEmail failed for ${email}: ${(err as Error).message}`);
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Firestore — collection wrappers
 // ---------------------------------------------------------------------------
@@ -158,6 +177,20 @@ export async function ensureProfile(user: FirebaseUser): Promise<Profile> {
     `[GooglePersistence] Profile provisioned uid=${user.uid} plan=starter ` +
     `limits=${limits.jobsLimit}j/${limits.rendersLimit}r`,
   );
+
+  // Aplica upgrade pendente se webhook de pagamento chegou ANTES do signup.
+  // Non-blocking — se falhar, user segue com starter e pode fazer upgrade
+  // manual via /billing-fs/upgrade.
+  try {
+    const { claimPendingUpgrade } = await import('../modules/billing/webhook-bridge.js');
+    const claimed = await claimPendingUpgrade(user.email, user.uid);
+    if (claimed) {
+      const snapAfter = await ref.get();
+      return snapAfter.data() as Profile;
+    }
+  } catch (err) {
+    logger.warn(`[GooglePersistence] claimPendingUpgrade failed: ${(err as Error).message}`);
+  }
   return profile;
 }
 

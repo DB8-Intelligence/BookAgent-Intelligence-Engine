@@ -10,6 +10,7 @@
 import type { Request, Response } from 'express';
 import { sendSuccess, sendError } from '../helpers/response.js';
 import { HotmartBillingProvider } from '../../modules/billing/providers/hotmart-provider.js';
+import { applyWebhookToFirestore } from '../../modules/billing/webhook-bridge.js';
 import type { SupabaseClient as SupabaseClientInstance } from '../../persistence/supabase-client.js';
 import { logger } from '../../utils/logger.js';
 
@@ -100,10 +101,28 @@ export async function handleHotmartWebhook(req: Request, res: Response): Promise
         hotmartSubId: externalSubscriptionId,
         amountBRL,
       });
+      const fs = await applyWebhookToFirestore({
+        source: 'hotmart',
+        eventType: 'activate',
+        email: externalCustomerId ?? '',
+        planTier: planTier ?? 'starter',
+        externalSubscriptionId,
+        amountBRL,
+      });
+      if (!fs.synced) {
+        logger.warn(`[HotmartWebhook] Firestore sync pending: ${fs.reason}`);
+      }
     } else if (eventType === 'subscription.canceled') {
       await cancelPlan({
         email: externalCustomerId ?? '',
         hotmartSubId: externalSubscriptionId,
+      });
+      await applyWebhookToFirestore({
+        source: 'hotmart',
+        eventType: 'cancel',
+        email: externalCustomerId ?? '',
+        planTier: 'starter',
+        externalSubscriptionId,
       });
     }
 
