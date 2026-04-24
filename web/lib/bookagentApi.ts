@@ -288,6 +288,11 @@ export interface DashboardArtifact {
   createdAt: string;
 }
 
+export interface GalleryItem extends DashboardArtifact {
+  /** Ex: "video/mp4", "image/png" — inferido do downloadUrl no backend */
+  mimeType: string | null;
+}
+
 export interface DashboardReview {
   id: string;
   jobId: string;
@@ -567,6 +572,14 @@ export const bookagent = {
       if (to) p.set("to", to);
       const qs = p.toString();
       return request<DashboardAnalytics>(`/dashboard/analytics${qs ? `?${qs}` : ""}`);
+    },
+    gallery: (filters?: { type?: string; onlyWithDownload?: boolean; limit?: number }) => {
+      const p = new URLSearchParams();
+      if (filters?.type) p.set("type", filters.type);
+      if (filters?.onlyWithDownload) p.set("onlyWithDownload", "true");
+      if (filters?.limit) p.set("limit", String(filters.limit));
+      const qs = p.toString();
+      return request<{ items: GalleryItem[]; total: number }>(`/dashboard/gallery${qs ? `?${qs}` : ""}`);
     },
     /**
      * Lista global de publicações.

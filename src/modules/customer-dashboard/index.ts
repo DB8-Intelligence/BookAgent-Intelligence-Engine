@@ -15,10 +15,13 @@ export {
   getInsightsView,
   getPublicationsOverview,
   getCampaignsOverview,
+  getGallery,
 } from './dashboard-service.js';
 
 export type {
   CustomerPublicationsOverview,
   CustomerCampaignView,
   CustomerCampaignsOverview,
+  GalleryItem,
+  GalleryFilters,
 } from './dashboard-service.js';

@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { bookagent, type DashboardOverview } from "@/lib/bookagentApi";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { CreditsCard } from "@/components/dashboard/CreditsCard";
+import { LiveJobStatus } from "@/components/dashboard/LiveJobStatus";
 
 export default function DashboardOverviewPage() {
   const [data, setData] = useState<DashboardOverview | null>(null);
@@ -27,6 +29,12 @@ export default function DashboardOverviewPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Jobs em processamento — SSE abre uma conexão por job
+  const processingJobs = useMemo(
+    () => (data?.recentJobs ?? []).filter((j) => j.status === "processing" || j.status === "pending"),
+    [data],
+  );
+
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-500">Carregando...</div>;
   if (error) return <div className="p-4 bg-red-50 text-red-600 rounded-lg">{error}</div>;
   if (!data) return null;
@@ -34,13 +42,24 @@ export default function DashboardOverviewPage() {
   return (
     <div className="max-w-6xl mx-auto">
       <PageHeader
-        title={`Ola, ${data.tenantName}`}
-        description={`Plano ${data.planTier.toUpperCase()} - ${data.subscriptionStatus}`}
+        title={`Olá, ${data.tenantName}`}
+        description={`Plano ${data.planTier.toUpperCase()} — ${data.subscriptionStatus}`}
         action={
           <Link href="/upload" className="px-4 py-2 text-sm font-medium bg-slate-900 text-white rounded-md hover:bg-slate-800">
             + Novo Job
           </Link>
         }
+      />
+
+      {/* Saldo de créditos — prominente */}
+      <CreditsCard
+        planTier={data.planTier}
+        jobsUsed={data.usage.jobsUsed}
+        jobsLimit={data.usage.jobsLimit}
+        jobsPercent={data.usage.jobsPercent}
+        rendersUsed={data.usage.rendersUsed}
+        rendersLimit={data.usage.rendersLimit}
+        rendersPercent={data.usage.rendersPercent}
       />
 
       {/* Alerts */}
@@ -62,21 +81,49 @@ export default function DashboardOverviewPage() {
         </div>
       )}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-        <KPICard label="Jobs este mes" value={data.stats.jobsThisMonth} icon="📋" />
-        <KPICard label="Jobs total" value={data.stats.jobsTotal} icon="📦" />
+      {/* Live status — um card por job processando (SSE) */}
+      {processingJobs.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+            IA trabalhando agora ({processingJobs.length})
+          </h2>
+          <div className="space-y-2">
+            {processingJobs.map((job) => (
+              <LiveJobStatus
+                key={job.jobId}
+                jobId={job.jobId}
+                jobLabel={`${job.jobId.slice(0, 8)}… · ${job.inputType}`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* KPI Cards — métricas secundárias */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
+        <KPICard label="Jobs este mês" value={data.stats.jobsThisMonth} icon="📋" />
         <KPICard label="Artifacts" value={data.stats.artifactsGenerated} icon="🎨" />
         <KPICard label="Publicados" value={data.stats.publicationsSucceeded} icon="📢" />
-        <KPICard label="Aguardando revisao" value={data.stats.pendingReviews} icon="👀" />
-        <KPICard label="Revisoes ativas" value={data.stats.activeRevisions} icon="🔄" />
+        <KPICard label="Aguardando revisão" value={data.stats.pendingReviews} icon="👀" />
       </div>
 
-      {/* Usage bars */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <UsageBar label="Jobs" used={data.usage.jobsUsed} limit={data.usage.jobsLimit} percent={data.usage.jobsPercent} />
-        <UsageBar label="Renders" used={data.usage.rendersUsed} limit={data.usage.rendersLimit} percent={data.usage.rendersPercent} />
-      </div>
+      {/* Shortcut pra galeria de vídeos */}
+      <Link
+        href="/dashboard/gallery"
+        className="block bg-white border rounded-lg p-4 mb-6 hover:bg-slate-50 transition-colors"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🎬</span>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Galeria de vídeos prontos</p>
+              <p className="text-xs text-slate-500">Player + download dos seus reels e vídeos gerados</p>
+            </div>
+          </div>
+          <span className="text-slate-400">→</span>
+        </div>
+      </Link>
 
       {/* Recent Jobs */}
       <div className="bg-white border rounded-lg">
@@ -110,7 +157,7 @@ export default function DashboardOverviewPage() {
       {/* Locked features */}
       {data.lockedFeatures.length > 0 && (
         <div className="mt-6 bg-white border rounded-lg p-4">
-          <h2 className="font-semibold text-slate-900 mb-3">Recursos disponiveis no upgrade</h2>
+          <h2 className="font-semibold text-slate-900 mb-3">Recursos disponíveis no upgrade</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {data.lockedFeatures.map((f) => (
               <div key={f.feature} className="flex items-start gap-2 p-2 rounded bg-slate-50">
@@ -118,30 +165,13 @@ export default function DashboardOverviewPage() {
                 <div>
                   <p className="text-sm font-medium text-slate-700">{f.label}</p>
                   <p className="text-xs text-slate-500">{f.description}</p>
-                  <p className="text-xs text-blue-600 mt-0.5">Disponivel no plano {f.availableFrom.toUpperCase()}</p>
+                  <p className="text-xs text-blue-600 mt-0.5">Disponível no plano {f.availableFrom.toUpperCase()}</p>
                 </div>
               </div>
             ))}
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function UsageBar({ label, used, limit, percent }: { label: string; used: number; limit: number; percent: number }) {
-  return (
-    <div className="bg-white border rounded-lg p-4">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium text-slate-700">{label}</span>
-        <span className="text-xs text-slate-500">{used}/{limit}</span>
-      </div>
-      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${percent > 90 ? "bg-red-500" : percent > 70 ? "bg-amber-500" : "bg-emerald-500"}`}
-          style={{ width: `${Math.min(percent, 100)}%` }}
-        />
-      </div>
     </div>
   );
 }

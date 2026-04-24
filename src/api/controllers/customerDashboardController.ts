@@ -24,6 +24,7 @@ import {
   getInsightsView,
   getPublicationsOverview,
   getCampaignsOverview,
+  getGallery,
 } from '../../modules/customer-dashboard/index.js';
 import { createDefaultTenantContext } from '../../core/tenant-resolver.js';
 import { logger } from '../../utils/logger.js';
@@ -159,5 +160,23 @@ export async function getDashboardCampaigns(req: Request, res: Response): Promis
     sendSuccess(res, campaigns);
   } catch (err) {
     sendError(res, 'INTERNAL_ERROR', 'Falha ao listar campanhas', 500, err);
+  }
+}
+
+// ============================================================================
+// GET /dashboard/gallery
+// ============================================================================
+
+export async function getDashboardGallery(req: Request, res: Response): Promise<void> {
+  try {
+    const items = await getGallery(getTenantCtx(req), supabaseClient, {
+      type: typeof req.query.type === 'string' ? req.query.type : undefined,
+      onlyWithDownload: req.query.onlyWithDownload === 'true',
+      limit: req.query.limit ? Math.min(Number(req.query.limit), 200) : 50,
+    });
+    sendSuccess(res, { items, total: items.length });
+  } catch (err) {
+    logger.error(`[customerDashboard] gallery error: ${err}`);
+    sendError(res, 'INTERNAL_ERROR', 'Falha ao listar galeria', 500, err);
   }
 }

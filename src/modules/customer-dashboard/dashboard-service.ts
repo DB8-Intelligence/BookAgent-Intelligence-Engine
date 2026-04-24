@@ -35,7 +35,7 @@ import { PLAN_FEATURES } from '../../domain/entities/tenant.js';
 import { getUsageSummary } from '../billing/limit-checker.js';
 import { getSubscription } from '../billing/subscription-manager.js';
 import { PLANS, type PlanTier } from '../../plans/plan-config.js';
-import type { SupabaseClient } from '../../persistence/supabase-client.js';
+import type { SupabaseClient, FilterCondition } from '../../persistence/supabase-client.js';
 import { logger } from '../../utils/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -828,4 +828,111 @@ function getUpgradeOptions(currentPlan: PlanTier): UpgradeOption[] {
   }
 
   return options;
+}
+
+// ---------------------------------------------------------------------------
+// Gallery — agrega artifacts de todos os jobs do tenant numa única query
+// Usado pelo dashboard de vídeos prontos (player + download)
+// ---------------------------------------------------------------------------
+
+export interface GalleryFilters {
+  /** Filtra por artifact_type (ex: 'VIDEO_RENDER'). Omitir pra tudo. */
+  type?: string;
+  /** Só artifacts com URL de download acessível */
+  onlyWithDownload?: boolean;
+  /** Cap de resultados (default 50, max 200) */
+  limit?: number;
+}
+
+export interface GalleryItem extends CustomerArtifactView {
+  /** Mime type inferido do downloadUrl (ex: "video/mp4", "image/png") */
+  mimeType: string | null;
+}
+
+export async function getGallery(
+  tenantCtx: TenantContext,
+  supabase: SupabaseClient | null,
+  filters: GalleryFilters = {},
+): Promise<GalleryItem[]> {
+  if (!supabase) return [];
+
+  const limit = Math.min(filters.limit ?? 50, 200);
+
+  try {
+    // 1. Lista jobIds do tenant via bookagent_job_meta (fonte de verdade de ownership)
+    const jobRows = await supabase.select<{ job_id: string; created_at: string }>(
+      'bookagent_job_meta',
+      {
+        filters: [{ column: 'tenant_id', operator: 'eq', value: tenantCtx.tenantId }],
+        select: 'job_id,created_at',
+        orderBy: 'created_at',
+        orderDesc: true,
+        limit: 500,
+      },
+    );
+    const jobIds = jobRows.map((r) => r.job_id);
+    if (jobIds.length === 0) return [];
+
+    // 2. Query artifacts — escopado aos jobs do tenant
+    const artFilters: FilterCondition[] = [
+      { column: 'job_id', operator: 'in', value: `(${jobIds.join(',')})` },
+    ];
+    if (filters.type) {
+      artFilters.push({ column: 'artifact_type', operator: 'eq', value: filters.type });
+    }
+
+    const rows = await supabase.select<{
+      id: string;
+      job_id: string;
+      artifact_type: string;
+      export_format: string | null;
+      title: string | null;
+      size_bytes: number | null;
+      file_path: string | null;
+      public_url: string | null;
+      status: string | null;
+      created_at: string;
+    }>('bookagent_job_artifacts', {
+      filters: artFilters,
+      orderBy: 'created_at',
+      orderDesc: true,
+      limit,
+    });
+
+    return rows
+      .map<GalleryItem>((row) => {
+        const downloadUrl = row.public_url ?? row.file_path;
+        return {
+          id: row.id,
+          jobId: row.job_id,
+          type: row.artifact_type,
+          format: row.export_format ?? '',
+          title: row.title ?? row.artifact_type,
+          sizeBytes: row.size_bytes,
+          downloadUrl,
+          previewUrl: row.public_url,
+          status: row.status ?? 'valid',
+          createdAt: row.created_at,
+          mimeType: inferMimeType(downloadUrl, row.artifact_type),
+        };
+      })
+      .filter((item) => !filters.onlyWithDownload || !!item.downloadUrl);
+  } catch (err) {
+    logger.warn(`[DashboardService] getGallery failed: ${err}`);
+    return [];
+  }
+}
+
+function inferMimeType(url: string | null, artifactType: string): string | null {
+  if (!url) return null;
+  const lower = url.toLowerCase();
+  if (lower.endsWith('.mp4') || lower.endsWith('.mov')) return 'video/mp4';
+  if (lower.endsWith('.webm')) return 'video/webm';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.mp3')) return 'audio/mpeg';
+  if (artifactType.toUpperCase().includes('VIDEO')) return 'video/mp4';
+  return null;
 }
