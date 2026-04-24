@@ -106,6 +106,7 @@ import { ArtifactRepository } from './persistence/artifact-repository.js';
 // --- Routes ---
 import processRoutes from './api/routes/process.js';
 import jobsRoutes from './api/routes/jobs.js';
+import pipelineEventsRoutes from './api/routes/pipeline-events.js';
 import approvalRoutes from './api/routes/approval.js';
 import reviewRoutes from './api/routes/reviews.js';
 import revisionRoutes from './api/routes/revisions.js';
@@ -392,6 +393,8 @@ app.get('/health', (_req, res) => {
 const prefix = config.api.prefix;
 app.use(`${prefix}/process`, processRoutes);
 app.use(`${prefix}/jobs`, jobsRoutes);
+// SSE stream de eventos do pipeline — montado em /jobs/:jobId/events
+app.use(`${prefix}/jobs`, pipelineEventsRoutes);
 app.use(`${prefix}/jobs`, approvalRoutes);
 app.use(`${prefix}/jobs`, reviewRoutes);
 app.use(`${prefix}/jobs`, revisionRoutes);

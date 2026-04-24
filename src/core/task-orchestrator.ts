@@ -74,6 +74,28 @@ export interface PipelineFailedEvent {
   error: string;
 }
 
+/** Genéricos — emitidos em TODAS as transições de stage. */
+export interface StageStartedEvent {
+  jobId: string;
+  stage: string;
+  stageIndex: number;
+  totalStages: number;
+}
+
+export interface StageCompletedEvent {
+  jobId: string;
+  stage: string;
+  stageIndex: number;
+  totalStages: number;
+  durationMs: number;
+}
+
+export interface PipelineCompletedEvent {
+  jobId: string;
+  totalDurationMs: number;
+  outputCount: number;
+}
+
 // ---------------------------------------------------------------------------
 // TaskOrchestrator
 // ---------------------------------------------------------------------------
@@ -233,6 +255,30 @@ export async function emitPipelineFailed(
   bus: IEventBus = getEventBus(),
 ): Promise<void> {
   await bus.publish<PipelineFailedEvent>(PipelineTopic.PIPELINE_FAILED, { jobId, ...data }, { jobId });
+}
+
+export async function emitStageStarted(
+  jobId: string,
+  data: Omit<StageStartedEvent, 'jobId'>,
+  bus: IEventBus = getEventBus(),
+): Promise<void> {
+  await bus.publish<StageStartedEvent>(PipelineTopic.STAGE_STARTED, { jobId, ...data }, { jobId });
+}
+
+export async function emitStageCompleted(
+  jobId: string,
+  data: Omit<StageCompletedEvent, 'jobId'>,
+  bus: IEventBus = getEventBus(),
+): Promise<void> {
+  await bus.publish<StageCompletedEvent>(PipelineTopic.STAGE_COMPLETED, { jobId, ...data }, { jobId });
+}
+
+export async function emitPipelineCompleted(
+  jobId: string,
+  data: Omit<PipelineCompletedEvent, 'jobId'>,
+  bus: IEventBus = getEventBus(),
+): Promise<void> {
+  await bus.publish<PipelineCompletedEvent>(PipelineTopic.PIPELINE_COMPLETED, { jobId, ...data }, { jobId });
 }
 
 // ---------------------------------------------------------------------------

@@ -37,6 +37,13 @@ import { logger } from '../utils/logger.js';
 // ---------------------------------------------------------------------------
 
 export const PipelineTopic = {
+  // Genéricos — emitidos em TODAS as transições de stage (pipeline.ts)
+  STAGE_STARTED: 'pipeline.stage_started',
+  STAGE_COMPLETED: 'pipeline.stage_completed',
+  PIPELINE_COMPLETED: 'pipeline.completed',
+  PIPELINE_FAILED: 'pipeline.pipeline_failed',
+
+  // Especializados — payload rico para workers específicos
   PDF_INGESTED: 'pipeline.pdf_ingested',
   ASSETS_EXTRACTED: 'pipeline.assets_extracted',
   NARRATIVE_READY: 'pipeline.narrative_ready',
@@ -47,7 +54,6 @@ export const PipelineTopic = {
   LANDING_PAGE_READY: 'pipeline.landing_page_ready',
   RENDER_STARTED: 'pipeline.render_started',
   RENDER_COMPLETED: 'pipeline.render_completed',
-  PIPELINE_FAILED: 'pipeline.pipeline_failed',
 } as const;
 
 export type PipelineTopicKey = typeof PipelineTopic[keyof typeof PipelineTopic];
@@ -80,8 +86,10 @@ export class InMemoryEventBus implements IEventBus {
   private emitter = new EventEmitter();
 
   constructor() {
-    // Raise default listener limit (pipeline + workers can add many)
-    this.emitter.setMaxListeners(100);
+    // Raise default listener limit — pipeline + workers + SSE clients (cada
+    // SSE assina ~13 tópicos). Com 1000 listeners dá pra sustentar ~70 SSE
+    // clients concorrentes.
+    this.emitter.setMaxListeners(1000);
   }
 
   async publish<T>(

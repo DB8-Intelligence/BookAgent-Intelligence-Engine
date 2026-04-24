@@ -38,6 +38,9 @@ import {
   emitScriptReady,
   emitMediaPlanReady,
   emitPipelineFailed,
+  emitStageStarted,
+  emitStageCompleted,
+  emitPipelineCompleted,
 } from './task-orchestrator.js';
 
 /** Ordem fixa de execução dos 17 estágios */
@@ -85,6 +88,7 @@ export class Pipeline {
    *   Desligar via env: PIPELINE_PARALLEL_GENERATORS=false (default: true)
    */
   async execute(initialContext: ProcessingContext): Promise<JobResult> {
+    const pipelineStartMs = Date.now();
     let context = initialContext;
     const logs: ModuleExecutionLog[] = [];
     const parallelGenerators = process.env.PIPELINE_PARALLEL_GENERATORS !== 'false';
@@ -151,23 +155,36 @@ export class Pipeline {
       const startedAt = new Date();
       const startMs = Date.now();
 
+      // Emit stage-started (genérico) — pro SSE mostrar "IA processando branding…"
+      await emitStageStarted(context.jobId, {
+        stage: String(stage),
+        stageIndex: i,
+        totalStages: STAGE_ORDER.length,
+      }).catch(() => {});
+
       try {
         logger.info(`Pipeline: executando [${stage}] → ${mod.name}`);
         context = await mod.run(context);
 
+        const durationMs = Date.now() - startMs;
         logs.push({
           stage,
           moduleName: mod.name,
           status: ModuleStatus.SUCCESS,
-          durationMs: Date.now() - startMs,
+          durationMs,
           startedAt,
           completedAt: new Date(),
           warnings: [],
           metrics: createEmptyMetrics(),
         });
 
-        // Emit pub/sub events for event-driven consumers (workers)
-        // Fire-and-forget — errors in handlers don't break the pipeline
+        // Emit stage-completed (genérico) + eventos específicos do stage
+        await emitStageCompleted(context.jobId, {
+          stage: String(stage),
+          stageIndex: i,
+          totalStages: STAGE_ORDER.length,
+          durationMs,
+        }).catch(() => {});
         await this.emitStageEvents(stage, context).catch((err) => {
           logger.warn(`[Pipeline] emitStageEvents failed for ${stage}: ${err}`);
         });
@@ -200,6 +217,12 @@ export class Pipeline {
 
     // Anexar logs ao context final
     context = { ...context, executionLogs: logs };
+
+    // Emit pipeline-completed pro SSE sinalizar "tudo pronto"
+    await emitPipelineCompleted(context.jobId, {
+      totalDurationMs: Date.now() - pipelineStartMs,
+      outputCount: context.outputs?.length ?? 0,
+    }).catch(() => {});
 
     return {
       jobId: context.jobId,
@@ -327,21 +350,36 @@ export class Pipeline {
 
       const startedAt = new Date();
       const startMs = Date.now();
+      const stageIndex = STAGE_ORDER.indexOf(stage);
+
+      await emitStageStarted(baseContext.jobId, {
+        stage: String(stage),
+        stageIndex,
+        totalStages: STAGE_ORDER.length,
+      }).catch(() => {});
 
       try {
         logger.info(`Pipeline: executando [${stage}] → ${mod.name} (paralelo)`);
         const resultCtx = await mod.run(baseContext);
 
+        const durationMs = Date.now() - startMs;
         logs.push({
           stage,
           moduleName: mod.name,
           status: ModuleStatus.SUCCESS,
-          durationMs: Date.now() - startMs,
+          durationMs,
           startedAt,
           completedAt: new Date(),
           warnings: [],
           metrics: createEmptyMetrics(),
         });
+
+        await emitStageCompleted(baseContext.jobId, {
+          stage: String(stage),
+          stageIndex,
+          totalStages: STAGE_ORDER.length,
+          durationMs,
+        }).catch(() => {});
 
         return resultCtx;
       } catch (error) {

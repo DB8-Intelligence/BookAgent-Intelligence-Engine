@@ -77,13 +77,21 @@ export async function supabaseAuthMiddleware(
   _res: Response,
   next: NextFunction,
 ): Promise<void> {
+  // Aceita token por Authorization: Bearer (fetch/axios) OU
+  // ?access_token=... (EventSource do browser não suporta headers custom)
   const authHeader = req.headers.authorization;
+  const queryToken = typeof req.query.access_token === 'string'
+    ? req.query.access_token
+    : undefined;
 
-  if (!authHeader?.startsWith('Bearer ')) {
+  let token: string | undefined;
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.slice(7);
+  } else if (queryToken) {
+    token = queryToken;
+  } else {
     return next();
   }
-
-  const token = authHeader.slice(7);
 
   // Detect token algorithm from header to pick validation strategy
   let alg: string | undefined;
