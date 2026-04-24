@@ -320,6 +320,9 @@ export async function getGalleryFromFirestore(
     limit: Math.min(filters.limit ?? 50, 200),
   });
 
+  // Gallery expõe só publicUrl (GCS) — filePath é path local do Cloud Run
+  // que seria 404 no browser. Se upload falhou, preferimos downloadUrl=null
+  // e o frontend renderiza um placeholder "Processando…" em vez de link quebrado.
   return artifacts.map<GalleryItem>((a) => ({
     id: a.artifactId,
     jobId: a.jobId,
@@ -327,7 +330,7 @@ export async function getGalleryFromFirestore(
     format: a.exportFormat ?? '',
     title: a.title,
     sizeBytes: a.sizeBytes,
-    downloadUrl: a.publicUrl ?? a.filePath,
+    downloadUrl: a.publicUrl,
     previewUrl: a.publicUrl,
     status: a.status,
     createdAt: a.createdAt,

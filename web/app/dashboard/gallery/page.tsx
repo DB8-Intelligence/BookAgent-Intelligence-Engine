@@ -125,6 +125,7 @@ export default function GalleryPage() {
 function GalleryCard({ item }: { item: GalleryItem }) {
   const isVideo = (item.mimeType ?? "").startsWith("video/");
   const isImage = (item.mimeType ?? "").startsWith("image/");
+  const awaitingUpload = !item.downloadUrl && (isVideo || isImage);
 
   return (
     <div className="bg-white border rounded-lg overflow-hidden flex flex-col">
@@ -144,6 +145,11 @@ function GalleryCard({ item }: { item: GalleryItem }) {
             alt={item.title}
             className="w-full h-full object-cover"
           />
+        ) : awaitingUpload ? (
+          <div className="flex flex-col items-center justify-center w-full h-full text-slate-400 gap-2">
+            <div className="w-8 h-8 rounded-full border-2 border-slate-700 border-t-slate-400 animate-spin" />
+            <span className="text-xs">Subindo pro storage…</span>
+          </div>
         ) : (
           <div className="flex items-center justify-center w-full h-full text-slate-400 text-4xl">
             📄
