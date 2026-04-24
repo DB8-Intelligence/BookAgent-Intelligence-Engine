@@ -26,6 +26,7 @@ import type { TenantContext } from '../../domain/entities/tenant.js';
 import { PLAN_FEATURES } from '../../domain/entities/tenant.js';
 import {
   getProfile,
+  getTenant,
   ensureProfile,
   listJobsByTenant,
   listArtifactsByTenant,
@@ -34,8 +35,9 @@ import {
   type JobDoc,
   type ArtifactDoc,
   type Profile,
+  type Tenant,
 } from '../../persistence/google-persistence.js';
-import { materializePeriodReset } from '../billing/firestore-billing.js';
+import { materializePeriodReset, planLimitsFor } from '../billing/firestore-billing.js';
 import type { GalleryItem, GalleryFilters } from './dashboard-service.js';
 import { logger } from '../../utils/logger.js';
 
@@ -102,19 +104,20 @@ export async function getOverviewFromFirestore(
   const uid = tenantCtx.userId;
   const tid = tenantCtx.tenantId;
 
-  // Se o período virou, grava os contadores zerados antes de ler o profile
+  // Se o período virou, grava os contadores zerados antes de ler o tenant
   // (best-effort — não bloqueia render se falhar)
-  await materializePeriodReset(uid).catch(() => {});
+  await materializePeriodReset(tid).catch(() => {});
 
-  // Profile (credits) + recent jobs em paralelo
-  const [profile, recentJobsRaw] = await Promise.all([
+  // Profile + Tenant + recent jobs em paralelo
+  const [profile, tenant, recentJobsRaw] = await Promise.all([
     getProfile(uid),
+    getTenant(tid),
     listJobsByTenant(tid, { limit: 5 }),
   ]);
 
-  // Se profile não existe ainda (primeiro acesso antes do middleware rodar),
-  // cria um default. Raro na prática — ensureProfile roda no auth middleware.
+  // Fallbacks defensivos — dev sem Firebase ou provisioning incompleto
   const safeProfile: Profile = profile ?? await fallbackProfile(uid, tid);
+  const safeTenant: Tenant = tenant ?? fallbackTenant(uid, tid);
 
   // Contagem de artifacts por job (1 read por job do recent)
   const artifactCounts: Record<string, number> = {};
@@ -139,26 +142,27 @@ export async function getOverviewFromFirestore(
 
   const totalArtifacts = Object.values(artifactCounts).reduce((a, b) => a + b, 0);
 
+  const credits = safeTenant.credits;
   const alerts: CustomerAlert[] = [];
-  if (safeProfile.credits.jobsUsed >= safeProfile.credits.jobsLimit) {
+  if (credits.jobsUsed >= credits.jobsLimit) {
     alerts.push({
       type: 'warning',
       title: 'Créditos de job esgotados',
-      message: `${safeProfile.credits.jobsUsed}/${safeProfile.credits.jobsLimit} usados este mês. Faça upgrade para continuar.`,
+      message: `${credits.jobsUsed}/${credits.jobsLimit} usados este mês. Faça upgrade para continuar.`,
       actionLabel: 'Fazer upgrade',
     });
   }
 
-  const jobsPercent = safeProfile.credits.jobsLimit > 0
-    ? Math.round((safeProfile.credits.jobsUsed / safeProfile.credits.jobsLimit) * 100)
+  const jobsPercent = credits.jobsLimit > 0
+    ? Math.round((credits.jobsUsed / credits.jobsLimit) * 100)
     : 0;
-  const rendersPercent = safeProfile.credits.rendersLimit > 0
-    ? Math.round((safeProfile.credits.rendersUsed / safeProfile.credits.rendersLimit) * 100)
+  const rendersPercent = credits.rendersLimit > 0
+    ? Math.round((credits.rendersUsed / credits.rendersLimit) * 100)
     : 0;
 
   return {
-    tenantName: safeProfile.name ?? safeProfile.email ?? tid,
-    planTier: safeProfile.planTier,
+    tenantName: safeTenant.name ?? safeProfile.name ?? safeProfile.email ?? tid,
+    planTier: safeTenant.planTier,
     subscriptionStatus: 'active',
     stats: {
       jobsThisMonth: completedThisMonth,
@@ -169,35 +173,46 @@ export async function getOverviewFromFirestore(
       activeRevisions: 0,
     },
     usage: {
-      jobsUsed: safeProfile.credits.jobsUsed,
-      jobsLimit: safeProfile.credits.jobsLimit,
+      jobsUsed: credits.jobsUsed,
+      jobsLimit: credits.jobsLimit,
       jobsPercent,
-      rendersUsed: safeProfile.credits.rendersUsed,
-      rendersLimit: safeProfile.credits.rendersLimit,
+      rendersUsed: credits.rendersUsed,
+      rendersLimit: credits.rendersLimit,
       rendersPercent,
     },
     alerts,
-    lockedFeatures: getLockedFeaturesForPlan(safeProfile.planTier),
+    lockedFeatures: getLockedFeaturesForPlan(safeTenant.planTier),
     recentJobs: recentJobsRaw.map((j) => jobDocToListItem(j, artifactCounts[j.jobId] ?? 0)),
     generatedAt: new Date().toISOString(),
   };
 }
 
 async function fallbackProfile(uid: string, tenantId: string): Promise<Profile> {
-  // Edge case: o middleware pulou ensureProfile (DEV_BYPASS). Devolve um
-  // stub in-memory só pra render não quebrar — NÃO grava no Firestore.
+  // Edge case: middleware pulou ensureProfile (DEV_BYPASS). Stub in-memory.
   const now = new Date();
   return {
     uid,
     email: '',
     name: null,
+    activeTenantId: tenantId,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+}
+
+function fallbackTenant(uid: string, tenantId: string): Tenant {
+  const limits = planLimitsFor('starter');
+  const now = new Date();
+  return {
     tenantId,
+    ownerUid: uid,
+    name: 'Meu Workspace',
     planTier: 'starter',
     credits: {
       jobsUsed: 0,
-      jobsLimit: 1,
+      jobsLimit: limits.jobsLimit,
       rendersUsed: 0,
-      rendersLimit: 1,
+      rendersLimit: limits.rendersLimit,
       periodStart: now.toISOString(),
       periodEnd: new Date(now.getTime() + 30 * 86400_000).toISOString(),
     },

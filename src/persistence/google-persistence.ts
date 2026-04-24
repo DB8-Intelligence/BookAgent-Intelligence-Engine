@@ -108,20 +108,36 @@ export function firestore(): FirebaseFirestore.Firestore {
   return getApp().firestore();
 }
 
-// --- profiles ---------------------------------------------------------------
+// --- profiles + tenants ----------------------------------------------------
+//
+// Profile = identidade pessoal (uid, email, name).
+// Tenant = organização (planTier, credits). Na MVP, cada user tem um solo
+// tenant com tenantId = uid. Futuro: invites multi-user → vários uids num
+// mesmo tenant compartilhando o saldo.
+//
+// activeTenantId no profile indica qual tenant o user está operando no
+// momento (quando tiver múltiplos).
 
 export interface Profile {
   uid: string;
   email: string;
   name: string | null;
-  tenantId: string;                 // MVP: tenantId = uid (solo tenant)
+  activeTenantId: string;           // Default = uid (solo tenant)
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Tenant {
+  tenantId: string;
+  ownerUid: string;
+  name: string;
   planTier: 'starter' | 'pro' | 'agency';
   credits: {
     jobsUsed: number;
     jobsLimit: number;
     rendersUsed: number;
     rendersLimit: number;
-    periodStart: string;            // ISO — início do ciclo atual
+    periodStart: string;
     periodEnd: string;
   };
   createdAt: string;
@@ -129,6 +145,7 @@ export interface Profile {
 }
 
 const PROFILES = 'profiles';
+const TENANTS = 'tenants';
 const JOBS = 'jobs';
 const ARTIFACTS = 'artifacts';
 
@@ -137,17 +154,34 @@ export async function getProfile(uid: string): Promise<Profile | null> {
   return snap.exists ? (snap.data() as Profile) : null;
 }
 
+export async function getTenant(tenantId: string): Promise<Tenant | null> {
+  const snap = await firestore().collection(TENANTS).doc(tenantId).get();
+  return snap.exists ? (snap.data() as Tenant) : null;
+}
+
 /**
- * Upsert "just-in-time" do perfil na primeira login.
- * Se o doc não existe, cria com plano starter + limites derivados de
- * PLAN_TENANT_LIMITS (fonte de verdade pros planos).
+ * Upsert "just-in-time" na primeira login. Cria:
+ *   - profiles/{uid}        → identidade pessoal + activeTenantId=uid
+ *   - tenants/{uid}         → solo tenant, plano starter, credits zerados
+ *
+ * Atômico via batch write (falha → rollback total). Credits/planTier do
+ * tenant derivam de PLAN_TENANT_LIMITS (fonte de verdade).
  */
 export async function ensureProfile(user: FirebaseUser): Promise<Profile> {
-  const ref = firestore().collection(PROFILES).doc(user.uid);
-  const snap = await ref.get();
-  if (snap.exists) return snap.data() as Profile;
+  const db = firestore();
+  const profileRef = db.collection(PROFILES).doc(user.uid);
+  const tenantRef = db.collection(TENANTS).doc(user.uid);
 
-  // Import tardio pra evitar ciclo (billing importa deste módulo também)
+  const [profileSnap, tenantSnap] = await Promise.all([
+    profileRef.get(),
+    tenantRef.get(),
+  ]);
+
+  if (profileSnap.exists && tenantSnap.exists) {
+    return profileSnap.data() as Profile;
+  }
+
+  // Import tardio pra evitar ciclo
   const { planLimitsFor } = await import('../modules/billing/firestore-billing.js');
   const limits = planLimitsFor('starter');
 
@@ -159,7 +193,15 @@ export async function ensureProfile(user: FirebaseUser): Promise<Profile> {
     uid: user.uid,
     email: user.email,
     name: user.name ?? null,
+    activeTenantId: user.uid,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+
+  const tenant: Tenant = {
     tenantId: user.uid,
+    ownerUid: user.uid,
+    name: user.name ?? user.email ?? 'Meu Workspace',
     planTier: 'starter',
     credits: {
       jobsUsed: 0,
@@ -172,40 +214,28 @@ export async function ensureProfile(user: FirebaseUser): Promise<Profile> {
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
   };
-  await ref.set(profile);
+
+  const batch = db.batch();
+  if (!profileSnap.exists) batch.set(profileRef, profile);
+  if (!tenantSnap.exists) batch.set(tenantRef, tenant);
+  await batch.commit();
+
   logger.info(
-    `[GooglePersistence] Profile provisioned uid=${user.uid} plan=starter ` +
+    `[GooglePersistence] Provisioned uid=${user.uid} + solo tenant plan=starter ` +
     `limits=${limits.jobsLimit}j/${limits.rendersLimit}r`,
   );
 
   // Aplica upgrade pendente se webhook de pagamento chegou ANTES do signup.
-  // Non-blocking — se falhar, user segue com starter e pode fazer upgrade
-  // manual via /billing-fs/upgrade.
   try {
     const { claimPendingUpgrade } = await import('../modules/billing/webhook-bridge.js');
     const claimed = await claimPendingUpgrade(user.email, user.uid);
     if (claimed) {
-      const snapAfter = await ref.get();
-      return snapAfter.data() as Profile;
+      logger.info(`[GooglePersistence] pending upgrade claimed: ${claimed}`);
     }
   } catch (err) {
     logger.warn(`[GooglePersistence] claimPendingUpgrade failed: ${(err as Error).message}`);
   }
   return profile;
-}
-
-export async function incrementCredits(
-  uid: string,
-  field: 'jobsUsed' | 'rendersUsed',
-  delta: number = 1,
-): Promise<void> {
-  await firestore()
-    .collection(PROFILES)
-    .doc(uid)
-    .update({
-      [`credits.${field}`]: admin.firestore.FieldValue.increment(delta),
-      updatedAt: new Date().toISOString(),
-    });
 }
 
 // --- jobs -------------------------------------------------------------------

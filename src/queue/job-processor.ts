@@ -178,8 +178,8 @@ export async function executePipelineForTask(
       // Cloud Tasks retry: se createJob já rodou antes, este é o 2º retry
       // e o consume vai rodar 2x — aceita-se a duplicação pra MVP; pra
       // idempotência forte, marcar jobId como "credit-consumed" num flag.
-      await consumeJobCredit(tenantCtx.userId, 1);
-      logger.info(`[JobProcessor] credit consumed uid=${tenantCtx.userId}`);
+      await consumeJobCredit(tenantCtx.tenantId, 1);
+      logger.info(`[JobProcessor] credit consumed tenant=${tenantCtx.tenantId} uid=${tenantCtx.userId}`);
     } catch (err) {
       if (err instanceof CreditLimitError) {
         logger.warn(
@@ -348,7 +348,7 @@ export async function executePipelineForTask(
         if (renderCount > 0) {
           await safeExec('firestore consume renders', async () => {
             try {
-              await consumeRenderCredit(tenantCtx.userId, renderCount);
+              await consumeRenderCredit(tenantCtx.tenantId, renderCount);
             } catch (err) {
               if (err instanceof CreditLimitError) {
                 logger.warn(

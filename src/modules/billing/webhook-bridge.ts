@@ -10,7 +10,11 @@
  * primeiro login (implementação em commit separado).
  */
 
-import { firestore, resolveUidByEmail } from '../../persistence/google-persistence.js';
+import {
+  firestore,
+  resolveUidByEmail,
+  getProfile,
+} from '../../persistence/google-persistence.js';
 import { upgradePlan } from './firestore-billing.js';
 import type { PlanTier } from '../../plans/plan-config.js';
 import { logger } from '../../utils/logger.js';
@@ -48,19 +52,23 @@ export async function applyWebhookToFirestore(
     return { synced: false, reason: 'user-not-found', uid: undefined };
   }
 
+  // Resolve o tenant ativo do user (default: solo tenant = uid).
+  // Quando multi-tenant for implementado, usar profile.activeTenantId
+  // OU o tenant associado à externalSubscriptionId.
+  const profile = await getProfile(uid);
+  const tenantId = profile?.activeTenantId ?? uid;
+
   try {
     if (evt.eventType === 'cancel') {
-      // Cancelamento: volta pra starter, preserva ciclo atual
-      await upgradePlan(uid, 'starter', { resetPeriod: false });
-      await logBillingEvent(evt, uid, 'downgrade:cancel');
+      await upgradePlan(tenantId, 'starter', { resetPeriod: false });
+      await logBillingEvent(evt, uid, tenantId, 'downgrade:cancel');
     } else {
-      // Activate/renew: aplica tier + reseta ciclo (novo período pago)
-      await upgradePlan(uid, tier, { resetPeriod: true });
-      await logBillingEvent(evt, uid, 'upgrade');
+      await upgradePlan(tenantId, tier, { resetPeriod: true });
+      await logBillingEvent(evt, uid, tenantId, 'upgrade');
     }
     logger.info(
       `[WebhookBridge] ${evt.source}:${evt.eventType} aplicado uid=${uid} ` +
-      `email=${evt.email} → ${tier}`,
+      `tenant=${tenantId} email=${evt.email} → ${tier}`,
     );
     return { synced: true, uid };
   } catch (err) {
@@ -91,11 +99,13 @@ function normalizeTier(raw: string): PlanTier {
 async function logBillingEvent(
   evt: WebhookPlanEvent,
   uid: string,
+  tenantId: string,
   action: string,
 ): Promise<void> {
   try {
     await firestore().collection('billingEvents').add({
       uid,
+      tenantId,
       email: evt.email,
       source: evt.source,
       eventType: evt.eventType,
@@ -152,11 +162,16 @@ export async function claimPendingUpgrade(
   const pending = snap.data() as { planTier: PlanTier; source: string };
   const tier = normalizeTier(pending.planTier);
 
+  // Solo tenant = uid (ensureProfile acabou de criar). Quando multi-tenant
+  // for implementado, resolver via profile.activeTenantId.
+  const tenantId = uid;
+
   try {
-    await upgradePlan(uid, tier, { resetPeriod: true });
+    await upgradePlan(tenantId, tier, { resetPeriod: true });
     await ref.delete();
     logger.info(
-      `[WebhookBridge] pending upgrade aplicado email=${email} uid=${uid} → ${tier}`,
+      `[WebhookBridge] pending upgrade aplicado email=${email} uid=${uid} ` +
+      `tenant=${tenantId} → ${tier}`,
     );
     return tier;
   } catch (err) {

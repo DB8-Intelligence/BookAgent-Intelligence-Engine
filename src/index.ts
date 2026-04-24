@@ -108,6 +108,7 @@ import processRoutes from './api/routes/process.js';
 import jobsRoutes from './api/routes/jobs.js';
 import uploadsRoutes from './api/routes/uploads.js';
 import billingFirestoreRoutes from './api/routes/billing-firestore.js';
+import tenantsFirestoreRoutes from './api/routes/tenants-firestore.js';
 import pipelineEventsRoutes from './api/routes/pipeline-events.js';
 import approvalRoutes from './api/routes/approval.js';
 import reviewRoutes from './api/routes/reviews.js';
@@ -407,6 +408,7 @@ const prefix = config.api.prefix;
 app.use(`${prefix}/process`, processRoutes);
 app.use(`${prefix}/uploads`, uploadsRoutes);
 app.use(`${prefix}/billing-fs`, billingFirestoreRoutes);
+app.use(`${prefix}/tenants-fs`, tenantsFirestoreRoutes);
 app.use(`${prefix}/jobs`, jobsRoutes);
 // SSE stream de eventos do pipeline — montado em /jobs/:jobId/events
 app.use(`${prefix}/jobs`, pipelineEventsRoutes);

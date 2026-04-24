@@ -30,10 +30,13 @@ router.get('/credits', async (req: Request, res: Response) => {
     return;
   }
 
+  // Credits são tenant-scoped. Pra solo user, tenantId = uid.
+  const tenantId = req.tenantContext?.tenantId ?? req.authUser.id;
+
   try {
     const [jobs, renders] = await Promise.all([
-      checkJobAllowed(req.authUser.id, 0),   // count=0 → só leitura
-      checkRenderAllowed(req.authUser.id, 0),
+      checkJobAllowed(tenantId, 0),   // count=0 → só leitura
+      checkRenderAllowed(tenantId, 0),
     ]);
     sendSuccess(res, {
       jobs: {
@@ -68,13 +71,15 @@ router.post('/upgrade', async (req: Request, res: Response) => {
     return;
   }
 
+  const tenantId = req.tenantContext?.tenantId ?? req.authUser.id;
   try {
-    const profile = await upgradePlan(req.authUser.id, planTier as PlanTier, {
+    const tenant = await upgradePlan(tenantId, planTier as PlanTier, {
       resetPeriod: resetPeriod === true,
     });
     sendSuccess(res, {
-      planTier: profile.planTier,
-      credits: profile.credits,
+      tenantId: tenant.tenantId,
+      planTier: tenant.planTier,
+      credits: tenant.credits,
     });
   } catch (err) {
     logger.error(`[BillingFS] upgrade error: ${err}`);
