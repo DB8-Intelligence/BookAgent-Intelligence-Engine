@@ -85,7 +85,6 @@ substitutions:
   _REGION: us-central1
   _REPO: bookagent
   _API_SERVICE: bookagent-intelligence-engine
-  _WORKER_SERVICE: bookagent-worker
   _SA_EMAIL: bookagent-runtime@bookreel.iam.gserviceaccount.com
 
 options:
