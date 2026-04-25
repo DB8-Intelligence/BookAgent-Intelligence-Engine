@@ -240,51 +240,59 @@ setOrchestratorForWhatsAppFunnel(orchestrator);
 // Injetar JobRepository no jobsController (fallback para leitura no Supabase)
 if (supabaseClient) {
   const jobRepo = new JobRepository(supabaseClient);
+
+  // ─── Load-bearing: módulos consumidos pela UI ou middleware crítico ─────
   setJobRepository(jobRepo);
   setProcessJobRepository(new JobRepository(supabaseClient));
   setArtifactsJobRepository(jobRepo);
   setAutoProvisionClient(supabaseClient);
+  setTenantGuardSupabaseClient(supabaseClient);
+  setPlanGuardSupabaseClient(supabaseClient);
   setSupabaseClientForApproval(supabaseClient);
   setSupabaseClientForReview(supabaseClient);
   setSupabaseClientForRevision(supabaseClient);
-  setSupabaseClientForExperiments(supabaseClient);
   setSupabaseClientForBilling(supabaseClient);
   setSupabaseClientForAdmin(supabaseClient);
   setSupabaseClientForCustomerDashboard(supabaseClient);
   setSupabaseClientForAnalytics(supabaseClient);
   setSupabaseClientForInsights(supabaseClient);
-  setSupabaseClientForTemplates(supabaseClient);
-  setSupabaseClientForStrategy(supabaseClient);
-  setSupabaseClientForCampaigns(supabaseClient);
-  setSupabaseClientForScheduling(supabaseClient);
-  setSupabaseClientForExecution(supabaseClient);
-  setSupabaseClientForGovernance(supabaseClient);
-  setSupabaseClientForOptimization(supabaseClient);
-  setSupabaseClientForGoals(supabaseClient);
-  setSupabaseClientForMemory(supabaseClient);
-  setSupabaseClientForRecovery(supabaseClient);
-  setSupabaseClientForKnowledgeGraph(supabaseClient);
-  setSupabaseClientForSimulation(supabaseClient);
-  setSupabaseClientForDecisions(supabaseClient);
   setSupabaseClientForCoPilot(supabaseClient);
-  setSupabaseClientForExplainability(supabaseClient);
-  setSupabaseClientForMetaOptimization(supabaseClient);
   setSupabaseClientForTenants(supabaseClient);
   setSupabaseClientForWhatsAppFunnel(supabaseClient);
   setSupabaseClientForPublicApi(supabaseClient);
-  setSupabaseClientForPartners(supabaseClient);
-  setSupabaseClientForAcquisition(supabaseClient);
-  setSupabaseClientForIntegrationHub(supabaseClient);
-  setSupabaseClientForDistribution(supabaseClient);
   setSupabaseClientForBugs(supabaseClient);
   setSupabaseClientForJobsDelete(supabaseClient);
-  setTenantGuardSupabaseClient(supabaseClient);
   setVideoRenderSupabaseClient(supabaseClient);
-  setPlanGuardSupabaseClient(supabaseClient);
   setLeadsSupabaseClient(supabaseClient);
   setOpsSupabaseClient(supabaseClient);
   setKiwifyWebhookClient(supabaseClient);
-  metrics.setSupabaseClient(supabaseClient);
+
+  // ─── Sprint 1 (telemetria zero) — Cluster B desligado ───────────────────
+  // Módulos cujos endpoints existem mas a UI (web/lib/bookagentApi.ts) não
+  // consome. Sem injection, os métodos caem no guard `if (!supabase) return`
+  // e degradam silenciosamente — zero writes/reads no Postgres legado.
+  // Reativar é descomentar a linha. Ver MASTER §7 (Cluster B do ROI map).
+  // setSupabaseClientForExperiments(supabaseClient);
+  // setSupabaseClientForTemplates(supabaseClient);
+  // setSupabaseClientForStrategy(supabaseClient);
+  // setSupabaseClientForCampaigns(supabaseClient);
+  // setSupabaseClientForScheduling(supabaseClient);
+  // setSupabaseClientForExecution(supabaseClient);
+  // setSupabaseClientForGovernance(supabaseClient);
+  // setSupabaseClientForOptimization(supabaseClient);
+  // setSupabaseClientForGoals(supabaseClient);
+  // setSupabaseClientForMemory(supabaseClient);
+  // setSupabaseClientForRecovery(supabaseClient);
+  // setSupabaseClientForKnowledgeGraph(supabaseClient);
+  // setSupabaseClientForSimulation(supabaseClient);
+  // setSupabaseClientForDecisions(supabaseClient);
+  // setSupabaseClientForExplainability(supabaseClient);
+  // setSupabaseClientForMetaOptimization(supabaseClient);
+  // setSupabaseClientForPartners(supabaseClient);
+  // setSupabaseClientForAcquisition(supabaseClient);
+  // setSupabaseClientForIntegrationHub(supabaseClient);
+  // setSupabaseClientForDistribution(supabaseClient);
+  // metrics.setSupabaseClient(supabaseClient);
 }
 
 // Internal routes (Cloud Tasks webhooks) — precisam do orchestrator
