@@ -1,9 +1,7 @@
 "use client";
 
 /**
- * Auth Context — provê o estado de sessão do Firebase pra todo o app.
- *
- * Substitui o antigo AuthProvider do Supabase. Consumido via useAuth().
+ * Auth Context — estado de sessão Firebase. Consumido via useAuth().
  */
 
 import {

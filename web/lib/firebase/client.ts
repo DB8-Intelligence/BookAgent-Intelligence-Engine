@@ -1,13 +1,8 @@
 /**
- * Firebase Browser Client — singleton para uso no frontend.
+ * Firebase Browser Client — singleton.
  *
- * Substitui @supabase/supabase-js. Usa env vars NEXT_PUBLIC_FIREBASE_*
- * (inlineadas no bundle em build-time — passar via --build-arg no Dockerfile).
- *
- * Env vars:
- *   NEXT_PUBLIC_FIREBASE_API_KEY
- *   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
- *   NEXT_PUBLIC_FIREBASE_PROJECT_ID
+ * Lê NEXT_PUBLIC_FIREBASE_{API_KEY,AUTH_DOMAIN,PROJECT_ID} inlineadas no
+ * bundle em build-time (passadas via --build-arg no Dockerfile).
  */
 
 "use client";
@@ -38,10 +33,7 @@ export function getFirebaseAuth(): Auth {
   return authInstance;
 }
 
-/**
- * Shortcut pra recuperar o ID token atual (usado pelo bookagentApi
- * pra montar Authorization: Bearer em toda request).
- */
+/** ID token corrente (usado em Authorization: Bearer pelo bookagentApi). */
 export async function getAccessToken(): Promise<string | null> {
   const user = getFirebaseAuth().currentUser;
   if (!user) return null;

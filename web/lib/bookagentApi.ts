@@ -210,8 +210,12 @@ export interface HealthResponse {
   engine: string;
   version: string;
   uptime: number;
-  persistence: { mode: string; supabase: boolean };
-  queue: { mode: string; enabled: boolean };
+  persistence: {
+    primary: "firestore";
+    firestore: { enabled: boolean; projectId: string | null };
+    supabase: { mode: string; enabled: boolean; scope: "legacy-modules-only" };
+  };
+  queue: { mode: "cloud-tasks-async" | "sync-inline"; enabled: boolean; provider: "google-cloud-tasks" | null };
   providers: {
     ai: { provider: string; available: boolean };
     tts: { provider: string; available: boolean };

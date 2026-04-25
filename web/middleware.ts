@@ -1,17 +1,9 @@
 /**
- * Middleware — no-op com Firebase Auth.
+ * Middleware — no-op.
  *
- * Firebase armazena sessão em localStorage (client-side), não em cookies
- * HTTP-only como o Supabase SSR fazia. O Next.js middleware roda no Edge
- * Runtime antes da página hidratar e não consegue ler localStorage, então
- * não dá pra decidir redirect aqui.
- *
- * Proteção de rotas agora é client-side via web/components/auth/RequireAuth.tsx
- * dentro dos layouts das rotas protegidas (/dashboard, /upload, etc.).
- *
- * Este arquivo permanece como placeholder pra caso queira voltar a checar
- * algo server-side (ex: edge-validado via Firebase Session Cookies, que
- * exigem backend setup separado).
+ * Sessão Firebase vive em localStorage; Edge Runtime não acessa localStorage,
+ * então proteção de rota é client-side via <RequireAuth/> nos layouts.
+ * Placeholder mantido pra caso de Firebase Session Cookies validados no Edge.
  */
 
 import { NextResponse, type NextRequest } from "next/server";

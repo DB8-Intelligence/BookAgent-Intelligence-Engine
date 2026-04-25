@@ -1,11 +1,8 @@
 "use client";
 
 /**
- * useJobsList — lista de jobs do tenant com polling leve.
- *
- * Substitui useRealtimeJobs (que usava Supabase Realtime). Agora chama
- * GET /api/v1/dashboard/jobs periodicamente. Para updates em tempo real
- * de UM job específico (ex: acompanhar pipeline), use useJobEvents (SSE).
+ * useJobsList — lista de jobs do tenant via polling de GET /api/v1/dashboard/jobs.
+ * Para acompanhar UM job em tempo real (ex: pipeline events), use useJobEvents (SSE).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -21,8 +18,6 @@ interface UseJobsListResult {
   total: number;
   loading: boolean;
   error: string | null;
-  /** Mantido por compat com useRealtimeJobs (sempre false agora) */
-  isRealtime: boolean;
   refresh: () => Promise<void>;
 }
 
@@ -56,8 +51,5 @@ export function useJobsList(opts: UseJobsListOptions = {}): UseJobsListResult {
     };
   }, [load, pollIntervalMs]);
 
-  return { jobs, total, loading, error, isRealtime: false, refresh: load };
+  return { jobs, total, loading, error, refresh: load };
 }
-
-// Backward-compat alias pra não quebrar código que importa com o nome antigo
-export { useJobsList as useRealtimeJobs };

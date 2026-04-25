@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * RequireAuth — wrapper que redireciona pra /login se o user não está
- * autenticado no Firebase. Substitui a checagem server-side que o
- * middleware.ts fazia via Supabase cookies.
+ * RequireAuth — wrapper client-side que redireciona pra /login quando o
+ * usuário não está autenticado no Firebase.
  */
 
 import { useEffect, type ReactNode } from "react";

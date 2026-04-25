@@ -9,7 +9,7 @@ import {
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { EmptyState } from "@/components/dashboard/EmptyState";
-import { useRealtimeJobs } from "@/hooks/useJobsList";
+import { useJobsList } from "@/hooks/useJobsList";
 import { extractMaterialName } from "@/lib/materialName";
 
 type FilterKey = "ALL" | "PROCESSING" | "AWAITING_REVIEW" | "APPROVED" | "PUBLISHED" | "FAILED";
@@ -24,7 +24,7 @@ const FILTER_OPTIONS: { key: FilterKey; label: string }[] = [
 ];
 
 export default function JobsListPage() {
-  const { jobs, total, loading, error, isRealtime, refresh } = useRealtimeJobs();
+  const { jobs, total, loading, error, refresh } = useJobsList();
   const [filter, setFilter] = useState<FilterKey>("ALL");
   const [deleting, setDeleting] = useState<string | null>(null);
 
@@ -72,14 +72,6 @@ export default function JobsListPage() {
       <PageHeader
         title="Jobs"
         description={`${total} job${total !== 1 ? "s" : ""} no total`}
-        action={
-          isRealtime ? (
-            <span className="flex items-center gap-1.5 text-xs text-emerald-600">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Ao vivo
-            </span>
-          ) : undefined
-        }
       />
 
       {/* Filter buttons */}
