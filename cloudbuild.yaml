@@ -21,8 +21,8 @@
 #     --role=roles/cloudtasks.enqueuer
 #
 #   # Após primeiro deploy, PEGUE a URL do Cloud Run API e configure:
-#   gcloud run services update bookagent-api --region=us-central1 \
-#     --update-env-vars=CLOUD_TASKS_TARGET_URL=https://bookagent-api-<hash>-uc.a.run.app
+#   gcloud run services update bookagent-intelligence-engine --region=us-central1 \
+#     --update-env-vars=CLOUD_TASKS_TARGET_URL=https://bookagent-intelligence-engine-<num>.us-central1.run.app
 #
 #   # Artifact Registry
 #   gcloud artifacts repositories create bookagent \
@@ -84,7 +84,7 @@
 substitutions:
   _REGION: us-central1
   _REPO: bookagent
-  _API_SERVICE: bookagent-api
+  _API_SERVICE: bookagent-intelligence-engine
   _WORKER_SERVICE: bookagent-worker
   _SA_EMAIL: bookagent-runtime@bookreel.iam.gserviceaccount.com
 

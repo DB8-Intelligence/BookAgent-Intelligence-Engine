@@ -28,15 +28,20 @@ FROM node:20-slim AS web-builder
 ARG NEXT_PUBLIC_FIREBASE_API_KEY
 ARG NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
 ARG NEXT_PUBLIC_FIREBASE_PROJECT_ID
+# NEXT_PUBLIC_* só — NÃO setar NODE_ENV=production aqui. Se setar, npm ci
+# pula devDependencies (autoprefixer, postcss, tailwindcss) que o next build
+# precisa em build-time. next build já roda em production mode por default,
+# independente de NODE_ENV.
 ENV NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY} \
     NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN} \
-    NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID} \
-    NODE_ENV=production
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID}
 
 WORKDIR /app/web
 
 COPY web/package*.json ./
-RUN npm ci --no-audit --no-fund
+# --include=dev defensivo: se alguém definir NODE_ENV externamente, mantém
+# devDeps disponíveis pro build (autoprefixer, postcss, tailwindcss, typescript)
+RUN npm ci --include=dev --no-audit --no-fund
 
 COPY web/ ./
 RUN npm run build
