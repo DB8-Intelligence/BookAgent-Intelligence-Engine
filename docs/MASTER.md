@@ -250,8 +250,8 @@ cd web && npm run dev
 # Pipeline sample (fixture sintético "Residencial Vista Verde")
 npm run sample
 
-# Deploy Cloud Run
-bash scripts/deploy.sh
+# Deploy Cloud Run via Cloud Build
+gcloud builds submit --config=cloudbuild.yaml .
 
 # Health check
 bash scripts/health-check.sh

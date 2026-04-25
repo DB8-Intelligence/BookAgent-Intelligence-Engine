@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # ============================================================================
-# BookAgent Intelligence Engine — Deploy Script
+# DEPRECATED: Vercel deployment removido.
+# Usar Cloud Run via Cloud Build.
+#
+#   gcloud builds submit --config=cloudbuild.yaml .
+#
+# Este script é mantido como referência histórica (Sprint 3.1 Vercel disconnect).
+# Não executar — invocações do `vercel` CLI abaixo apontam pra um projeto
+# Vercel que será desativado.
+# ============================================================================
+# BookAgent Intelligence Engine — Deploy Script (legado Vercel)
 # Executa no seu terminal local (não no container Claude)
 #
 # Pré-requisitos:
