@@ -148,6 +148,7 @@ import customerDashboardRoutes from './api/routes/customer-dashboard.js';
 import videoRoutes from './api/routes/video.js';
 import bugsRoutes, { setSupabaseClientForBugs } from './api/routes/bugs.js';
 import internalRoutes, { setInternalRoutesDeps } from './api/routes/internal.js';
+import tasksRoutes, { setTasksRoutesDeps } from './api/routes/tasks.js';
 import { setSupabaseClientForJobsDelete } from './api/routes/jobs.js';
 
 // --- Middleware ---
@@ -295,15 +296,17 @@ if (supabaseClient) {
   // metrics.setSupabaseClient(supabaseClient);
 }
 
-// Internal routes (Cloud Tasks webhooks) — precisam do orchestrator
-// + repos pra executar pipelines/renders quando o Cloud Tasks chamar.
-setInternalRoutesDeps({
+// Tasks routes (canonical Cloud Tasks endpoints) e Internal (alias deprecated)
+// — ambos compartilham as mesmas deps porque ambos delegam aos task-handlers.
+const taskHandlerDeps = {
   orchestrator,
   jobRepo: supabaseClient ? new JobRepository(supabaseClient) : null,
   artifactRepo: supabaseClient ? new ArtifactRepository(supabaseClient) : null,
   storageManager,
   supabaseClient,
-});
+};
+setTasksRoutesDeps(taskHandlerDeps);
+setInternalRoutesDeps(taskHandlerDeps);
 
 // Queue mode — Cloud Tasks async ou sync inline fallback
 const queueMode = isQueueAvailable();
@@ -338,7 +341,7 @@ app.use(express.json({ limit: '10mb' }));
 
 // Paths que NÃO são frontend Next — qualquer coisa que não comece com esses
 // prefixos é tratada como asset/rota do Next e pula auth middlewares.
-const API_PATHS = ['/api', '/internal', '/webhooks', '/generate-video', '/health'];
+const API_PATHS = ['/api', '/internal', '/tasks', '/webhooks', '/generate-video', '/health'];
 const isApiRequest = (req: Request): boolean =>
   API_PATHS.some((p) => req.path === p || req.path.startsWith(`${p}/`));
 
@@ -458,8 +461,13 @@ app.use(`${prefix}/integrations`, integrationHubRoutes);
 app.use(`${prefix}/distribution`, distributionRoutes);
 app.use(`${prefix}/bugs`, bugsRoutes);
 
-// Internal routes — chamadas pelo Cloud Tasks (OIDC authenticated).
+// Tasks routes — canonical Cloud Tasks endpoints (OIDC authenticated).
 // Fora do prefix /api/v1 porque não são endpoints de usuário.
+app.use('/tasks', tasksRoutes);
+
+// Internal routes — DEPRECATED alias mantido por 1 sprint pra absorver tasks
+// já enfileiradas pros caminhos antigos (/internal/execute-pipeline, etc.).
+// Remover quando a queue do Cloud Tasks confirmar que está vazia.
 app.use('/internal', internalRoutes);
 
 // Webhooks externos (Kiwify, Hotmart) — sem tenant guard

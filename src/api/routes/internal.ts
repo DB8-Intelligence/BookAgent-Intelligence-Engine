@@ -1,28 +1,32 @@
 /**
- * Internal Routes — endpoints chamados pelo Cloud Tasks
+ * Internal Routes — DEPRECATED ALIAS de /tasks/*
  *
- * Estes endpoints não devem ser chamados por usuários — eles são o
- * "webhook" que o Cloud Tasks invoca quando processa uma task.
+ * Estes endpoints ficam disponíveis durante 1 sprint pra migração suave do
+ * Cloud Tasks queue (que apontava pra `/internal/execute-pipeline` e
+ * `/internal/execute-video-render`). Tasks novas são enfileiradas pra
+ * `/tasks/pipeline` e `/tasks/video` — estes aliases servem só pra absorver
+ * tasks já em queue no momento do deploy.
  *
- * Proteção: todos usam cloudTasksAuth middleware que valida OIDC.
+ * Endpoints (mantidos como alias):
+ *   POST /internal/execute-pipeline       → /tasks/pipeline
+ *   POST /internal/execute-video-render   → /tasks/video
  *
- * Endpoints:
- *   POST /internal/execute-pipeline       — roda o pipeline completo de um job
- *   POST /internal/execute-video-render   — renderiza um vídeo (RenderSpec → MP4)
+ * REMOVER no próximo sprint depois que Cloud Tasks UI/queues confirmarem
+ * que não há mais tasks pendentes apontando pros caminhos antigos.
  */
 
 import { Router, type Request, type Response } from 'express';
 import { cloudTasksAuth } from '../middleware/cloud-tasks-auth.js';
 import { logger } from '../../utils/logger.js';
-import type { Orchestrator } from '../../core/orchestrator.js';
-import type { PersistentOrchestrator } from '../../persistence/persistent-orchestrator.js';
-import type { JobRepository } from '../../persistence/job-repository.js';
-import type { ArtifactRepository } from '../../persistence/artifact-repository.js';
-import type { StorageManager } from '../../persistence/storage-manager.js';
-import type { SupabaseClient } from '../../persistence/supabase-client.js';
-import { executePipelineForTask } from '../../queue/job-processor.js';
-import { processVideoRenderJob } from '../../queue/video-processor.js';
-import type { PipelineTaskPayload, VideoRenderTaskPayload } from '../../queue/cloud-tasks.js';
+import {
+  handlePipelineTask,
+  handleVideoTask,
+  type TaskHandlerDeps,
+} from '../../queue/task-handlers.js';
+import type {
+  PipelineTaskPayload,
+  VideoRenderTaskPayload,
+} from '../../queue/cloud-tasks.js';
 
 const router = Router();
 router.use(cloudTasksAuth);
@@ -31,22 +35,14 @@ router.use(cloudTasksAuth);
 // Dependency injection
 // ---------------------------------------------------------------------------
 
-interface InternalDeps {
-  orchestrator: Orchestrator | PersistentOrchestrator;
-  jobRepo: JobRepository | null;
-  artifactRepo: ArtifactRepository | null;
-  storageManager: StorageManager | null;
-  supabaseClient: SupabaseClient | null;
-}
+let deps: TaskHandlerDeps | null = null;
 
-let deps: InternalDeps | null = null;
-
-export function setInternalRoutesDeps(d: InternalDeps): void {
+export function setInternalRoutesDeps(d: TaskHandlerDeps): void {
   deps = d;
 }
 
 // ---------------------------------------------------------------------------
-// POST /internal/execute-pipeline
+// POST /internal/execute-pipeline  (deprecated alias of /tasks/pipeline)
 // ---------------------------------------------------------------------------
 
 router.post('/execute-pipeline', async (req: Request, res: Response) => {
@@ -61,25 +57,20 @@ router.post('/execute-pipeline', async (req: Request, res: Response) => {
     return;
   }
 
-  logger.info(`[internal] execute-pipeline: job=${payload.jobId}`);
+  logger.info(`[/internal/execute-pipeline] DEPRECATED — delegating to /tasks/pipeline (job=${payload.jobId})`);
 
-  // Responde 200 imediatamente — Cloud Tasks tem deadline (default 10min).
-  // Se demorar mais, Cloud Tasks retry. Por isso respondemos rápido E
-  // processamos. Se o processo for longo, o Cloud Tasks retry pode duplicar.
-  // TODO: idempotência via job status check.
   try {
-    await executePipelineForTask(payload, deps);
-    res.status(200).json({ success: true, data: { jobId: payload.jobId, done: true } });
+    const result = await handlePipelineTask(payload, deps);
+    res.status(200).json({ success: true, data: result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logger.error(`[internal] execute-pipeline failed for ${payload.jobId}: ${msg}`);
-    // 500 faz Cloud Tasks retry. 400 não.
+    logger.error(`[/internal/execute-pipeline] failed for ${payload.jobId}: ${msg}`);
     res.status(500).json({ success: false, error: { code: 'PIPELINE_FAILED', message: msg } });
   }
 });
 
 // ---------------------------------------------------------------------------
-// POST /internal/execute-video-render
+// POST /internal/execute-video-render  (deprecated alias of /tasks/video)
 // ---------------------------------------------------------------------------
 
 router.post('/execute-video-render', async (req: Request, res: Response) => {
@@ -94,26 +85,16 @@ router.post('/execute-video-render', async (req: Request, res: Response) => {
     return;
   }
 
-  logger.info(`[internal] execute-video-render: job=${payload.jobId} artifact=${payload.artifactId}`);
+  logger.info(
+    `[/internal/execute-video-render] DEPRECATED — delegating to /tasks/video (job=${payload.jobId})`,
+  );
 
   try {
-    // Wrap payload no formato que processVideoRenderJob espera (era BullJob)
-    const fakeJob = {
-      data: payload,
-      attemptsMade: 0,
-      opts: { attempts: 1 },
-    } as unknown as Parameters<typeof processVideoRenderJob>[0];
-
-    await processVideoRenderJob(fakeJob, {
-      supabase: deps.supabaseClient,
-      outputDir: 'storage/outputs/video',
-      tempDir: 'storage/temp/video',
-    });
-
-    res.status(200).json({ success: true, data: { jobId: payload.jobId, done: true } });
+    const result = await handleVideoTask(payload, deps);
+    res.status(200).json({ success: true, data: result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logger.error(`[internal] execute-video-render failed: ${msg}`);
+    logger.error(`[/internal/execute-video-render] failed: ${msg}`);
     res.status(500).json({ success: false, error: { code: 'RENDER_FAILED', message: msg } });
   }
 });
