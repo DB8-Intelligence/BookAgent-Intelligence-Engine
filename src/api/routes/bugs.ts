@@ -13,6 +13,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { SupabaseClient } from '../../persistence/supabase-client.js';
 import { logger } from '../../utils/logger.js';
+import { createBugReport as createBugReportInFirestore } from '../../persistence/firestore/bug-report-repository.js';
 
 const router = Router();
 
@@ -121,7 +122,14 @@ router.post('/', async (req: Request, res: Response) => {
   const safeSeverity = validSeverities.includes(severity) ? severity : 'bug';
 
   try {
-    const rows = await supabase.insert('bookagent_bug_reports', {
+    const rows = await supabase.insert<{
+      id?: string;
+      user_id?: string;
+      title?: string;
+      description?: string | null;
+      severity?: string;
+      context?: Record<string, unknown>;
+    }>('bookagent_bug_reports', {
       user_id: userId,
       title: title.slice(0, 200),
       description: description?.slice(0, 4000) ?? null,
@@ -129,8 +137,36 @@ router.post('/', async (req: Request, res: Response) => {
       context: context ?? {},
     });
 
+    const created = rows[0] ?? {};
     logger.info(`[Bugs] Created bug report by user ${userId}: "${title.slice(0, 50)}"`);
-    sendJson(res, rows[0] ?? { id: 'created' }, 201);
+
+    // ─── Dual-write Firestore (Sprint 3.2) ─────────────────────────────────
+    // Best-effort: falha de Firestore não derruba a request. Supabase
+    // continua sendo source of truth de leitura até o cutover.
+    if (typeof created.id === 'string' && created.id) {
+      const bugId = created.id;
+      const tenantId = req.tenantContext?.tenantId ?? userId;
+      const email = resolveEmail(req) ?? null;
+      createBugReportInFirestore({
+        id: bugId,
+        type: 'bug',
+        severity: safeSeverity,
+        title: title.slice(0, 200),
+        description: description?.slice(0, 4000) ?? null,
+        email,
+        userId,
+        tenantId,
+        source: 'in-app',
+        metadata: (context as Record<string, unknown>) ?? {},
+      }).catch((err) => {
+        console.warn('[Bugs][dual-write] Firestore failed', {
+          error: err?.message,
+          bugId,
+        });
+      });
+    }
+
+    sendJson(res, created.id ? created : { id: 'created' }, 201);
   } catch (err) {
     logger.error(`[Bugs] Failed to create report: ${err}`);
     sendError(res, 'INTERNAL_ERROR', 'Failed to create bug report', 500);
