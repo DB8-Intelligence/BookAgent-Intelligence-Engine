@@ -36,10 +36,11 @@ export function mountHealthRoute(app: Express, snapshot: HealthSnapshot): void {
           enabled: !!(process.env.GOOGLE_CLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID),
           projectId: process.env.GOOGLE_CLOUD_PROJECT ?? process.env.FIREBASE_PROJECT_ID ?? null,
         },
+        // Supabase foi decommissionado em runtime (Sprint 3.7). Continua
+        // exposto no /health pra UI/monitoramento detectar a transição.
         supabase: {
-          mode: snapshot.persistenceMode,
-          enabled: snapshot.persistenceMode === 'supabase',
-          scope: 'legacy-modules-only',
+          enabled: false,
+          deprecated: true,
         },
       },
       queue: {

@@ -117,19 +117,18 @@ storageManager.ensureDirectories().catch((err) => {
 // Criar orchestrator base
 const baseOrchestrator = new Orchestrator();
 
-// Determinar se usar PersistentOrchestrator (com Supabase) ou base (in-memory)
-let orchestrator: Orchestrator | PersistentOrchestrator;
-let persistenceMode: 'supabase' | 'memory' = 'memory';
-
-const supabaseClient = SupabaseClient.tryFromEnv();
-if (supabaseClient) {
-  orchestrator = new PersistentOrchestrator(baseOrchestrator, supabaseClient);
-  persistenceMode = 'supabase';
-  logger.info('[Bootstrap] Persistence mode: Supabase (jobs + artifacts will be persisted)');
-} else {
-  orchestrator = baseOrchestrator;
-  logger.info('[Bootstrap] Persistence mode: in-memory (configure SUPABASE_URL to enable persistence)');
-}
+// ─── Sprint 3.7 — Supabase decommissioned ──────────────────────────────────
+// Runtime é 100% Firestore-only. Não inicializamos mais SupabaseClient.
+// Env vars SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (se ainda mapeadas via
+// cloudbuild.yaml) são ignoradas. Cleanup do Secret Manager fica pra Sprint 3.8.
+//
+// Orchestrator usa o base in-memory — PersistentOrchestrator dependia de
+// Supabase pra read-side; estado canônico de jobs vive no Firestore via
+// google-persistence.ts (createJob/updateJob).
+const orchestrator: Orchestrator | PersistentOrchestrator = baseOrchestrator;
+const persistenceMode: 'supabase' | 'memory' = 'memory';
+const supabaseClient: SupabaseClient | null = null;
+logger.info('[Bootstrap] Persistence mode: Firestore-only (Supabase decommissioned in Sprint 3.7)');
 
 // Registrar todos os 17 módulos no pipeline (ordem definida em pipeline.ts)
 const pipelineModules = [

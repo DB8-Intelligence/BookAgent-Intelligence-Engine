@@ -1,5 +1,5 @@
 /**
- * Bug Reports API — In-app bug reporting
+ * Bug Reports API — In-app bug reporting (Firestore-only desde Sprint 3.7)
  *
  * Routes:
  *   POST   /bugs          — create a bug report (authenticated user)
@@ -7,24 +7,41 @@
  *   GET    /bugs          — list all reports (admin only)
  *   PATCH  /bugs/:id      — triage: update status/notes (admin only)
  *   GET    /bugs/is-admin — check if current user is admin
+ *
+ * Storage: `bug_reports/{id}` no Firestore. O setSupabaseClientForBugs ainda
+ * existe como no-op pra retrocompat com o composition root, mas Supabase
+ * NÃO é mais usado em nenhuma rota.
  */
 
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { SupabaseClient } from '../../persistence/supabase-client.js';
+import type { SupabaseClient } from '../../persistence/supabase-client.js';
 import { logger } from '../../utils/logger.js';
-import { createBugReport as createBugReportInFirestore } from '../../persistence/firestore/bug-report-repository.js';
+import { logDeprecatedSupabaseCall } from '../../utils/deprecated-supabase.js';
+import {
+  createBugReport,
+  listBugReportsByUser,
+  listBugReports,
+  updateBugReport,
+  type BugSeverity,
+  type BugStatus,
+} from '../../persistence/firestore/bug-report-repository.js';
+import { randomUUID } from 'node:crypto';
 
 const router = Router();
 
 // ---------------------------------------------------------------------------
-// Supabase client (lazy, same pattern as other controllers)
+// Compat shim — composition root ainda chama setSupabaseClientForBugs().
+// Mantemos como no-op pra não quebrar bootstrap; nenhum branch da rota
+// consulta `supabase` mais.
 // ---------------------------------------------------------------------------
 
-let supabase: SupabaseClient | null = null;
-
-export function setSupabaseClientForBugs(client: SupabaseClient): void {
-  supabase = client;
+export function setSupabaseClientForBugs(_client: SupabaseClient): void {
+  logDeprecatedSupabaseCall({
+    module: 'BugsRoute',
+    action: 'setSupabaseClientForBugs',
+    reason: 'Bugs route is Firestore-only since Sprint 3.7 — Supabase client ignored.',
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -41,26 +58,24 @@ function isAdmin(email: string | undefined): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Auth resolver — matches the fallback chain used elsewhere in the app
+// Auth resolver — Firebase UID-first (Sprint 3.7)
 // ---------------------------------------------------------------------------
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function isValidUuid(value: string | undefined): value is string {
-  return typeof value === 'string' && UUID_RE.test(value);
-}
-
 function resolveUserId(req: Request): string | undefined {
-  // Try JWT first (from supabaseAuthMiddleware) — most trusted source
-  if (isValidUuid(req.authUser?.id)) return req.authUser.id;
-  // Then tenantContext — but skip 'anonymous' sentinel
+  // Firebase Auth (firebaseAuthMiddleware) — fonte primária
+  const authId = req.authUser?.id;
+  if (typeof authId === 'string' && authId.trim()) return authId.trim();
+
+  // tenantContext — populado por tenant-guard (já espelha authUser.id quando Firebase)
   const ctxUserId = req.tenantContext?.userId;
-  if (ctxUserId && ctxUserId !== 'anonymous' && isValidUuid(ctxUserId)) {
-    return ctxUserId;
+  if (typeof ctxUserId === 'string' && ctxUserId.trim() && ctxUserId !== 'anonymous') {
+    return ctxUserId.trim();
   }
-  // Fallback to x-user-id header directly
+
+  // Header explícito — chamadas internas / scripts
   const headerId = req.headers['x-user-id'];
-  if (typeof headerId === 'string' && isValidUuid(headerId)) return headerId;
+  if (typeof headerId === 'string' && headerId.trim()) return headerId.trim();
+
   return undefined;
 }
 
@@ -88,18 +103,17 @@ function sendError(res: Response, code: string, message: string, status = 400): 
   });
 }
 
+const VALID_SEVERITIES: BugSeverity[] = ['blocker', 'bug', 'suggestion'];
+const VALID_STATUSES: BugStatus[] = ['new', 'investigating', 'fixed', 'wont_fix'];
+
 // ---------------------------------------------------------------------------
-// POST /bugs — create bug report
+// POST /bugs — create bug report (Firestore)
 // ---------------------------------------------------------------------------
 
 router.post('/', async (req: Request, res: Response) => {
   const userId = resolveUserId(req);
   if (!userId) {
     sendError(res, 'UNAUTHORIZED', 'Authentication required', 401);
-    return;
-  }
-  if (!supabase) {
-    sendError(res, 'SERVICE_UNAVAILABLE', 'Supabase not configured', 503);
     return;
   }
 
@@ -118,57 +132,32 @@ router.post('/', async (req: Request, res: Response) => {
     return;
   }
 
-  const validSeverities = ['blocker', 'bug', 'suggestion'];
-  const safeSeverity = validSeverities.includes(severity) ? severity : 'bug';
+  const safeSeverity: BugSeverity = (VALID_SEVERITIES as string[]).includes(severity)
+    ? (severity as BugSeverity)
+    : 'bug';
+
+  const bugId = randomUUID();
+  const tenantId = req.tenantContext?.tenantId ?? userId;
+  const email = resolveEmail(req) ?? null;
 
   try {
-    const rows = await supabase.insert<{
-      id?: string;
-      user_id?: string;
-      title?: string;
-      description?: string | null;
-      severity?: string;
-      context?: Record<string, unknown>;
-    }>('bookagent_bug_reports', {
-      user_id: userId,
+    const created = await createBugReport({
+      id: bugId,
+      type: 'bug',
+      severity: safeSeverity,
       title: title.slice(0, 200),
       description: description?.slice(0, 4000) ?? null,
-      severity: safeSeverity,
-      context: context ?? {},
+      email,
+      userId,
+      tenantId,
+      source: 'in-app',
+      metadata: (context as Record<string, unknown>) ?? {},
     });
 
-    const created = rows[0] ?? {};
-    logger.info(`[Bugs] Created bug report by user ${userId}: "${title.slice(0, 50)}"`);
-
-    // ─── Dual-write Firestore (Sprint 3.2) ─────────────────────────────────
-    // Best-effort: falha de Firestore não derruba a request. Supabase
-    // continua sendo source of truth de leitura até o cutover.
-    if (typeof created.id === 'string' && created.id) {
-      const bugId = created.id;
-      const tenantId = req.tenantContext?.tenantId ?? userId;
-      const email = resolveEmail(req) ?? null;
-      createBugReportInFirestore({
-        id: bugId,
-        type: 'bug',
-        severity: safeSeverity,
-        title: title.slice(0, 200),
-        description: description?.slice(0, 4000) ?? null,
-        email,
-        userId,
-        tenantId,
-        source: 'in-app',
-        metadata: (context as Record<string, unknown>) ?? {},
-      }).catch((err) => {
-        console.warn('[Bugs][dual-write] Firestore failed', {
-          error: err?.message,
-          bugId,
-        });
-      });
-    }
-
-    sendJson(res, created.id ? created : { id: 'created' }, 201);
+    logger.info(`[Bugs] Created Firestore bug report by user ${userId}: "${title.slice(0, 50)}" (id=${bugId})`);
+    sendJson(res, created, 201);
   } catch (err) {
-    logger.error(`[Bugs] Failed to create report: ${err}`);
+    logger.error(`[Bugs] Failed to create report in Firestore: ${err}`);
     sendError(res, 'INTERNAL_ERROR', 'Failed to create bug report', 500);
   }
 });
@@ -183,7 +172,7 @@ router.get('/is-admin', (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /bugs/mine — list own reports
+// GET /bugs/mine — list own reports (Firestore)
 // ---------------------------------------------------------------------------
 
 router.get('/mine', async (req: Request, res: Response) => {
@@ -192,27 +181,18 @@ router.get('/mine', async (req: Request, res: Response) => {
     sendError(res, 'UNAUTHORIZED', 'Authentication required', 401);
     return;
   }
-  if (!supabase) {
-    sendError(res, 'SERVICE_UNAVAILABLE', 'Supabase not configured', 503);
-    return;
-  }
 
   try {
-    const rows = await supabase.select('bookagent_bug_reports', {
-      filters: [{ column: 'user_id', operator: 'eq', value: userId }],
-      orderBy: 'created_at',
-      orderDesc: true,
-      limit: 50,
-    });
+    const rows = await listBugReportsByUser(userId, { limit: 50 });
     sendJson(res, rows);
   } catch (err) {
-    logger.error(`[Bugs] Failed to list user reports: ${err}`);
+    logger.error(`[Bugs] Failed to list user reports from Firestore: ${err}`);
     sendError(res, 'INTERNAL_ERROR', 'Failed to list reports', 500);
   }
 });
 
 // ---------------------------------------------------------------------------
-// GET /bugs — list all reports (admin only)
+// GET /bugs — list all reports (admin only, Firestore)
 // ---------------------------------------------------------------------------
 
 router.get('/', async (req: Request, res: Response) => {
@@ -220,39 +200,29 @@ router.get('/', async (req: Request, res: Response) => {
     sendError(res, 'FORBIDDEN', 'Admin access required', 403);
     return;
   }
-  if (!supabase) {
-    sendError(res, 'SERVICE_UNAVAILABLE', 'Supabase not configured', 503);
-    return;
+
+  const severityQuery = req.query.severity as string | undefined;
+  const statusQuery = req.query.status as string | undefined;
+
+  const filters: { severity?: BugSeverity; status?: BugStatus } = {};
+  if (severityQuery && (VALID_SEVERITIES as string[]).includes(severityQuery)) {
+    filters.severity = severityQuery as BugSeverity;
+  }
+  if (statusQuery && (VALID_STATUSES as string[]).includes(statusQuery)) {
+    filters.status = statusQuery as BugStatus;
   }
 
   try {
-    const filters: Array<{ column: string; operator: 'eq'; value: string }> = [];
-
-    const severity = req.query.severity as string | undefined;
-    if (severity && ['blocker', 'bug', 'suggestion'].includes(severity)) {
-      filters.push({ column: 'severity', operator: 'eq', value: severity });
-    }
-
-    const status = req.query.status as string | undefined;
-    if (status && ['new', 'investigating', 'fixed', 'wont_fix'].includes(status)) {
-      filters.push({ column: 'status', operator: 'eq', value: status });
-    }
-
-    const rows = await supabase.select('bookagent_bug_reports', {
-      filters,
-      orderBy: 'created_at',
-      orderDesc: true,
-      limit: 200,
-    });
+    const rows = await listBugReports(filters, { limit: 200 });
     sendJson(res, rows);
   } catch (err) {
-    logger.error(`[Bugs] Failed to list all reports: ${err}`);
+    logger.error(`[Bugs] Failed to list all reports from Firestore: ${err}`);
     sendError(res, 'INTERNAL_ERROR', 'Failed to list reports', 500);
   }
 });
 
 // ---------------------------------------------------------------------------
-// PATCH /bugs/:id — triage (admin only)
+// PATCH /bugs/:id — triage (admin only, Firestore)
 // ---------------------------------------------------------------------------
 
 router.patch('/:id', async (req: Request, res: Response) => {
@@ -260,37 +230,29 @@ router.patch('/:id', async (req: Request, res: Response) => {
     sendError(res, 'FORBIDDEN', 'Admin access required', 403);
     return;
   }
-  if (!supabase) {
-    sendError(res, 'SERVICE_UNAVAILABLE', 'Supabase not configured', 503);
-    return;
-  }
 
   const { id } = req.params;
   const { status, admin_notes } = req.body ?? {};
 
-  const updates: Record<string, unknown> = {};
-  if (status && ['new', 'investigating', 'fixed', 'wont_fix'].includes(status)) {
-    updates.status = status;
+  const patch: { status?: BugStatus; adminNotes?: string | null } = {};
+  if (status && (VALID_STATUSES as string[]).includes(status)) {
+    patch.status = status as BugStatus;
   }
   if (admin_notes !== undefined) {
-    updates.admin_notes = admin_notes;
+    patch.adminNotes = admin_notes;
   }
 
-  if (Object.keys(updates).length === 0) {
+  if (Object.keys(patch).length === 0) {
     sendError(res, 'VALIDATION_ERROR', 'Nothing to update');
     return;
   }
 
   try {
-    await supabase.update(
-      'bookagent_bug_reports',
-      { column: 'id', operator: 'eq', value: id },
-      updates,
-    );
-    logger.info(`[Bugs] Admin triaged bug ${id}: ${JSON.stringify(updates)}`);
-    sendJson(res, { id, ...updates });
+    await updateBugReport(id, patch);
+    logger.info(`[Bugs] Admin triaged bug ${id} (Firestore): ${JSON.stringify(patch)}`);
+    sendJson(res, { id, ...patch });
   } catch (err) {
-    logger.error(`[Bugs] Failed to update report ${id}: ${err}`);
+    logger.error(`[Bugs] Failed to update report ${id} in Firestore: ${err}`);
     sendError(res, 'INTERNAL_ERROR', 'Failed to update report', 500);
   }
 });
