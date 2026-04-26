@@ -1,0 +1,800 @@
+/* ============================================================
+   BookReel — Theme layer
+   Two themes: "noir" (dark, tech-forward) | "maison" (editorial luxury)
+   Switch via data-theme on <html>.
+   ============================================================ */
+
+/* NOIR (original dark) */
+html[data-theme="noir"] {
+  --bg: #0A0A0A;
+  --bg-elevated: #111111;
+  --bg-card: #0F0F0F;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --text: #F4F3EE;
+  --text-muted: #A8A49B;
+  --text-subtle: #6B6760;
+  --accent: #C9A84C;
+  --accent-soft: rgba(201, 168, 76, 0.12);
+  --accent-border: rgba(201, 168, 76, 0.28);
+  --accent-glow: rgba(201, 168, 76, 0.18);
+  --on-accent: #0A0A0A;
+  --grain-opacity: 0.035;
+  --grain-blend: overlay;
+  --vignette-strength: 0.4;
+}
+
+/* LIVROAI (white + bright gold + deep navy — matches reference boards) */
+html[data-theme="livroai"] {
+  --bg: #FFFFFF;              /* pure white */
+  --bg-elevated: #FAF6EC;     /* warm cream for alt sections */
+  --bg-card: #FFFFFF;
+  --bg-ink: #0E1B3D;          /* deep navy for dark cards */
+  --bg-ink-elevated: #142448;
+  --border: rgba(14, 27, 61, 0.10);
+  --border-strong: rgba(14, 27, 61, 0.20);
+  --text: #0E1B3D;            /* deep navy ink */
+  --text-muted: #4E5A76;
+  --text-subtle: #8A92A6;
+  --accent: #E8B648;          /* warm saturated gold */
+  --accent-strong: #D9A534;
+  --accent-soft: rgba(232, 182, 72, 0.14);
+  --accent-border: rgba(232, 182, 72, 0.45);
+  --accent-glow: rgba(232, 182, 72, 0.25);
+  --on-accent: #0E1B3D;
+  --grain-opacity: 0.02;
+  --grain-blend: multiply;
+  --vignette-strength: 0;
+}
+
+/* Section / element colour overrides — LIVROAI */
+html[data-theme="livroai"] body {
+  background: var(--bg);
+}
+html[data-theme="livroai"] body::after { display: none; }
+
+/* Hero keeps a light cream wash */
+html[data-theme="livroai"] .hero {
+  background:
+    radial-gradient(ellipse at 80% 0%, rgba(232, 182, 72, 0.12) 0%, transparent 55%),
+    linear-gradient(180deg, #FFFFFF 0%, #FAF6EC 100%);
+}
+
+/* Alternating sections: pricing + a couple of feature sections on cream */
+html[data-theme="livroai"] #precos,
+html[data-theme="livroai"] #faq {
+  background: var(--bg-elevated);
+}
+
+/* ----- Dark cards / inked blocks ----- */
+html[data-theme="livroai"] .testimonial-card,
+html[data-theme="livroai"] .final-cta,
+html[data-theme="livroai"] .pipeline-axon {
+  background: var(--bg-ink);
+  color: #F4F3EE;
+  border-color: rgba(255, 255, 255, 0.06);
+}
+html[data-theme="livroai"] .final-cta {
+  background:
+    radial-gradient(ellipse at 10% 10%, rgba(232, 182, 72, 0.08) 0%, transparent 50%),
+    var(--bg-ink);
+}
+html[data-theme="livroai"] .final-cta .section-title,
+html[data-theme="livroai"] .final-cta-title,
+html[data-theme="livroai"] .final-cta .eyebrow {
+  color: #F4F3EE;
+}
+html[data-theme="livroai"] .final-cta .section-kicker,
+html[data-theme="livroai"] .final-cta-sub {
+  color: rgba(244, 243, 238, 0.68);
+}
+
+/* Footer */
+html[data-theme="livroai"] footer {
+  background: var(--bg-ink);
+  color: #F4F3EE;
+  border-top: 2px solid var(--accent);
+}
+
+/* Testimonial editorial hero block becomes ink-on-navy */
+html[data-theme="livroai"] .testimonial-hero,
+html[data-theme="livroai"] .testimonial-mini {
+  background: var(--bg-ink);
+  color: #F4F3EE;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.2), 0 18px 40px -22px rgba(14, 27, 61, 0.35);
+}
+html[data-theme="livroai"] .testimonial-hero-quote,
+html[data-theme="livroai"] .testimonial-mini-quote,
+html[data-theme="livroai"] .testimonial-hero-name,
+html[data-theme="livroai"] .testimonial-mini-name {
+  color: #F4F3EE;
+}
+html[data-theme="livroai"] .testimonial-hero-rule,
+html[data-theme="livroai"] .testimonial-mini-author {
+  border-color: rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.08);
+}
+html[data-theme="livroai"] .testimonial-hero-rule {
+  background: rgba(255, 255, 255, 0.10);
+}
+html[data-theme="livroai"] .testimonial-hero-kpi {
+  border-left-color: rgba(255, 255, 255, 0.10);
+}
+html[data-theme="livroai"] .testimonial-hero-chrome,
+html[data-theme="livroai"] .testimonial-hero-role,
+html[data-theme="livroai"] .testimonial-mini-role,
+html[data-theme="livroai"] .testimonial-hero-kpi-label {
+  color: rgba(244, 243, 238, 0.6);
+}
+html[data-theme="livroai"] .testimonial-hero-chrome {
+  border-bottom-color: rgba(255, 255, 255, 0.10);
+}
+html[data-theme="livroai"] .testimonial-pip {
+  color: rgba(244, 243, 238, 0.55);
+}
+html[data-theme="livroai"] .testimonial-pip.active {
+  color: #F4F3EE;
+}
+html[data-theme="livroai"] .testimonial-pip-bar {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Pipeline keeps ink bg but icons become gold circles like ref */
+html[data-theme="livroai"] .pipeline-icon-wrap {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-ink);
+  box-shadow: 0 0 0 4px rgba(232, 182, 72, 0.18);
+}
+html[data-theme="livroai"] .pipeline-icon-wrap svg { color: var(--bg-ink); }
+html[data-theme="livroai"] .pipeline-step-label,
+html[data-theme="livroai"] .pipeline-step-title {
+  color: #F4F3EE;
+}
+html[data-theme="livroai"] .pipeline-step-kicker,
+html[data-theme="livroai"] .pipeline-step-desc {
+  color: rgba(244, 243, 238, 0.65);
+}
+html[data-theme="livroai"] .pipeline-track,
+html[data-theme="livroai"] .pipeline-track-fill {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ----- Light cards (default maison-like) ----- */
+html[data-theme="livroai"] .card,
+html[data-theme="livroai"] .price-card,
+html[data-theme="livroai"] .editorial-cell {
+  background: #FFFFFF;
+  border: 1px solid rgba(14, 27, 61, 0.08);
+  box-shadow: 0 1px 3px rgba(14, 27, 61, 0.04), 0 10px 28px -14px rgba(14, 27, 61, 0.12);
+}
+html[data-theme="livroai"] .card:hover,
+html[data-theme="livroai"] .price-card:hover,
+html[data-theme="livroai"] .editorial-cell:hover {
+  box-shadow: 0 1px 3px rgba(14, 27, 61, 0.04), 0 18px 40px -14px rgba(14, 27, 61, 0.18);
+  transform: translateY(-2px);
+}
+
+html[data-theme="livroai"] .editorial-grid {
+  border: none;
+  gap: 18px;
+  margin-top: 64px;
+}
+html[data-theme="livroai"] .editorial-cell {
+  border-radius: 14px;
+  padding: 36px 32px;
+}
+
+/* Badges + chips */
+html[data-theme="livroai"] .badge {
+  background: #FFFFFF;
+  border-color: var(--border-strong);
+  color: var(--text);
+  box-shadow: 0 2px 6px rgba(14, 27, 61, 0.06);
+}
+html[data-theme="livroai"] .badge-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(232, 182, 72, 0.22);
+}
+html[data-theme="livroai"] .chip {
+  background: #FFFFFF;
+  border-color: var(--border-strong);
+  color: var(--text);
+  box-shadow: 0 10px 24px rgba(14, 27, 61, 0.08);
+}
+
+/* Buttons — primary = GOLD like ref */
+html[data-theme="livroai"] .btn-primary {
+  background: var(--accent);
+  color: var(--bg-ink);
+  box-shadow: 0 8px 20px -8px rgba(232, 182, 72, 0.55);
+  font-weight: 600;
+}
+html[data-theme="livroai"] .btn-primary:hover {
+  background: var(--accent-strong);
+  box-shadow: 0 12px 28px -8px rgba(217, 165, 52, 0.6);
+}
+html[data-theme="livroai"] .btn-outline {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+html[data-theme="livroai"] .btn-outline:hover {
+  background: rgba(14, 27, 61, 0.04);
+  border-color: var(--text);
+}
+/* Inverse buttons inside dark sections */
+html[data-theme="livroai"] .final-cta .btn-outline,
+html[data-theme="livroai"] .pipeline-axon .btn-outline {
+  color: #F4F3EE;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+/* Navbar with gold top hairline like ref */
+html[data-theme="livroai"] .navbar {
+  border-top: 2px solid var(--accent);
+}
+html[data-theme="livroai"] .navbar.scrolled {
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom-color: var(--border);
+  backdrop-filter: saturate(140%) blur(12px);
+}
+
+/* PDF cover tiles */
+html[data-theme="livroai"] .pdf-cover,
+html[data-theme="livroai"] .demo-pdf-big {
+  background: #FFFFFF;
+  border-color: var(--border-strong);
+  box-shadow: 0 30px 60px -20px rgba(14, 27, 61, 0.25);
+}
+html[data-theme="livroai"] .pdf-title,
+html[data-theme="livroai"] .demo-pdf-big-title { color: var(--text); }
+html[data-theme="livroai"] .pdf-sub,
+html[data-theme="livroai"] .demo-pdf-big-sub { color: var(--text-muted); }
+html[data-theme="livroai"] .pdf-cover::before,
+html[data-theme="livroai"] .demo-pdf-big::before { color: var(--accent); }
+html[data-theme="livroai"] .pdf-cover::after {
+  background:
+    linear-gradient(180deg, transparent 40%, rgba(14, 27, 61, 0.08) 100%),
+    repeating-linear-gradient(0deg, transparent 0, transparent 14px, rgba(14, 27, 61, 0.06) 14px, rgba(14, 27, 61, 0.06) 15px);
+}
+
+/* Demo */
+html[data-theme="livroai"] .demo-slider { border-color: var(--border-strong); }
+html[data-theme="livroai"] .demo-before { background: #FFFFFF; }
+html[data-theme="livroai"] .demo-after { background: #FAF6EC; }
+html[data-theme="livroai"] .demo-output {
+  background: #FFFFFF;
+  border-color: var(--border);
+}
+html[data-theme="livroai"] .demo-label.before,
+html[data-theme="livroai"] .demo-label.after {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: var(--border-strong);
+}
+html[data-theme="livroai"] .demo-label.before { color: var(--text-muted); }
+html[data-theme="livroai"] .demo-label.after { color: var(--accent-strong); }
+html[data-theme="livroai"] .demo-handle::after {
+  box-shadow: 0 0 0 4px rgba(232, 182, 72, 0.2), 0 8px 24px rgba(14, 27, 61, 0.25);
+}
+
+/* Diff-cell (inside dark section): lift onto slightly raised ink */
+html[data-theme="livroai"] .diff-cell {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+html[data-theme="livroai"] .diff-cell:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+html[data-theme="livroai"] .diff-icon { color: rgba(244, 243, 238, 0.55); }
+html[data-theme="livroai"] .diff-title { color: #F4F3EE; }
+html[data-theme="livroai"] .diff-desc { color: rgba(244, 243, 238, 0.65); }
+
+/* Pricing */
+html[data-theme="livroai"] .price-card {
+  background: #FFFFFF;
+}
+html[data-theme="livroai"] .price-card.featured {
+  background: #FFFFFF;
+  border: 1px solid var(--accent-border);
+  box-shadow: 0 30px 70px -20px rgba(232, 182, 72, 0.35);
+}
+html[data-theme="livroai"] .price-featured-badge {
+  background: var(--accent);
+  color: var(--bg-ink);
+}
+html[data-theme="livroai"] .price-card.featured .btn-primary {
+  background: var(--accent);
+  color: var(--bg-ink);
+}
+html[data-theme="livroai"] .price-card:not(.featured) .btn-primary {
+  background: var(--bg-ink);
+  color: #FFFFFF;
+}
+html[data-theme="livroai"] .price-card:not(.featured) .btn-primary:hover {
+  background: #08122A;
+}
+
+/* Pricing toggle */
+html[data-theme="livroai"] .pricing-toggle {
+  background: #FFFFFF;
+  border: 1px solid var(--border-strong);
+}
+html[data-theme="livroai"] .pricing-toggle button { color: var(--text-muted); }
+html[data-theme="livroai"] .pricing-toggle button.active { color: var(--bg-ink); }
+html[data-theme="livroai"] .pricing-toggle-indicator { background: var(--accent); }
+
+/* FAQ */
+html[data-theme="livroai"] .faq-item { background: #FFFFFF; }
+html[data-theme="livroai"] .faq-item.open .faq-toggle {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-ink);
+}
+
+/* Accent-colored eyebrows + titles */
+html[data-theme="livroai"] .eyebrow { color: var(--text); }
+html[data-theme="livroai"] .eyebrow::before { background: var(--accent); }
+html[data-theme="livroai"] .section-title em {
+  color: var(--accent-strong);
+  font-style: italic;
+  font-weight: 500;
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 2px;
+}
+html[data-theme="livroai"] .hero-headline em,
+html[data-theme="livroai"] .final-cta-title em {
+  color: var(--accent-strong);
+  font-style: italic;
+  position: relative;
+}
+html[data-theme="livroai"] .hero-headline em::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.05em;
+  height: 3px;
+  background: var(--accent);
+  opacity: 0.35;
+}
+html[data-theme="livroai"] .final-cta-title em { color: var(--accent); }
+html[data-theme="livroai"] .metric-num em { color: var(--accent-strong); }
+
+/* Stat banner as editorial rules */
+html[data-theme="livroai"] .stat-banner {
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--text);
+  border-bottom: 1px solid var(--text);
+  border-radius: 0;
+  padding: 60px 0;
+  margin-top: 72px;
+}
+html[data-theme="livroai"] .stat-number { color: var(--text); font-weight: 500; }
+
+/* Problem cards: roman numerals gold */
+html[data-theme="livroai"] .problem-num {
+  color: var(--accent);
+  font-style: italic;
+  font-family: var(--font-serif);
+  font-size: 22px;
+  letter-spacing: 0;
+}
+html[data-theme="livroai"] .problem-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+html[data-theme="livroai"] .problem-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--accent-border);
+}
+html[data-theme="livroai"] .problem-title { color: #F4F3EE; }
+html[data-theme="livroai"] .problem-desc { color: rgba(244, 243, 238, 0.65); }
+
+/* Price value */
+html[data-theme="livroai"] .price-value { color: var(--text); }
+html[data-theme="livroai"] .price-trial { color: var(--accent-strong); }
+
+/* Testimonial carousel dots/arrows */
+html[data-theme="livroai"] .carousel-dot { background: var(--border); }
+html[data-theme="livroai"] .carousel-dot.active { background: var(--accent); }
+html[data-theme="livroai"] .carousel-arrow {
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+}
+html[data-theme="livroai"] .carousel-arrow:hover {
+  color: var(--text);
+  background: var(--bg-elevated);
+}
+
+/* Hero glow: very subtle */
+html[data-theme="livroai"] .hero-glow,
+html[data-theme="livroai"] .final-cta-glow {
+  opacity: 0.45;
+  background: radial-gradient(ellipse, rgba(232, 182, 72, 0.35) 0%, transparent 60%);
+}
+
+/* Form (final CTA) */
+html[data-theme="livroai"] .final-cta input,
+html[data-theme="livroai"] .final-cta textarea {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #F4F3EE;
+}
+html[data-theme="livroai"] .final-cta input::placeholder,
+html[data-theme="livroai"] .final-cta textarea::placeholder {
+  color: rgba(244, 243, 238, 0.5);
+}
+
+/* Footer */
+html[data-theme="livroai"] footer .footer-made {
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(244, 243, 238, 0.7);
+}
+html[data-theme="livroai"] .footer-whatsapp svg { color: var(--accent); }
+
+/* Tweaks panel */
+html[data-theme="livroai"] .tweaks-panel {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: var(--border-strong);
+  color: var(--text);
+  box-shadow: 0 20px 60px rgba(14, 27, 61, 0.18);
+}
+html[data-theme="livroai"] .tweak-pill-group {
+  background: var(--bg-elevated);
+}
+html[data-theme="livroai"] .tweak-pill.active {
+  background: var(--accent);
+  color: var(--bg-ink);
+}
+html[data-theme="livroai"] .tweak-toggle.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+html[data-theme="livroai"] .tweak-toggle.on::after { background: var(--bg-ink); }
+
+/* Reel / phone mockups keep dark — already handled by maison-like rules */
+html[data-theme="livroai"] .phone {
+  box-shadow:
+    0 0 0 1px rgba(14, 27, 61, 0.1),
+    0 40px 80px -20px rgba(14, 27, 61, 0.28),
+    0 0 120px -20px rgba(232, 182, 72, 0.2);
+}
+html[data-theme="livroai"] .reel-bg {
+  background:
+    radial-gradient(circle at 30% 30%, rgba(232, 182, 72, 0.25), transparent 50%),
+    linear-gradient(135deg, #142448 0%, #0A1230 50%, #1A2D55 100%);
+}
+
+/* ==== end LIVROAI ==== */
+
+
+/* MAISON (cream editorial) */
+html[data-theme="maison"] {
+  --bg: #F1ECE2;             /* warm ivory paper — unchanged */
+  --bg-elevated: #FFFFFF;    /* pure white highlights */
+  --bg-card: #FFFFFF;        /* pure white cards */
+  --border: rgba(26, 35, 50, 0.10);
+  --border-strong: rgba(26, 35, 50, 0.22);
+  --text: #1A2332;           /* dark ink navy */
+  --text-muted: #4A5566;
+  --text-subtle: #8A8478;
+  --accent: #8A6F2F;         /* muted aged-gold */
+  --accent-soft: rgba(138, 111, 47, 0.08);
+  --accent-border: rgba(138, 111, 47, 0.35);
+  --accent-glow: rgba(138, 111, 47, 0.12);
+  --on-accent: #FFFFFF;
+  --grain-opacity: 0.045;
+  --grain-blend: multiply;
+  --vignette-strength: 0.08;
+}
+
+/* Maison-specific element overrides */
+html[data-theme="maison"] body::after {
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(120, 100, 60, 0.06) 100%);
+}
+
+html[data-theme="maison"] .badge {
+  background: transparent;
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+html[data-theme="maison"] .badge-dot {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+html[data-theme="maison"] .card,
+html[data-theme="maison"] .pipeline,
+html[data-theme="maison"] .testimonial-card,
+html[data-theme="maison"] .price-card,
+html[data-theme="maison"] .editorial-cell {
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(26, 35, 50, 0.04), 0 8px 24px -12px rgba(26, 35, 50, 0.08);
+  border-color: rgba(26, 35, 50, 0.06);
+}
+
+html[data-theme="maison"] .card:hover,
+html[data-theme="maison"] .price-card:hover,
+html[data-theme="maison"] .editorial-cell:hover {
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(26, 35, 50, 0.04), 0 16px 32px -12px rgba(26, 35, 50, 0.12);
+  transform: translateY(-2px);
+}
+
+/* Editorial grid: switch from hairline-table to separated white cards */
+html[data-theme="maison"] .editorial-grid {
+  border: none;
+  gap: 16px;
+  margin-top: 64px;
+}
+html[data-theme="maison"] .editorial-cell {
+  border: 1px solid rgba(26, 35, 50, 0.06);
+  border-radius: 12px;
+  padding: 36px 32px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-theme="maison"] .btn-primary {
+  background: #1A2332;
+  color: #FFFFFF;
+  box-shadow: none;
+}
+html[data-theme="maison"] .btn-primary:hover {
+  background: #0E1520;
+  box-shadow: 0 8px 24px rgba(26, 35, 50, 0.15);
+}
+
+html[data-theme="maison"] .btn-outline {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+html[data-theme="maison"] .btn-outline:hover {
+  background: rgba(26, 35, 50, 0.04);
+  border-color: var(--text);
+}
+
+/* Navbar */
+html[data-theme="maison"] .navbar.scrolled {
+  background: rgba(241, 236, 226, 0.85);
+  border-bottom-color: var(--border);
+}
+
+/* Phone — keep dark for device realism */
+html[data-theme="maison"] .phone {
+  box-shadow:
+    0 0 0 1px rgba(26, 35, 50,0.1),
+    0 40px 80px -20px rgba(26, 35, 50, 0.25),
+    0 0 120px -20px rgba(138, 111, 47, 0.15);
+}
+
+html[data-theme="maison"] .pdf-cover {
+  background: #FFFFFF;
+  border-color: var(--border-strong);
+  box-shadow: 0 30px 60px -20px rgba(26, 35, 50,0.2);
+}
+html[data-theme="maison"] .pdf-title { color: var(--text); }
+html[data-theme="maison"] .pdf-sub { color: var(--text-muted); }
+html[data-theme="maison"] .pdf-cover::before { color: var(--accent); }
+html[data-theme="maison"] .pdf-cover::after {
+  background:
+    linear-gradient(180deg, transparent 40%, rgba(26, 35, 50,0.08) 100%),
+    repeating-linear-gradient(0deg, transparent 0, transparent 14px, rgba(26, 35, 50,0.06) 14px, rgba(26, 35, 50,0.06) 15px);
+}
+html[data-theme="maison"] .pdf-building {
+  background: linear-gradient(180deg, #8A7856 0%, #5C4E36 100%);
+  opacity: 0.5;
+}
+
+html[data-theme="maison"] .chip {
+  background: rgba(246, 242, 233, 0.95);
+  border-color: var(--border-strong);
+  color: var(--text);
+  box-shadow: 0 10px 24px rgba(26, 35, 50,0.08);
+}
+
+/* Hero-glow subdued */
+html[data-theme="maison"] .hero-glow,
+html[data-theme="maison"] .final-cta-glow {
+  opacity: 0.3;
+}
+
+/* Demo */
+html[data-theme="maison"] .demo-slider {
+  border-color: var(--border-strong);
+}
+html[data-theme="maison"] .demo-before {
+  background: #FFFFFF;
+}
+html[data-theme="maison"] .demo-after {
+  background: #FAF7EF;
+}
+html[data-theme="maison"] .demo-pdf-big {
+  background: #FFFFFF;
+  border-color: var(--border-strong);
+  box-shadow: 0 30px 60px -20px rgba(26, 35, 50,0.25);
+}
+html[data-theme="maison"] .demo-pdf-big-title { color: var(--text); }
+html[data-theme="maison"] .demo-pdf-big::before { color: var(--accent); }
+html[data-theme="maison"] .demo-pdf-big-sub { color: var(--text-muted); }
+html[data-theme="maison"] .demo-pdf-big-building {
+  background: linear-gradient(180deg, #8A7856 0%, #5C4E36 100%);
+  opacity: 0.45;
+}
+html[data-theme="maison"] .demo-output {
+  background: rgba(246, 242, 233, 0.9);
+  border-color: var(--border);
+}
+html[data-theme="maison"] .demo-label.before,
+html[data-theme="maison"] .demo-label.after {
+  background: rgba(246, 242, 233, 0.9);
+  border-color: var(--border-strong);
+}
+html[data-theme="maison"] .demo-label.before { color: var(--text-muted); }
+html[data-theme="maison"] .demo-label.after { color: var(--accent); }
+html[data-theme="maison"] .demo-handle::after {
+  box-shadow: 0 0 0 4px rgba(138, 111, 47, 0.15), 0 8px 24px rgba(26, 35, 50,0.25);
+}
+
+/* Pipeline icons */
+html[data-theme="maison"] .pipeline-icon-wrap {
+  background: transparent;
+  border-color: var(--border-strong);
+  box-shadow: none;
+}
+html[data-theme="maison"] .pipeline-track-fill {
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+}
+
+/* Diff grid separators */
+html[data-theme="maison"] .diff-grid { background: var(--border); }
+html[data-theme="maison"] .diff-cell { background: var(--bg); }
+html[data-theme="maison"] .diff-cell:hover { background: var(--bg-elevated); }
+html[data-theme="maison"] .diff-icon { color: var(--text-subtle); }
+
+/* Pricing */
+html[data-theme="maison"] .price-card.featured {
+  background: linear-gradient(180deg, rgba(138, 111, 47, 0.05) 0%, var(--bg-card) 100%);
+  box-shadow: 0 20px 60px -20px rgba(138, 111, 47, 0.25);
+}
+html[data-theme="maison"] .price-featured-badge {
+  background: #1A2332;
+  color: #FFFFFF;
+}
+
+/* Pricing toggle */
+html[data-theme="maison"] .pricing-toggle { background: var(--bg-elevated); }
+html[data-theme="maison"] .pricing-toggle button.active { color: #FFFFFF; }
+html[data-theme="maison"] .pricing-toggle-indicator { background: #1A2332; }
+
+/* FAQ */
+html[data-theme="maison"] .faq-item.open .faq-toggle {
+  background: #1A2332;
+  border-color: #1A2332;
+  color: #FFFFFF;
+}
+
+/* Footer whatsapp icon */
+html[data-theme="maison"] .footer-whatsapp svg { color: var(--accent); }
+html[data-theme="maison"] .footer-made {
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+}
+
+/* Stat banner becomes editorial-rule treatment */
+html[data-theme="maison"] .stat-banner {
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--text);
+  border-bottom: 1px solid var(--text);
+  border-radius: 0;
+  padding: 60px 0;
+  margin-top: 72px;
+}
+html[data-theme="maison"] .stat-number {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* Testimonial carousel dots/arrows */
+html[data-theme="maison"] .carousel-dot { background: var(--border); }
+html[data-theme="maison"] .carousel-dot.active { background: var(--text); }
+html[data-theme="maison"] .carousel-arrow {
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+}
+html[data-theme="maison"] .carousel-arrow:hover {
+  color: var(--text);
+  background: var(--bg-elevated);
+}
+
+/* Reel keeps dark (it's a phone) */
+html[data-theme="maison"] .reel-bg {
+  background:
+    radial-gradient(circle at 30% 30%, rgba(138, 111, 47, 0.2), transparent 50%),
+    linear-gradient(135deg, #2a1f12 0%, #0d0a08 50%, #1a1410 100%);
+}
+
+/* Tweaks panel in maison stays readable */
+html[data-theme="maison"] .tweaks-panel {
+  background: rgba(246, 242, 233, 0.95);
+  border-color: var(--border-strong);
+  color: var(--text);
+  box-shadow: 0 20px 60px rgba(26, 35, 50,0.15);
+}
+html[data-theme="maison"] .tweak-pill-group {
+  background: var(--bg-elevated);
+}
+html[data-theme="maison"] .tweak-pill.active {
+  background: #1A2332;
+  color: #FFFFFF;
+}
+html[data-theme="maison"] .tweak-toggle.on {
+  background: #1A2332;
+  border-color: #1A2332;
+}
+html[data-theme="maison"] .tweak-toggle.on::after {
+  background: #FFFFFF;
+}
+html[data-theme="maison"] .swatch.active {
+  box-shadow: 0 0 0 2px var(--text), 0 0 0 4px var(--bg);
+}
+
+/* Editorial accents unique to Maison */
+html[data-theme="maison"] .eyebrow { color: var(--text); }
+html[data-theme="maison"] .eyebrow::before { background: var(--text); }
+
+html[data-theme="maison"] .section-title em {
+  color: var(--text);
+  font-style: italic;
+  font-weight: 400;
+  border-bottom: 1px solid var(--accent);
+  padding-bottom: 2px;
+}
+
+html[data-theme="maison"] .hero-headline em,
+html[data-theme="maison"] .final-cta-title em {
+  color: var(--text);
+  font-style: italic;
+  position: relative;
+}
+
+html[data-theme="maison"] .hero-headline em::after,
+html[data-theme="maison"] .final-cta-title em::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.08em;
+  height: 3px;
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+html[data-theme="maison"] .metric-num em { color: var(--accent); }
+
+/* Roman numerals on problem cards */
+html[data-theme="maison"] .problem-num {
+  color: var(--accent);
+  font-style: italic;
+  font-family: var(--font-serif);
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+/* Price value */
+html[data-theme="maison"] .price-value { color: var(--text); }
+html[data-theme="maison"] .price-trial { color: var(--accent); }
+
+/* Testimonial quote opening mark in gold */
+html[data-theme="maison"] .testimonial-quote::before { color: var(--accent); }
+
+/* Demo output chip (IA) */
+html[data-theme="maison"] .demo-output-ai {
+  background: transparent;
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+/* Reel ui retains dark */
