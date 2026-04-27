@@ -117,18 +117,33 @@ storageManager.ensureDirectories().catch((err) => {
 // Criar orchestrator base
 const baseOrchestrator = new Orchestrator();
 
-// ─── Sprint 3.7 — Supabase decommissioned ──────────────────────────────────
-// Runtime é 100% Firestore-only. Não inicializamos mais SupabaseClient.
-// Env vars SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (se ainda mapeadas via
-// cloudbuild.yaml) são ignoradas. Cleanup do Secret Manager fica pra Sprint 3.8.
+// ─── Sprint 3.8 — Desacoplar antes de migrar ───────────────────────────────
+// Firestore é canônico para profiles, jobs, artifacts, credits, bugs.
+// Supabase volta como adapter LEGACY para 17 controllers do Cluster A
+// (approval, billing, admin, customer-dashboard, analytics, insights,
+// copilot, ops, leads, public-api, jobs-delete, video-render, review,
+// revision, tenants, whatsapp-funnel, kiwify webhook idempotência).
 //
-// Orchestrator usa o base in-memory — PersistentOrchestrator dependia de
-// Supabase pra read-side; estado canônico de jobs vive no Firestore via
-// google-persistence.ts (createJob/updateJob).
-const orchestrator: Orchestrator | PersistentOrchestrator = baseOrchestrator;
-const persistenceMode: 'supabase' | 'memory' = 'memory';
-const supabaseClient: SupabaseClient | null = null;
-logger.info('[Bootstrap] Persistence mode: Firestore-only (Supabase decommissioned in Sprint 3.7)');
+// Cluster B (telemetria zero, Sprint 1) permanece desligado abaixo.
+// Migração tabela-a-tabela em FASE 2 (ver docs/MASTER.md §7).
+const LEGACY_SUPABASE_ENABLED = process.env.LEGACY_SUPABASE_ENABLED === 'true';
+
+const supabaseClient: SupabaseClient | null = LEGACY_SUPABASE_ENABLED
+  ? SupabaseClient.tryFromEnv()
+  : null;
+
+const orchestrator: Orchestrator | PersistentOrchestrator = supabaseClient
+  ? new PersistentOrchestrator(baseOrchestrator, supabaseClient)
+  : baseOrchestrator;
+
+const persistenceMode: 'firestore-primary' | 'firestore-only' = supabaseClient
+  ? 'firestore-primary'
+  : 'firestore-only';
+
+logger.info(
+  `[Bootstrap] Persistence mode: ${persistenceMode} ` +
+  `(legacy=${LEGACY_SUPABASE_ENABLED && !!supabaseClient})`,
+);
 
 // Registrar todos os 17 módulos no pipeline (ordem definida em pipeline.ts)
 const pipelineModules = [

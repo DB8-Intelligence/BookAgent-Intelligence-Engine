@@ -12,7 +12,7 @@ import { checkProviderStatus } from '../../adapters/provider-factory.js';
 import { auditSecrets } from '../../utils/secrets.js';
 
 export interface HealthSnapshot {
-  persistenceMode: string;
+  persistenceMode: 'firestore-primary' | 'firestore-only' | 'memory';
   queueMode: boolean;
   pipelineModuleCount: number;
   pipelineModuleStages: string[];
@@ -32,15 +32,18 @@ export function mountHealthRoute(app: Express, snapshot: HealthSnapshot): void {
       ...(snapshot.role ? { role: snapshot.role } : {}),
       persistence: {
         primary: 'firestore',
+        mode: snapshot.persistenceMode,
         firestore: {
           enabled: !!(process.env.GOOGLE_CLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID),
           projectId: process.env.GOOGLE_CLOUD_PROJECT ?? process.env.FIREBASE_PROJECT_ID ?? null,
         },
-        // Supabase foi decommissionado em runtime (Sprint 3.7). Continua
-        // exposto no /health pra UI/monitoramento detectar a transição.
+        // Sprint 3.8 — Supabase volta como adapter LEGACY via flag
+        // LEGACY_SUPABASE_ENABLED. Firestore continua canônico; Supabase
+        // atende 17 controllers do Cluster A (billing/admin/analytics/...).
         supabase: {
-          enabled: false,
-          deprecated: true,
+          enabled: snapshot.persistenceMode === 'firestore-primary',
+          mode: snapshot.persistenceMode === 'firestore-primary' ? 'legacy' : 'disabled',
+          scope: 'legacy-modules-only',
         },
       },
       queue: {
