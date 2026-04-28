@@ -394,7 +394,7 @@ export interface AnalyticsPlatformBreakdown {
 export interface DashboardAnalytics {
   period: { from: string; to: string };
   granularity: string;
-  jobs: { total: number; successRate: number; throughput: { date: string; count: number }[] };
+  jobs: { total: number; successRate: number; throughput: AnalyticsTimeSeries };
   publications: { total: number; successRate: number; byPlatform: Record<string, number> };
   generatedAt: string;
 }

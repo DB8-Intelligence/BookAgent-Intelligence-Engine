@@ -30,7 +30,8 @@ export default function AnalyticsPage() {
   if (error) return <div className="p-4 bg-red-50 text-red-600 rounded-lg">{error}</div>;
   if (!data) return null;
 
-  const maxThroughput = Math.max(...data.jobs.throughput.map((t) => t.count), 1);
+  const points = data.jobs?.throughput?.points ?? [];
+  const maxThroughput = Math.max(...points.map((t) => t.value), 1);
   const platformEntries = Object.entries(data.publications.byPlatform);
   const maxPlatform = Math.max(...platformEntries.map(([, v]) => v), 1);
 
@@ -48,25 +49,25 @@ export default function AnalyticsPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
           <KPICard label="Total de jobs" value={data.jobs.total} icon="&#128203;" />
           <KPICard label="Taxa de sucesso" value={`${data.jobs.successRate}%`} icon="&#9989;" />
-          <KPICard label="Dias com atividade" value={data.jobs.throughput.length} icon="&#128197;" />
+          <KPICard label="Dias com atividade" value={points.length} icon="&#128197;" />
         </div>
 
         {/* Throughput Bar Chart */}
-        {data.jobs.throughput.length > 0 && (
+        {points.length > 0 && (
           <div className="bg-white border rounded-lg p-4">
             <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Throughput diario</h3>
             <div className="flex items-end gap-1" style={{ height: 120 }}>
-              {data.jobs.throughput.map((t) => {
-                const heightPercent = (t.count / maxThroughput) * 100;
+              {points.map((t) => {
+                const heightPercent = (t.value / maxThroughput) * 100;
                 return (
-                  <div key={t.date} className="flex-1 flex flex-col items-center gap-1 group">
+                  <div key={t.period} className="flex-1 flex flex-col items-center gap-1 group">
                     <span className="text-[10px] text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {t.count}
+                      {t.value}
                     </span>
                     <div
                       className="w-full bg-slate-700 rounded-t hover:bg-slate-900 transition-colors"
                       style={{ height: `${Math.max(heightPercent, 2)}%` }}
-                      title={`${t.date}: ${t.count} jobs`}
+                      title={`${t.period}: ${t.value} jobs`}
                     />
                   </div>
                 );
@@ -74,10 +75,10 @@ export default function AnalyticsPage() {
             </div>
             <div className="flex justify-between mt-2">
               <span className="text-[10px] text-slate-400">
-                {new Date(data.jobs.throughput[0].date).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                {new Date(points[0].period).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
               </span>
               <span className="text-[10px] text-slate-400">
-                {new Date(data.jobs.throughput[data.jobs.throughput.length - 1].date).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                {new Date(points[points.length - 1].period).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
               </span>
             </div>
           </div>
