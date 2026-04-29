@@ -75,7 +75,7 @@ const Navbar = () => {
           <a href="#como-funciona" className="nav-link">Como Funciona</a>
           <a href="#precos" className="nav-link">Preços</a>
           <a href="#faq" className="nav-link">FAQ</a>
-          <a href="#precos" className="btn btn-primary nav-cta">Começar agora<Icon name="arrow"/></a>
+          <a href="#precos" className="btn btn-primary nav-cta">Quero meu primeiro book<Icon name="arrow"/></a>
         </div>
       </div>
     </nav>
@@ -105,16 +105,15 @@ const Hero = () => (
           <div className="hero-copy">
             <div className="hero-kicker">Para imobiliárias, corretores e marcas que vendem com <em>book</em></div>
             <h1 className="hero-headline">
-              Seu book de produto,<br/>
-              virando <em>dezenas de peças</em><br/>
-              em uma tarde.
+              Seu book imobiliário virando <em>12 peças de conteúdo</em><br/>
+              em <em>15 minutos</em>.
             </h1>
             <p className="hero-sub">
               Envie o book do empreendimento, do produto ou do projeto. Em horas, você recebe um pacote completo de conteúdo — reels, stories, carrosséis, podcast e landing — pronto para captar leads, nutrir e converter. Mantendo a sofisticação do material original.
             </p>
             <div className="hero-ctas">
-              <a href="#precos" className="btn btn-primary btn-large">Solicitar demonstração<Icon name="arrow"/></a>
-              <a href="#como-funciona" className="btn btn-outline btn-large">Ver o método</a>
+              <a href="#precos" className="btn btn-primary btn-large">Quero meu primeiro book em 15 minutos<Icon name="arrow"/></a>
+              <a href="#precos" className="btn btn-outline btn-large">Falar com o time</a>
             </div>
             <div className="hero-meta">
               <span className="hero-meta-item"><Icon name="check"/>7 dias sem cartão</span>
@@ -1054,7 +1053,7 @@ const SocialProof = () => {
 
 // ============================ PRICING ============================
 const Pricing = () => {
-  const [annual, setAnnual] = useState(false);
+  const [annual, setAnnual] = useState(true);
   const plans = [
     {
       name: 'Starter', desc: 'Para o corretor autônomo começando a produzir.',
@@ -1096,7 +1095,7 @@ const Pricing = () => {
         <div className="pricing-grid">
           {plans.map(p => (
             <div key={p.name} className={`price-card ${p.featured ? 'featured' : ''}`}>
-              {p.featured && <div className="price-featured-badge">Mais popular</div>}
+              {p.featured && <div className="price-featured-badge">Mais escolhido por imobiliárias</div>}
               <h3 className="price-name">{p.name}</h3>
               <p className="price-desc">{p.desc}</p>
               <div className="price-amount">
@@ -1110,7 +1109,7 @@ const Pricing = () => {
                   <li key={f}><Icon name="check" className="price-check"/>{f}</li>
                 ))}
               </ul>
-              <button className={`btn ${p.featured ? 'btn-primary' : 'btn-outline'} price-cta`}>{p.cta}<Icon name="arrow"/></button>
+              <a href="#precos" className={`btn ${p.featured ? 'btn-primary' : 'btn-outline'} price-cta`}>{p.cta}<Icon name="arrow"/></a>
             </div>
           ))}
         </div>
@@ -1141,12 +1140,25 @@ const FAQ = () => {
         </div>
         <div className="faq-wrap">
           {items.map((item, i) => (
-            <div key={i} className={`faq-item ${open === i ? 'open' : ''}`} onClick={() => setOpen(open === i ? -1 : i)}>
-              <div className="faq-question">
+            <div key={i} className={`faq-item ${open === i ? 'open' : ''}`}>
+              <div
+                className="faq-question"
+                role="button"
+                tabIndex={0}
+                aria-expanded={open === i}
+                aria-controls={`faq-answer-${i}`}
+                onClick={() => setOpen(open === i ? -1 : i)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setOpen(open === i ? -1 : i);
+                  }
+                }}
+              >
                 {item.q}
                 <span className="faq-toggle"><Icon name="plus"/></span>
               </div>
-              <div className="faq-answer">
+              <div id={`faq-answer-${i}`} className="faq-answer" role="region">
                 <div className="faq-answer-inner">{item.a}</div>
               </div>
             </div>
@@ -1170,8 +1182,8 @@ const FinalCTA = () => (
       </h2>
       <p className="final-cta-sub">Teste 7 dias sem custo. Se não devolver horas à sua semana, devolvemos o investimento.</p>
       <div className="final-cta-ctas">
-        <a href="#precos" className="btn btn-primary btn-large">Começar agora<Icon name="arrow"/></a>
-        <a href="#" className="btn btn-outline btn-large"><Icon name="whatsapp"/>Falar com o time</a>
+        <a href="#precos" className="btn btn-primary btn-large">Quero meu primeiro book em 15 minutos<Icon name="arrow"/></a>
+        <a href="#precos" className="btn btn-outline btn-large"><Icon name="whatsapp"/>Falar com o time</a>
       </div>
       <div className="final-cta-guarantee">GARANTIA DE 7 DIAS · SEM CARTÃO · SEM FIDELIDADE</div>
     </div>

@@ -20,9 +20,37 @@ import "./styles.css";
 import "./editorial.css";
 
 export const metadata = {
-  title: "BookReel — Seu book imobiliário em 12 peças de conteúdo",
+  metadataBase: new URL("https://bookreel.ai"),
+  title: "BookReel — Seu book imobiliário em 12 peças de conteúdo em 15 minutos",
   description:
-    "Envie o book do empreendimento. Em horas, receba reels, stories, carrosséis, podcast e landing — pronto para captar leads, nutrir e converter, mantendo a sofisticação do material original.",
+    "Envie o book do empreendimento. Em 15 minutos, receba reels, stories, carrosséis, podcast e landing — pronto para captar leads, nutrir e converter, mantendo a sofisticação do material original.",
+  alternates: {
+    canonical: "https://bookreel.ai",
+  },
+  openGraph: {
+    title: "BookReel — 12 peças de conteúdo a partir do seu book imobiliário",
+    description:
+      "Para imobiliárias, corretores e marcas que vendem com book. Em 15 minutos, do PDF a reels, stories, carrosséis, podcast e landing — preservando sua identidade.",
+    url: "https://bookreel.ai",
+    siteName: "BookReel",
+    images: [
+      {
+        url: "/landing/assets/hero-building.jpg",
+        width: 1200,
+        height: 630,
+        alt: "Empreendimento de alto padrão — exemplo de book processado pelo BookReel",
+      },
+    ],
+    locale: "pt_BR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "BookReel — 12 peças de conteúdo em 15 minutos",
+    description:
+      "Para imobiliárias, corretores e marcas que vendem com book.",
+    images: ["/landing/assets/hero-building.jpg"],
+  },
 };
 
 export default function Page() {
