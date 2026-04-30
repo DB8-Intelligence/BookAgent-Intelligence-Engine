@@ -6,8 +6,8 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 
-function formatBRL(value: number): string {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+function formatBRL(valueCents: number): string {
+  return (valueCents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 export default function BillingPage() {

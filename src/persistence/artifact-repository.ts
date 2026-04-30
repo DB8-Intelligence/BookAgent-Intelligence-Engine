@@ -36,6 +36,7 @@ interface ArtifactRow {
   warnings: string[];
   referenced_asset_ids: string[];
   created_at: string;
+  content: unknown;
 }
 
 interface EventRow {
@@ -61,27 +62,40 @@ export class ArtifactRepository {
   constructor(private client: SupabaseClient) {}
 
   /**
-   * Persiste artifacts de um job no banco.
-   * Artifacts com content grande são referenciados por filePath (não salva o content).
-   * Insere em lotes para eficiência.
+   * Persiste artifacts de um job no banco, incluindo content.
+   * Content é salvo como JSONB para render-specs/json ou como string para html/markdown.
    */
   async saveArtifacts(jobId: string, artifacts: ExportArtifact[]): Promise<void> {
     if (artifacts.length === 0) return;
 
-    const rows: ArtifactRow[] = artifacts.map((a) => ({
-      id: a.id,
-      job_id: jobId,
-      artifact_type: a.artifactType,
-      export_format: a.exportFormat,
-      output_format: a.outputFormat ?? null,
-      title: a.title,
-      file_path: a.filePath ?? null,
-      size_bytes: a.sizeBytes,
-      status: a.status,
-      warnings: a.warnings,
-      referenced_asset_ids: a.referencedAssetIds,
-      created_at: a.createdAt.toISOString(),
-    }));
+    const rows: ArtifactRow[] = artifacts.map((a) => {
+      // Parse JSON content for jsonb storage, keep strings as-is
+      let content: unknown = null;
+      if (a.content) {
+        try {
+          content = typeof a.content === 'string' ? JSON.parse(a.content) : a.content;
+        } catch {
+          // Not JSON — store as string wrapped in JSON
+          content = a.content;
+        }
+      }
+
+      return {
+        id: a.id,
+        job_id: jobId,
+        artifact_type: a.artifactType,
+        export_format: a.exportFormat,
+        output_format: a.outputFormat ?? null,
+        title: a.title,
+        file_path: a.filePath ?? null,
+        size_bytes: a.sizeBytes,
+        status: a.status,
+        warnings: a.warnings,
+        referenced_asset_ids: a.referencedAssetIds,
+        created_at: a.createdAt.toISOString(),
+        content,
+      };
+    });
 
     // Inserir em lotes de 50 para evitar payload muito grande
     const BATCH_SIZE = 50;

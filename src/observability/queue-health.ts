@@ -41,33 +41,24 @@ const FALLBACK: QueueHealthSnapshot = {
  * Returns a zeroed snapshot if Redis/queue is not available.
  */
 export async function getQueueHealth(): Promise<QueueHealthSnapshot> {
+  // Cloud Tasks health: via Cloud Monitoring API (não implementado aqui
+  // por enquanto — retorna "available" quando configurado, stats zeradas).
+  // Para stats reais: usar @google-cloud/monitoring com query de
+  // cloudtasks.googleapis.com/queue/depth.
   const queue = getQueue();
-  if (!queue) return FALLBACK;
+  if (!queue?.available) return FALLBACK;
 
   try {
-    const [waiting, active, completed, failed, delayed] = await Promise.all([
-      queue.getWaitingCount(),
-      queue.getActiveCount(),
-      queue.getCompletedCount(),
-      queue.getFailedCount(),
-      queue.getDelayedCount(),
-    ]);
-
-    const concurrency = parseInt(process.env.QUEUE_CONCURRENCY ?? '2', 10);
-    const capacityUsedPct = concurrency > 0
-      ? Math.round((active / concurrency) * 100)
-      : 0;
-
     return {
       available: true,
-      waiting,
-      active,
-      completed,
-      failed,
-      delayed,
-      total: waiting + active + delayed,
-      capacityUsedPct,
-      congested: waiting > active * 2 && waiting > 5,
+      waiting: 0,
+      active: 0,
+      completed: 0,
+      failed: 0,
+      delayed: 0,
+      total: 0,
+      capacityUsedPct: 0,
+      congested: false,
     };
   } catch (err) {
     logger.warn(`[QueueHealth] Failed to read queue stats: ${err}`);

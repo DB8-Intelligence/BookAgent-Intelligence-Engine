@@ -18,7 +18,7 @@
 
 import type { Request, Response } from 'express';
 import type { IOrchestratorLike } from '../types/orchestrator.js';
-import type { JobRepository, JobRow } from '../../persistence/job-repository.js';
+import type { JobRepository, JobRow, ArtifactCounts } from '../../persistence/job-repository.js';
 import { sendSuccess, sendError } from '../helpers/response.js';
 import type {
   JobStatusResponse,
@@ -124,7 +124,9 @@ export async function getJobDetail(req: Request, res: Response): Promise<void> {
       const dbJob = await jobRepository.getJob(jobId);
 
       if (dbJob) {
-        sendSuccess(res, jobRowToStatusResponse(dbJob));
+        // Count plans from artifacts table for accurate output_summary
+        const artifactCounts = await countArtifactsByType(jobId);
+        sendSuccess(res, jobRowToStatusResponse(dbJob, artifactCounts));
         return;
       }
     } catch {
@@ -217,17 +219,26 @@ function jobRowToListItem(row: JobRow): JobListItem {
   };
 }
 
-function jobRowToStatusResponse(row: JobRow): JobStatusResponse {
+async function countArtifactsByType(jobId: string): Promise<ArtifactCounts | null> {
+  if (!jobRepository) return null;
+  try {
+    return await jobRepository.countArtifactsByType(jobId);
+  } catch {
+    return null;
+  }
+}
+
+function jobRowToStatusResponse(row: JobRow, artifactCounts?: ArtifactCounts | null): JobStatusResponse {
   const hasResult = row.status === 'completed';
   let outputSummary: OutputSummary | undefined;
 
   if (hasResult) {
     outputSummary = {
       source_count:       row.sources_count,
-      selected_outputs:   0,
-      media_plans:        0,
-      blog_plans:         0,
-      landing_page_plans: 0,
+      selected_outputs:   artifactCounts?.selected_outputs ?? 0,
+      media_plans:        artifactCounts?.media_plans ?? 0,
+      blog_plans:         artifactCounts?.blog_plans ?? 0,
+      landing_page_plans: artifactCounts?.landing_page_plans ?? 0,
       artifacts:          row.artifacts_count,
     };
   }

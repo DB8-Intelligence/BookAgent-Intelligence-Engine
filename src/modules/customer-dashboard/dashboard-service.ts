@@ -35,7 +35,7 @@ import { PLAN_FEATURES } from '../../domain/entities/tenant.js';
 import { getUsageSummary } from '../billing/limit-checker.js';
 import { getSubscription } from '../billing/subscription-manager.js';
 import { PLANS, type PlanTier } from '../../plans/plan-config.js';
-import type { SupabaseClient } from '../../persistence/supabase-client.js';
+import type { SupabaseClient, FilterCondition } from '../../persistence/supabase-client.js';
 import { logger } from '../../utils/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -52,11 +52,12 @@ export async function getOverview(
   const tid = tenantCtx.tenantId;
 
   // Parallel queries
-  const [jobs, usage, subscription, recentJobs] = await Promise.all([
+  const [jobs, usage, subscription, recentJobs, tenantName] = await Promise.all([
     getJobStats(tid, supabase),
     getUsageSummary(tenantCtx, supabase),
     getSubscription(tid, supabase),
     getJobList(tenantCtx, supabase, 5),
+    getTenantName(tid, supabase),
   ]);
 
   // Alerts
@@ -104,7 +105,7 @@ export async function getOverview(
   const rendersFeature = usage.features.find((f) => f.eventType === 'video_render_requested');
 
   return {
-    tenantName: tid,
+    tenantName: tenantName ?? tid,
     planTier: tenantCtx.planTier,
     subscriptionStatus: subscription?.status ?? 'active',
     stats: {
@@ -162,10 +163,12 @@ export async function getJobList(
 
     let artifactCounts: Record<string, number> = {};
     let publicationCounts: Record<string, number> = {};
+    let fileUrls: Record<string, string> = {};
+    let inputTypes: Record<string, string> = {};
 
     if (jobIds.length > 0) {
       try {
-        const [artRows, pubRows] = await Promise.all([
+        const [artRows, pubRows, jobRows] = await Promise.all([
           supabase.select<{ job_id: string }>('bookagent_job_artifacts', {
             filters: [{ column: 'job_id', operator: 'in', value: `(${jobIds.join(',')})` }],
             select: 'job_id',
@@ -174,7 +177,18 @@ export async function getJobList(
             filters: [{ column: 'job_id', operator: 'in', value: `(${jobIds.join(',')})` }],
             select: 'job_id',
           }),
+          supabase.select<{ id: string; input_file_url: string | null; input_type: string | null }>(
+            'bookagent_jobs',
+            {
+              filters: [{ column: 'id', operator: 'in', value: `(${jobIds.join(',')})` }],
+              select: 'id,input_file_url,input_type',
+            },
+          ),
         ]);
+        for (const r of jobRows) {
+          if (r.input_file_url) fileUrls[r.id] = r.input_file_url;
+          if (r.input_type) inputTypes[r.id] = r.input_type;
+        }
         for (const r of artRows) {
           artifactCounts[r.job_id] = (artifactCounts[r.job_id] ?? 0) + 1;
         }
@@ -193,7 +207,8 @@ export async function getJobList(
         status,
         statusLabel: CUSTOMER_STATUS_LABELS[status],
         statusBadge: CUSTOMER_STATUS_BADGE[status],
-        inputType: '',
+        inputType: inputTypes[row.job_id] ?? '',
+        inputFileUrl: fileUrls[row.job_id] ?? null,
         artifactsCount: artifactCounts[row.job_id] ?? 0,
         publicationsCount: publicationCounts[row.job_id] ?? 0,
         hasPendingReview: status === CustomerJobStatus.AWAITING_REVIEW,
@@ -418,26 +433,30 @@ export async function getUsageView(
   tenantCtx: TenantContext,
   supabase: SupabaseClient | null,
 ): Promise<CustomerUsageView> {
+  const { isAdminUserId } = await import('../billing/admin-bypass.js');
   const summary = await getUsageSummary(tenantCtx, supabase);
+  const adminBypass = isAdminUserId(tenantCtx.userId);
 
   const features: CustomerFeatureUsage[] = summary.features.map((f) => ({
     label: f.label,
     used: f.used,
-    limit: f.limit,
-    remaining: f.remaining,
-    percent: f.usedPercent,
-    status: f.status === 'allowed' ? 'ok'
+    // Admins: show -1 (unlimited) instead of plan limit
+    limit: adminBypass ? -1 : f.limit,
+    remaining: adminBypass ? -1 : f.remaining,
+    percent: adminBypass ? 0 : f.usedPercent,
+    status: adminBypass ? 'ok'
+      : f.status === 'allowed' ? 'ok'
       : f.status === 'warning' ? 'warning'
       : f.status === 'blocked' ? 'blocked'
       : 'disabled',
   }));
 
   return {
-    planTier: tenantCtx.planTier,
+    planTier: adminBypass ? 'agency' : tenantCtx.planTier,
     period: summary.periodKey,
     features,
     estimatedCostUsd: summary.estimatedCostUsd > 0 ? summary.estimatedCostUsd : null,
-    alerts: summary.alerts,
+    alerts: adminBypass ? [] : summary.alerts,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -680,6 +699,20 @@ function mapToCustomerStatus(approvalStatus: string | null): CustomerJobStatus {
   }
 }
 
+async function getTenantName(tenantId: string, supabase: SupabaseClient | null): Promise<string | null> {
+  if (!supabase || tenantId === 'default') return null;
+  try {
+    const rows = await supabase.select<{ name: string }>('bookagent_tenants', {
+      filters: [{ column: 'id', operator: 'eq', value: tenantId }],
+      select: 'name',
+      limit: 1,
+    });
+    return rows[0]?.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
 interface JobStats {
   thisMonth: number;
   total: number;
@@ -695,20 +728,36 @@ async function getJobStats(tenantId: string, supabase: SupabaseClient | null): P
 
   try {
     const rows = await supabase.select<{
+      job_id: string;
       approval_status: string | null;
       created_at: string;
     }>('bookagent_job_meta', {
       filters: [{ column: 'tenant_id', operator: 'eq', value: tenantId }],
-      select: 'approval_status,created_at',
+      select: 'job_id,approval_status,created_at',
     });
 
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
+    // Count artifacts across all tenant jobs
+    let artifactsCount = 0;
+    const jobIds = rows.map((r) => r.job_id);
+    if (jobIds.length > 0) {
+      try {
+        const artRows = await supabase.select<{ job_id: string }>('bookagent_job_artifacts', {
+          filters: [{ column: 'job_id', operator: 'in', value: `(${jobIds.join(',')})` }],
+          select: 'job_id',
+        });
+        artifactsCount = artRows.length;
+      } catch {
+        // best-effort
+      }
+    }
+
     return {
       total: rows.length,
       thisMonth: rows.filter((r) => r.created_at >= monthStart).length,
-      artifactsCount: 0,
+      artifactsCount,
       publishedCount: rows.filter((r) => r.approval_status === 'published').length,
       pendingReviews: rows.filter((r) =>
         r.approval_status === 'awaiting_intermediate_review' ||
@@ -779,4 +828,111 @@ function getUpgradeOptions(currentPlan: PlanTier): UpgradeOption[] {
   }
 
   return options;
+}
+
+// ---------------------------------------------------------------------------
+// Gallery — agrega artifacts de todos os jobs do tenant numa única query
+// Usado pelo dashboard de vídeos prontos (player + download)
+// ---------------------------------------------------------------------------
+
+export interface GalleryFilters {
+  /** Filtra por artifact_type (ex: 'VIDEO_RENDER'). Omitir pra tudo. */
+  type?: string;
+  /** Só artifacts com URL de download acessível */
+  onlyWithDownload?: boolean;
+  /** Cap de resultados (default 50, max 200) */
+  limit?: number;
+}
+
+export interface GalleryItem extends CustomerArtifactView {
+  /** Mime type inferido do downloadUrl (ex: "video/mp4", "image/png") */
+  mimeType: string | null;
+}
+
+export async function getGallery(
+  tenantCtx: TenantContext,
+  supabase: SupabaseClient | null,
+  filters: GalleryFilters = {},
+): Promise<GalleryItem[]> {
+  if (!supabase) return [];
+
+  const limit = Math.min(filters.limit ?? 50, 200);
+
+  try {
+    // 1. Lista jobIds do tenant via bookagent_job_meta (fonte de verdade de ownership)
+    const jobRows = await supabase.select<{ job_id: string; created_at: string }>(
+      'bookagent_job_meta',
+      {
+        filters: [{ column: 'tenant_id', operator: 'eq', value: tenantCtx.tenantId }],
+        select: 'job_id,created_at',
+        orderBy: 'created_at',
+        orderDesc: true,
+        limit: 500,
+      },
+    );
+    const jobIds = jobRows.map((r) => r.job_id);
+    if (jobIds.length === 0) return [];
+
+    // 2. Query artifacts — escopado aos jobs do tenant
+    const artFilters: FilterCondition[] = [
+      { column: 'job_id', operator: 'in', value: `(${jobIds.join(',')})` },
+    ];
+    if (filters.type) {
+      artFilters.push({ column: 'artifact_type', operator: 'eq', value: filters.type });
+    }
+
+    const rows = await supabase.select<{
+      id: string;
+      job_id: string;
+      artifact_type: string;
+      export_format: string | null;
+      title: string | null;
+      size_bytes: number | null;
+      file_path: string | null;
+      public_url: string | null;
+      status: string | null;
+      created_at: string;
+    }>('bookagent_job_artifacts', {
+      filters: artFilters,
+      orderBy: 'created_at',
+      orderDesc: true,
+      limit,
+    });
+
+    return rows
+      .map<GalleryItem>((row) => {
+        const downloadUrl = row.public_url ?? row.file_path;
+        return {
+          id: row.id,
+          jobId: row.job_id,
+          type: row.artifact_type,
+          format: row.export_format ?? '',
+          title: row.title ?? row.artifact_type,
+          sizeBytes: row.size_bytes,
+          downloadUrl,
+          previewUrl: row.public_url,
+          status: row.status ?? 'valid',
+          createdAt: row.created_at,
+          mimeType: inferMimeType(downloadUrl, row.artifact_type),
+        };
+      })
+      .filter((item) => !filters.onlyWithDownload || !!item.downloadUrl);
+  } catch (err) {
+    logger.warn(`[DashboardService] getGallery failed: ${err}`);
+    return [];
+  }
+}
+
+function inferMimeType(url: string | null, artifactType: string): string | null {
+  if (!url) return null;
+  const lower = url.toLowerCase();
+  if (lower.endsWith('.mp4') || lower.endsWith('.mov')) return 'video/mp4';
+  if (lower.endsWith('.webm')) return 'video/webm';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.mp3')) return 'audio/mpeg';
+  if (artifactType.toUpperCase().includes('VIDEO')) return 'video/mp4';
+  return null;
 }

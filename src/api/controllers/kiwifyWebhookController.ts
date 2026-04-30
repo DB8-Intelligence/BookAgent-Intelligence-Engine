@@ -16,6 +16,7 @@
 import type { Request, Response } from 'express';
 import { sendSuccess, sendError } from '../helpers/response.js';
 import { KiwifyBillingProvider } from '../../modules/billing/providers/kiwify-provider.js';
+import { applyWebhookToFirestore } from '../../modules/billing/webhook-bridge.js';
 import type { SupabaseClient as SupabaseClientInstance } from '../../persistence/supabase-client.js';
 import { logger } from '../../utils/logger.js';
 
@@ -86,6 +87,7 @@ export async function handleKiwifyWebhook(req: Request, res: Response): Promise<
 
   try {
     if (eventType === 'subscription.created') {
+      // Legacy path — Supabase bookagent_user_plans
       await activatePlan({
         email:        externalCustomerId ?? '',
         phone:        metadata?.buyerPhone as string | undefined,
@@ -93,10 +95,29 @@ export async function handleKiwifyWebhook(req: Request, res: Response): Promise<
         kiwifySubId:  externalSubscriptionId,
         amountBRL,
       });
+      // Firestore bridge — fonte de verdade pro CreditsCard + checkJobAllowed
+      const fs = await applyWebhookToFirestore({
+        source: 'kiwify',
+        eventType: 'activate',
+        email: externalCustomerId ?? '',
+        planTier: planTier ?? 'starter',
+        externalSubscriptionId,
+        amountBRL,
+      });
+      if (!fs.synced) {
+        logger.warn(`[KiwifyWebhook] Firestore sync pending: ${fs.reason}`);
+      }
     } else if (eventType === 'subscription.canceled') {
       await cancelPlan({
         email:       externalCustomerId ?? '',
         kiwifySubId: externalSubscriptionId,
+      });
+      await applyWebhookToFirestore({
+        source: 'kiwify',
+        eventType: 'cancel',
+        email: externalCustomerId ?? '',
+        planTier: 'starter',
+        externalSubscriptionId,
       });
     }
 

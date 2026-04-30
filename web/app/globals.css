@@ -49,3 +49,26 @@
   * { @apply border-border; }
   body { @apply bg-background text-foreground; }
 }
+
+/* ---------------------------------------------------------------------------
+ * Landing Luxury — fundos decorativos da paleta INTERMETRIX
+ * Gradientes complexos demais pra Tailwind arbitrary values; ficam aqui
+ * como utility classes aplicadas em <div aria-hidden> atrás do conteúdo.
+ * ------------------------------------------------------------------------ */
+.bg-landing-hero-accent {
+  background: radial-gradient(60% 50% at 80% 0%, rgba(212, 175, 55, 0.08), transparent 60%);
+}
+
+.bg-landing-manifesto-lines {
+  background-image: repeating-linear-gradient(
+    45deg,
+    #d4af37 0,
+    #d4af37 1px,
+    transparent 1px,
+    transparent 16px
+  );
+}
+
+.bg-landing-cta-glow {
+  background: radial-gradient(60% 60% at 50% 50%, rgba(212, 175, 55, 0.5), transparent 60%);
+}

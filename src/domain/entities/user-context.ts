@@ -12,4 +12,6 @@ export interface UserContext {
   site?: string;
   region?: string;
   logoUrl?: string;
+  /** CSV de formatos selecionados (reel,carousel,blog,landing_page,...) — Output Selection respeita */
+  selectedFormats?: string;
 }

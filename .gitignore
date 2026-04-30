@@ -21,3 +21,19 @@ web/node_modules/
 web/.next/
 web/tsconfig.tsbuildinfo
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Build/runtime artifacts e backups locais
+BookAgent-Intelligence-Engine.zip
+.transformers-cache/
+output/
+
+# Credentials — NUNCA commitar
+service-account*.json
+gcp-sa*.json
+*-credentials.json
+*.pem
+*.p12
+*.pfx
+*-private-key*
+google-application-credentials*

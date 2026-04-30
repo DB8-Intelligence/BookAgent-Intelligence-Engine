@@ -3,9 +3,43 @@ dist
 storage
 .env
 .env.local
+.env.*
 *.log
 .git
-web
+.gitignore
+.gitattributes
 docs
 scripts
 *.md
+
+# Web build artifacts — o stage web-builder rebuilda do zero
+web/node_modules
+web/.next
+web/.env.local
+web/.vercel
+
+# Credentials — NUNCA entrar no container.
+# Auth em Cloud Run usa Workload Identity (SA atachada ao serviço, automática)
+# Auth local usa GOOGLE_APPLICATION_CREDENTIALS pointing to arquivo fora do build context
+service-account*.json
+gcp-sa*.json
+*-credentials.json
+*.pem
+*.p12
+*.pfx
+*-private-key*
+google-application-credentials*
+
+# Test fixtures e misc (evita inflar a imagem)
+tests/
+coverage/
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.tmp
+
+# CI/CD files não precisam no container
+cloudbuild.yaml
+deploy.sh
+Dockerfile

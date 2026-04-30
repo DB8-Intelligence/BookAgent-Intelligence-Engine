@@ -159,6 +159,8 @@ export interface CustomerJobListItem {
   statusBadge: string;
   /** Tipo de input */
   inputType: string;
+  /** URL do arquivo de entrada (para extrair nome do material) */
+  inputFileUrl: string | null;
   /** Número de artifacts gerados */
   artifactsCount: number;
   /** Número de publicações */

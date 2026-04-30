@@ -4,13 +4,10 @@ import { useEffect, useState, useMemo } from "react";
 import {
   bookagent,
   formatBytes,
-  ARTIFACT_ICONS,
-  FORMAT_LABELS,
   type ArtifactListItem,
   type ArtifactDetail,
-  type ArtifactType,
 } from "@/lib/bookagentApi";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -21,46 +18,121 @@ import { cn } from "@/lib/utils";
 
 interface OutputsGalleryProps {
   jobId: string;
-  /** Initial filter by artifact type */
-  filterType?: ArtifactType;
 }
 
 // ---------------------------------------------------------------------------
-// Filter bar types
+// Product config
 // ---------------------------------------------------------------------------
 
-type FilterKey = "all" | ArtifactType;
+interface ProductConfig {
+  label: string;
+  icon: string;
+  description: string;
+  color: string;
+  primaryFormat: string;
+  canRender: boolean;
+}
 
-const FILTER_OPTIONS: { key: FilterKey; label: string; icon: string }[] = [
-  { key: "all", label: "Todos", icon: "📁" },
-  { key: "media-render-spec", label: "Media", icon: "🎬" },
-  { key: "blog-article", label: "Blog", icon: "✍️" },
-  { key: "landing-page", label: "Landing Page", icon: "🌐" },
-  { key: "media-metadata", label: "Metadata", icon: "📋" },
-];
-
-// ---------------------------------------------------------------------------
-// Status config
-// ---------------------------------------------------------------------------
-
-const STATUS_STYLES: Record<string, string> = {
-  valid: "text-emerald-500 border-emerald-500/30",
-  partial: "text-amber-500 border-amber-500/30",
-  invalid: "text-red-500 border-red-500/30",
+const PRODUCT_CONFIG: Record<string, ProductConfig> = {
+  reel: {
+    label: "Reel Instagram",
+    icon: "🎬",
+    description: "Video curto 9:16 para Instagram e TikTok",
+    color: "from-pink-500/10 to-purple-500/10",
+    primaryFormat: "render-spec",
+    canRender: true,
+  },
+  carousel: {
+    label: "Carrossel",
+    icon: "📱",
+    description: "Slides 1:1 para feed do Instagram",
+    color: "from-blue-500/10 to-cyan-500/10",
+    primaryFormat: "render-spec",
+    canRender: true,
+  },
+  presentation: {
+    label: "Apresentacao Comercial",
+    icon: "📊",
+    description: "Slides 16:9 para reunioes e propostas",
+    color: "from-amber-500/10 to-orange-500/10",
+    primaryFormat: "render-spec",
+    canRender: true,
+  },
+  video_long: {
+    label: "Video Institucional",
+    icon: "🎥",
+    description: "Video longo 16:9 para YouTube",
+    color: "from-red-500/10 to-rose-500/10",
+    primaryFormat: "render-spec",
+    canRender: true,
+  },
+  blog: {
+    label: "Artigo para Blog",
+    icon: "✍️",
+    description: "Post SEO-otimizado com 1500+ palavras",
+    color: "from-emerald-500/10 to-teal-500/10",
+    primaryFormat: "html",
+    canRender: false,
+  },
+  landing_page: {
+    label: "Landing Page",
+    icon: "🌐",
+    description: "Pagina de captacao com formulario",
+    color: "from-violet-500/10 to-indigo-500/10",
+    primaryFormat: "html",
+    canRender: false,
+  },
 };
+
+// All possible products — shown even if not yet generated
+const ALL_PRODUCT_KEYS = ["reel", "carousel", "presentation", "video_long", "blog", "landing_page"];
+
+// ---------------------------------------------------------------------------
+// Group artifacts into products
+// ---------------------------------------------------------------------------
+
+interface Product {
+  key: string;
+  config: ProductConfig;
+  primary: ArtifactListItem | null;
+  subItems: ArtifactListItem[];
+  ready: boolean;
+}
+
+function groupIntoProducts(artifacts: ArtifactListItem[]): Product[] {
+  const groups: Record<string, ArtifactListItem[]> = {};
+
+  for (const a of artifacts) {
+    const key = a.output_format || "other";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(a);
+  }
+
+  return ALL_PRODUCT_KEYS.map((key) => {
+    const config = PRODUCT_CONFIG[key];
+    const items = groups[key] ?? [];
+    const primary = items.find((i) => i.export_format === config.primaryFormat) ?? items[0] ?? null;
+    const subItems = primary ? items.filter((i) => i.id !== primary.id) : [];
+
+    return { key, config, primary, subItems, ready: primary !== null };
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
+export function OutputsGallery({ jobId }: OutputsGalleryProps) {
   const [artifacts, setArtifacts] = useState<ArtifactListItem[]>([]);
   const [selected, setSelected] = useState<ArtifactDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<FilterKey>(filterType ?? "all");
+  const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
+  const [renderStatus, setRenderStatus] = useState<Record<string, string>>({});
+  const [renderLoading, setRenderLoading] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
 
-  // Fetch artifacts
   useEffect(() => {
     setLoading(true);
     bookagent.jobs
@@ -70,30 +142,91 @@ export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
       .finally(() => setLoading(false));
   }, [jobId]);
 
-  // Filter
-  const filtered = useMemo(() => {
-    if (activeFilter === "all") return artifacts;
-    return artifacts.filter((a) => a.artifact_type === activeFilter);
-  }, [artifacts, activeFilter]);
+  // Poll video render status every 8s while any render is queued/processing
+  useEffect(() => {
+    const hasActiveRender = Object.values(renderStatus).some(
+      (s) => s === "queued" || s === "processing",
+    );
+    if (!hasActiveRender) return;
 
-  // Stats
-  const stats = useMemo(() => {
-    const byType: Record<string, number> = {};
-    let totalSize = 0;
-    let validCount = 0;
-    let warningCount = 0;
+    const interval = setInterval(async () => {
+      try {
+        const status = await bookagent.dashboard.videoStatus(jobId);
+        if (status.videoRenderStatus === "completed" && status.outputPath) {
+          setVideoUrl(status.outputPath);
+          setRenderStatus((prev) => {
+            const next = { ...prev };
+            for (const key of Object.keys(next)) {
+              if (next[key] === "queued" || next[key] === "processing") {
+                next[key] = "completed";
+              }
+            }
+            return next;
+          });
+          // Refresh artifacts to show VIDEO_RENDER artifact
+          bookagent.jobs.artifacts(jobId).then(setArtifacts).catch(() => {});
+        } else if (status.videoRenderStatus === "failed") {
+          setVideoError(status.error ?? "Falha no render");
+          setRenderStatus((prev) => {
+            const next = { ...prev };
+            for (const key of Object.keys(next)) {
+              if (next[key] === "queued" || next[key] === "processing") {
+                next[key] = "failed";
+              }
+            }
+            return next;
+          });
+        } else if (status.videoRenderStatus) {
+          // Update status (e.g., "processing")
+          setRenderStatus((prev) => {
+            const next = { ...prev };
+            for (const key of Object.keys(next)) {
+              if (next[key] === "queued") {
+                next[key] = status.videoRenderStatus;
+              }
+            }
+            return next;
+          });
+        }
+      } catch {
+        // Polling error — ignore silently
+      }
+    }, 8000);
 
-    for (const a of artifacts) {
-      byType[a.artifact_type] = (byType[a.artifact_type] ?? 0) + 1;
-      totalSize += a.size_bytes;
-      if (a.status === "valid") validCount++;
-      if (a.warnings.length > 0) warningCount++;
+    return () => clearInterval(interval);
+  }, [jobId, renderStatus]);
+
+  // Check for existing video on mount
+  useEffect(() => {
+    bookagent.dashboard
+      .videoStatus(jobId)
+      .then((status) => {
+        if (status.videoRenderStatus === "completed" && status.outputPath) {
+          setVideoUrl(status.outputPath);
+        }
+      })
+      .catch(() => {});
+  }, [jobId]);
+
+  const products = useMemo(() => groupIntoProducts(artifacts), [artifacts]);
+  const readyCount = products.filter((p) => p.ready).length;
+
+  async function triggerRender(artifactId: string) {
+    setRenderLoading(artifactId);
+    setVideoError(null);
+    try {
+      const result = await bookagent.dashboard.renderVideo(jobId, artifactId);
+      setRenderStatus((prev) => ({ ...prev, [artifactId]: result.status ?? "queued" }));
+    } catch (err) {
+      setRenderStatus((prev) => ({
+        ...prev,
+        [artifactId]: err instanceof Error ? err.message : "Erro",
+      }));
+    } finally {
+      setRenderLoading(null);
     }
+  }
 
-    return { byType, totalSize, validCount, warningCount, total: artifacts.length };
-  }, [artifacts]);
-
-  // View artifact detail
   async function viewArtifact(artifactId: string) {
     setLoadingDetail(true);
     try {
@@ -106,248 +239,317 @@ export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
     }
   }
 
-  // -- Loading --
   if (loading) {
     return (
       <Card>
         <CardContent className="py-16 text-center text-muted-foreground">
-          Carregando artefatos...
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // -- Empty --
-  if (artifacts.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-16 text-center text-muted-foreground">
-          Nenhum artefato gerado para este job.
+          Carregando conteudos...
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <div className="space-y-5">
-      {/* ── Summary bar ───────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Badge variant="secondary" className="gap-1.5">
-          📦 {stats.total} artefato(s)
-        </Badge>
-        <Badge variant="outline" className="gap-1.5 text-emerald-500 border-emerald-500/30">
-          ✅ {stats.validCount} valido(s)
-        </Badge>
-        {stats.warningCount > 0 && (
-          <Badge variant="outline" className="gap-1.5 text-amber-500 border-amber-500/30">
-            ⚠ {stats.warningCount} com avisos
-          </Badge>
-        )}
-        <Badge variant="outline" className="gap-1.5">
-          💾 {formatBytes(stats.totalSize)} total
-        </Badge>
-      </div>
+    <div className="space-y-6">
+      {/* Video Player — shown when render is complete */}
+      {videoUrl && (
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-sm flex items-center gap-2">
+                <span className="text-lg">🎬</span> Video Renderizado
+              </h3>
+              <a href={videoUrl} download>
+                <Button size="sm" variant="secondary" className="text-xs">
+                  Download MP4
+                </Button>
+              </a>
+            </div>
+            <div className="rounded-lg overflow-hidden bg-black aspect-[9/16] max-h-[480px] mx-auto">
+              <video
+                src={videoUrl}
+                controls
+                playsInline
+                preload="metadata"
+                className="w-full h-full object-contain"
+              >
+                Seu navegador nao suporta o player de video.
+              </video>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* ── Filter tabs ───────────────────────────── */}
-      <div className="flex flex-wrap gap-1.5">
-        {FILTER_OPTIONS.map((f) => {
-          const count = f.key === "all" ? artifacts.length : (stats.byType[f.key] ?? 0);
-          if (f.key !== "all" && count === 0) return null;
-          return (
-            <button
-              key={f.key}
-              onClick={() => setActiveFilter(f.key)}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
-                activeFilter === f.key
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-background text-muted-foreground border-border hover:border-primary/40",
-              )}
-            >
-              <span>{f.icon}</span>
-              {f.label}
-              <span className="text-[10px] opacity-70">({count})</span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Video render in progress */}
+      {!videoUrl && Object.values(renderStatus).some((s) => s === "queued" || s === "processing") && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <span className="text-lg animate-spin">⏳</span>
+              <div className="flex-1">
+                <p className="text-sm font-medium">Renderizando video...</p>
+                <p className="text-xs text-muted-foreground">
+                  Isso pode levar 1-3 minutos. A pagina atualiza automaticamente.
+                </p>
+              </div>
+              <div className="h-1.5 w-32 bg-muted rounded-full overflow-hidden">
+                <div className="h-full w-2/3 bg-emerald-500 rounded-full animate-pulse" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* ── Content: list + preview ───────────────── */}
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* List column */}
-        <div className="space-y-2.5">
-          {filtered.map((a) => (
+      {/* Video render error */}
+      {videoError && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <span className="text-lg">❌</span>
+              <div>
+                <p className="text-sm font-medium text-red-600">Falha no render</p>
+                <p className="text-xs text-muted-foreground">{videoError}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Summary */}
+      <p className="text-sm text-muted-foreground">
+        {readyCount} de {products.length} produtos prontos
+      </p>
+
+      {/* Products + Preview */}
+      <div className="grid lg:grid-cols-5 gap-6">
+        {/* Product cards */}
+        <div className="lg:col-span-3 space-y-3">
+          {products.map((product) => (
             <Card
-              key={a.id}
+              key={product.key}
               className={cn(
-                "cursor-pointer transition-all hover:shadow-md",
-                selected?.id === a.id && "ring-2 ring-primary shadow-md",
+                "overflow-hidden transition-all",
+                product.ready && "hover:shadow-md",
+                !product.ready && "opacity-60",
               )}
-              onClick={() => viewArtifact(a.id)}
             >
-              <CardContent className="p-4">
-                {/* Top row */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-xl shrink-0">
-                      {ARTIFACT_ICONS[a.artifact_type] ?? "📄"}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{a.title}</p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <Badge variant="secondary" className="text-[9px] h-4">
-                          {a.output_format}
-                        </Badge>
-                        <Badge variant="outline" className="text-[9px] h-4">
-                          {FORMAT_LABELS[a.export_format] ?? a.export_format}
-                        </Badge>
-                        <span className="text-[10px] text-muted-foreground">
-                          {formatBytes(a.size_bytes)}
-                        </span>
-                      </div>
+              <div className={cn("bg-gradient-to-r p-4", product.config.color)}>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{product.config.icon}</span>
+                    <div>
+                      <h3 className="font-semibold text-sm">{product.config.label}</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {product.config.description}
+                      </p>
                     </div>
                   </div>
-                  <Badge
-                    variant="outline"
-                    className={cn("text-[9px] shrink-0", STATUS_STYLES[a.status])}
-                  >
-                    {a.status}
-                  </Badge>
-                </div>
-
-                {/* Warnings */}
-                {a.warnings.length > 0 && (
-                  <div className="mt-2 pl-8 space-y-0.5">
-                    {a.warnings.slice(0, 3).map((w, i) => (
-                      <p key={i} className="text-[10px] text-amber-500 leading-tight">⚠ {w}</p>
-                    ))}
-                    {a.warnings.length > 3 && (
-                      <p className="text-[10px] text-muted-foreground">
-                        +{a.warnings.length - 3} mais...
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="flex items-center gap-2 mt-3 pl-8">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-6 text-[10px] px-2"
-                    onClick={(e) => { e.stopPropagation(); viewArtifact(a.id); }}
-                  >
-                    {loadingDetail && selected?.id === a.id ? "..." : "Visualizar"}
-                  </Button>
-                  <a
-                    href={bookagent.jobs.downloadUrl(jobId, a.id)}
-                    download
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Button size="sm" variant="secondary" className="h-6 text-[10px] px-2">
-                      Download
-                    </Button>
-                  </a>
-                  {a.referenced_asset_count > 0 && (
-                    <span className="text-[10px] text-muted-foreground ml-auto">
-                      🖼️ {a.referenced_asset_count} asset(s)
-                    </span>
+                  {product.ready ? (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] text-emerald-600 border-emerald-300 bg-white/50 shrink-0"
+                    >
+                      Pronto
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] text-amber-600 border-amber-300 bg-white/50 shrink-0"
+                    >
+                      Em processamento
+                    </Badge>
                   )}
                 </div>
-              </CardContent>
+              </div>
+
+              {product.ready && product.primary && (
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs"
+                      onClick={() => viewArtifact(product.primary!.id)}
+                    >
+                      {loadingDetail && selected?.id === product.primary.id
+                        ? "Carregando..."
+                        : "Visualizar"}
+                    </Button>
+
+                    <a href={bookagent.jobs.downloadUrl(jobId, product.primary.id)} download>
+                      <Button size="sm" variant="secondary" className="text-xs">
+                        Download
+                      </Button>
+                    </a>
+
+                    {product.config.canRender && (
+                      <Button
+                        size="sm"
+                        className={cn(
+                          "text-xs",
+                          renderStatus[product.primary.id] === "completed"
+                            ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                            : "bg-emerald-600 hover:bg-emerald-700",
+                        )}
+                        disabled={
+                          renderLoading === product.primary.id ||
+                          renderStatus[product.primary.id] === "queued" ||
+                          renderStatus[product.primary.id] === "processing" ||
+                          renderStatus[product.primary.id] === "completed"
+                        }
+                        onClick={() => triggerRender(product.primary!.id)}
+                      >
+                        {renderLoading === product.primary.id
+                          ? "Enviando..."
+                          : renderStatus[product.primary.id] === "queued"
+                            ? "Na fila..."
+                            : renderStatus[product.primary.id] === "processing"
+                              ? "Renderizando..."
+                              : renderStatus[product.primary.id] === "completed"
+                                ? "✓ Concluido"
+                                : "Gerar Video"}
+                      </Button>
+                    )}
+
+                    {renderStatus[product.primary.id] === "failed" && (
+                      <span className="text-xs text-red-500">
+                        Falha — tente novamente
+                      </span>
+                    )}
+                  </div>
+
+                  {product.subItems.length > 0 && (
+                    <button
+                      className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={() =>
+                        setExpandedProduct(
+                          expandedProduct === product.key ? null : product.key,
+                        )
+                      }
+                    >
+                      {expandedProduct === product.key ? "- Ocultar" : "+"}{" "}
+                      {product.subItems.length} formato(s) adicional(is)
+                    </button>
+                  )}
+
+                  {expandedProduct === product.key && (
+                    <div className="space-y-1.5 pl-2 border-l-2 border-muted">
+                      {product.subItems.map((sub) => (
+                        <div key={sub.id} className="flex items-center gap-2 py-1">
+                          <Badge variant="outline" className="text-[9px] h-4">
+                            {sub.export_format.toUpperCase()}
+                          </Badge>
+                          <span className="text-[11px] text-muted-foreground flex-1 truncate">
+                            {sub.title}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {formatBytes(sub.size_bytes)}
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-5 text-[10px] px-1.5"
+                            onClick={() => viewArtifact(sub.id)}
+                          >
+                            Ver
+                          </Button>
+                          <a href={bookagent.jobs.downloadUrl(jobId, sub.id)} download>
+                            <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1.5">
+                              Baixar
+                            </Button>
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              )}
+
+              {!product.ready && (
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden">
+                      <div className="h-full w-2/3 bg-amber-400 rounded-full animate-pulse" />
+                    </div>
+                    <span className="text-[10px] text-muted-foreground">Processando...</span>
+                  </div>
+                </CardContent>
+              )}
             </Card>
           ))}
-
-          {filtered.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              Nenhum artefato do tipo selecionado.
-            </p>
-          )}
         </div>
 
         {/* Preview column */}
-        <div className="lg:sticky lg:top-20 lg:self-start">
+        <div className="lg:col-span-2 lg:sticky lg:top-20 lg:self-start">
           {selected ? (
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  {ARTIFACT_ICONS[selected.artifact_type] ?? "📄"}
-                  <span className="truncate">{selected.title}</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Meta badges */}
+              <CardContent className="p-4 space-y-4">
+                <h3 className="text-sm font-semibold truncate">{selected.title}</h3>
+
                 <div className="flex flex-wrap gap-1.5">
                   <Badge variant="secondary" className="text-[10px]">
-                    {FORMAT_LABELS[selected.export_format] ?? selected.export_format}
-                  </Badge>
-                  <Badge variant="outline" className="text-[10px]">
-                    {selected.output_format}
+                    {selected.export_format.toUpperCase()}
                   </Badge>
                   <Badge variant="outline" className="text-[10px]">
                     {formatBytes(selected.size_bytes)}
                   </Badge>
-                  <Badge
-                    variant="outline"
-                    className={cn("text-[10px]", STATUS_STYLES[selected.status])}
-                  >
-                    {selected.status}
-                  </Badge>
                 </div>
 
-                {/* Render preview based on format */}
-                {selected.export_format === "html" ? (
-                  <div className="border rounded-lg overflow-hidden bg-white">
-                    <iframe
-                      srcDoc={selected.content}
-                      className="w-full h-[500px]"
-                      title={selected.title}
-                      sandbox="allow-same-origin"
-                    />
-                  </div>
-                ) : selected.export_format === "markdown" ? (
-                  <div className="bg-muted rounded-lg p-4 overflow-auto max-h-[500px]">
-                    <pre className="text-xs whitespace-pre-wrap font-mono">{selected.content}</pre>
-                  </div>
-                ) : (
-                  <div className="bg-muted rounded-lg p-4 overflow-auto max-h-[500px]">
-                    <pre className="text-xs font-mono">
-                      {(() => {
-                        try {
-                          return JSON.stringify(JSON.parse(selected.content), null, 2);
-                        } catch {
-                          return selected.content;
-                        }
-                      })()}
-                    </pre>
-                  </div>
-                )}
+                {/* Preview — HTML rendered in iframe, others as formatted text */}
+                {(() => {
+                  const raw = selected.content;
+                  const contentStr =
+                    typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
 
-                {/* Referenced assets */}
-                {selected.referenced_asset_ids.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">
-                      Assets Referenciados ({selected.referenced_asset_ids.length})
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {selected.referenced_asset_ids.slice(0, 10).map((id) => (
-                        <Badge key={id} variant="outline" className="text-[9px] font-mono">
-                          {id.slice(0, 8)}
-                        </Badge>
-                      ))}
-                      {selected.referenced_asset_ids.length > 10 && (
-                        <Badge variant="outline" className="text-[9px]">
-                          +{selected.referenced_asset_ids.length - 10}
-                        </Badge>
-                      )}
+                  // HTML content (blog, landing page) — render in iframe
+                  if (
+                    selected.export_format === "html" ||
+                    (typeof raw === "string" && raw.trim().startsWith("<!DOCTYPE"))
+                  ) {
+                    return (
+                      <div className="border rounded-lg overflow-hidden bg-white">
+                        <iframe
+                          srcDoc={contentStr}
+                          className="w-full h-[600px]"
+                          title={selected.title}
+                          sandbox="allow-same-origin"
+                        />
+                      </div>
+                    );
+                  }
+
+                  // Markdown
+                  if (selected.export_format === "markdown") {
+                    return (
+                      <div className="bg-muted rounded-lg p-4 overflow-auto max-h-[600px]">
+                        <pre className="text-xs whitespace-pre-wrap font-mono">
+                          {contentStr}
+                        </pre>
+                      </div>
+                    );
+                  }
+
+                  // JSON / render-spec — formatted
+                  const formatted =
+                    typeof raw === "object" && raw !== null
+                      ? JSON.stringify(raw, null, 2)
+                      : (() => {
+                          try {
+                            return JSON.stringify(JSON.parse(contentStr), null, 2);
+                          } catch {
+                            return contentStr;
+                          }
+                        })();
+                  return (
+                    <div className="bg-muted rounded-lg p-4 overflow-auto max-h-[600px]">
+                      <pre className="text-xs font-mono">{formatted}</pre>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
-                {/* Download */}
                 <a href={bookagent.jobs.downloadUrl(jobId, selected.id)} download>
-                  <Button className="w-full">
-                    Download {FORMAT_LABELS[selected.export_format] ?? selected.export_format}
+                  <Button className="w-full" size="sm">
+                    Download
                   </Button>
                 </a>
               </CardContent>
@@ -355,9 +557,9 @@ export function OutputsGallery({ jobId, filterType }: OutputsGalleryProps) {
           ) : (
             <Card>
               <CardContent className="py-20 text-center">
-                <span className="text-4xl block mb-3">👈</span>
+                <span className="text-3xl block mb-2">👈</span>
                 <p className="text-sm text-muted-foreground">
-                  Selecione um artefato para visualizar
+                  Clique em "Visualizar" para pre-visualizar o conteudo
                 </p>
               </CardContent>
             </Card>

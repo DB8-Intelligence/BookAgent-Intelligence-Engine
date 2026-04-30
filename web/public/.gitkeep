@@ -1,0 +1,2 @@
+# Diretório opcional do Next.js para assets estáticos (favicon, robots.txt, etc).
+# Mantido vazio com .gitkeep porque o Dockerfile faz COPY web-builder/web/public.

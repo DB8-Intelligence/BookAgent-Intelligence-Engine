@@ -84,7 +84,15 @@ const DEFAULT_SCENE_TIMEOUT = 60_000;          // 60 seconds
  * It does NOT accept MediaPlan — only RenderSpec.
  */
 // ---------------------------------------------------------------------------
-// Provider: Shotstack (cloud) tem prioridade sobre FFmpeg (local)
+// Provider selection — FFmpeg local (default) ou Shotstack cloud
+// ---------------------------------------------------------------------------
+// Controlado por VIDEO_RENDERER env var:
+//   "ffmpeg" (default)  → render local no container (zero latência externa)
+//   "shotstack"         → Shotstack cloud (requer SHOTSTACK_API_KEY)
+//
+// Decisão estratégica: mover pra Cloud Run com ffmpeg nativo elimina o
+// round-trip externo (~30-90s no Shotstack) e usa recursos do container.
+// Shotstack continua disponível como fallback/alternative.
 // ---------------------------------------------------------------------------
 import { isShotstackConfigured, renderWithShotstack } from './shotstack-adapter.js';
 
@@ -92,12 +100,16 @@ export async function renderFromSpec(
   spec: RenderSpec,
   options: SpecRenderOptions,
 ): Promise<VideoRenderResult> {
-  // Shotstack cloud render tem prioridade — sem FFmpeg, sem CPU local
-  if (isShotstackConfigured()) {
-    logger.info('[renderFromSpec] Provider: Shotstack cloud');
+  const providerPref = (process.env.VIDEO_RENDERER ?? 'ffmpeg').toLowerCase();
+
+  // Shotstack only when explicitly requested AND configured
+  if (providerPref === 'shotstack' && isShotstackConfigured()) {
+    logger.info('[renderFromSpec] Provider: Shotstack cloud (VIDEO_RENDERER=shotstack)');
     return renderWithShotstack(spec, options);
   }
-  logger.info('[renderFromSpec] Provider: FFmpeg local (SHOTSTACK_API_KEY não configurado)');
+
+  // Default: FFmpeg local
+  logger.info(`[renderFromSpec] Provider: FFmpeg local (VIDEO_RENDERER=${providerPref})`);
 
   const startTime = Date.now();
   const globalTimeout = options.globalTimeoutMs ?? DEFAULT_GLOBAL_TIMEOUT;

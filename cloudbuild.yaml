@@ -1,0 +1,198 @@
+# =============================================================================
+# BookAgent — Google Cloud Build pipeline
+# =============================================================================
+# Setup (uma vez, no projeto bookreel):
+#
+#   # APIs
+#   gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
+#     artifactregistry.googleapis.com aiplatform.googleapis.com \
+#     storage.googleapis.com secretmanager.googleapis.com \
+#     cloudtasks.googleapis.com
+#
+#   # Cloud Tasks queues (pipeline + video)
+#   gcloud tasks queues create bookagent-pipeline --location=us-central1 \
+#     --max-attempts=3 --max-backoff=600s
+#   gcloud tasks queues create bookagent-video --location=us-central1 \
+#     --max-attempts=2 --max-backoff=1800s
+#
+#   # Service Account precisa cloudtasks.enqueuer + cloudtasks.taskRunner
+#   gcloud projects add-iam-policy-binding bookreel \
+#     --member=serviceAccount:bookagent-runtime@bookreel.iam.gserviceaccount.com \
+#     --role=roles/cloudtasks.enqueuer
+#
+#   # Após primeiro deploy, PEGUE a URL do Cloud Run API e configure:
+#   gcloud run services update bookagent-intelligence-engine --region=us-central1 \
+#     --update-env-vars=CLOUD_TASKS_TARGET_URL=https://bookagent-intelligence-engine-<num>.us-central1.run.app
+#
+#   # Artifact Registry
+#   gcloud artifacts repositories create bookagent \
+#     --repository-format=docker --location=us-central1
+#
+#   # Service Account runtime (Workload Identity — sem JSON key)
+#   gcloud iam service-accounts create bookagent-runtime \
+#     --display-name="BookAgent Runtime"
+#
+#   # Roles
+#   for role in aiplatform.user storage.objectAdmin secretmanager.secretAccessor; do
+#     gcloud projects add-iam-policy-binding bookreel \
+#       --member=serviceAccount:bookagent-runtime@bookreel.iam.gserviceaccount.com \
+#       --role=roles/${role}
+#   done
+#
+#   # Cloud Build SA precisa deployer Cloud Run
+#   PROJECT_NUMBER=$(gcloud projects describe bookreel --format='value(projectNumber)')
+#   gcloud projects add-iam-policy-binding bookreel \
+#     --member=serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com \
+#     --role=roles/run.admin
+#   gcloud iam service-accounts add-iam-policy-binding \
+#     bookagent-runtime@bookreel.iam.gserviceaccount.com \
+#     --member=serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com \
+#     --role=roles/iam.serviceAccountUser
+#
+# Secrets (rodar UMA VEZ por secret):
+#   printf "sk-ant-..."         | gcloud secrets create anthropic-key           --data-file=-
+#   # NEXT_PUBLIC_FIREBASE_* — inlineados no bundle em build-time + runtime
+#   printf "AIzaSy..."          | gcloud secrets create firebase-api-key        --data-file=-
+#   printf "bookreel.firebaseapp.com" | gcloud secrets create firebase-auth-domain --data-file=-
+#
+# Setup Firebase (rodar UMA VEZ no projeto):
+#   # Converte o projeto GCP em projeto Firebase
+#   firebase projects:addfirebase bookreel
+#   # Cria Firestore em modo Native
+#   gcloud firestore databases create --location=us-central1
+#   # Habilita Identity Platform (Firebase Auth)
+#   gcloud services enable identitytoolkit.googleapis.com
+#   # Roles pro bookagent-runtime SA
+#   for role in datastore.user firebaseauth.admin; do
+#     gcloud projects add-iam-policy-binding bookreel \
+#       --member=serviceAccount:bookagent-runtime@bookreel.iam.gserviceaccount.com \
+#       --role=roles/${role}
+#   done
+#
+# Secrets legados ainda em uso (billing/analytics/admin — módulos não migrados):
+#   printf "eyJ..."             | gcloud secrets create supabase-service-role   --data-file=-
+#   printf "https://xxx.supabase.co" | gcloud secrets create supabase-url       --data-file=-
+# (o supabase-jwt-secret foi removido — firebase-admin valida os tokens agora)
+#
+# Autenticação:
+#   Cloud Run usa Workload Identity automático — a SA bookagent-runtime é
+#   anexada ao serviço e o SDK Google detecta credentials via metadata server.
+#   NENHUM arquivo JSON é copiado para o container. .dockerignore bloqueia
+#   service-account*.json como defesa em profundidade.
+# =============================================================================
+
+substitutions:
+  _REGION: us-central1
+  _REPO: bookagent
+  _API_SERVICE: bookagent-intelligence-engine
+  _SA_EMAIL: bookagent-runtime@bookreel.iam.gserviceaccount.com
+
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # 0. Fetch NEXT_PUBLIC_FIREBASE_* secrets pro build do Next (inline no bundle)
+  #
+  # Firebase client SDK precisa apiKey + authDomain + projectId inlineados no
+  # JS do browser em build-time. Puxamos do Secret Manager aqui e passamos
+  # via --build-arg no próximo step. (projectId vem de ${PROJECT_ID} que o
+  # Cloud Build já expõe — sem secret separado.)
+  - id: fetch-next-public-envs
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        # Sprint 3.11: retry loop pra eliminar transient failures no Secret Manager
+        # (causa raiz das ~14 build failures observadas em 7d). Tenta 3 vezes
+        # com backoff 5s antes de desistir.
+        fetch_secret() {
+          local secret="$1"
+          local out="$2"
+          for try in 1 2 3; do
+            if gcloud secrets versions access latest --secret="$secret" > "$out" 2>/tmp/secret-err; then
+              echo "[fetch-next-public-envs] $secret OK on attempt $try"
+              return 0
+            fi
+            echo "[fetch-next-public-envs] retry $try for $secret: $(cat /tmp/secret-err)"
+            sleep 5
+          done
+          echo "[fetch-next-public-envs] FATAL: $secret failed after 3 attempts"
+          return 1
+        }
+        fetch_secret firebase-api-key /workspace/NEXT_PUBLIC_FIREBASE_API_KEY
+        fetch_secret firebase-auth-domain /workspace/NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+
+  # 1. Build image (API + Next.js unificados) ----------------------------------
+  - id: build-api
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        FIREBASE_API_KEY=$(cat /workspace/NEXT_PUBLIC_FIREBASE_API_KEY)
+        FIREBASE_AUTH_DOMAIN=$(cat /workspace/NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN)
+        docker build \
+          --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:${SHORT_SHA} \
+          --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:latest \
+          --cache-from=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:latest \
+          --build-arg=NEXT_PUBLIC_FIREBASE_API_KEY="$$FIREBASE_API_KEY" \
+          --build-arg=NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="$$FIREBASE_AUTH_DOMAIN" \
+          --build-arg=NEXT_PUBLIC_FIREBASE_PROJECT_ID="${PROJECT_ID}" \
+          --file=Dockerfile \
+          .
+    waitFor: ['fetch-next-public-envs']
+
+  # 2. Push API ---------------------------------------------------------------
+  # Worker foi removido — arquitetura usa Cloud Tasks + self-webhook
+  # no próprio API container (/internal/execute-pipeline, /internal/execute-video-render)
+  - id: push-api
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api
+    waitFor: ['build-api']
+
+  # 5. Deploy API to Cloud Run ------------------------------------------------
+  #
+  # Secrets são mapeados via --set-secrets (Secret Manager → env var).
+  # Formato: NOME_ENV=nome-do-secret:versão  (use :latest pra auto-atualizar)
+  #
+  # Adicione/remova secrets conforme o .env do seu deploy.
+  # Não-sensíveis ficam em --set-env-vars.
+  - id: deploy-api
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_API_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --service-account=${_SA_EMAIL}
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},FIREBASE_PROJECT_ID=${PROJECT_ID},AI_PROVIDER=gemini,GCS_ENABLED=true,GCS_BUCKET=bookreel-uploads,GCS_PUBLIC_BUCKET=bookreel-public,VIDEO_RENDERER=ffmpeg,NODE_ENV=production,CLOUD_TASKS_LOCATION=${_REGION},CLOUD_TASKS_SA_EMAIL=${_SA_EMAIL},CLOUD_TASKS_PIPELINE_QUEUE=bookagent-pipeline,CLOUD_TASKS_VIDEO_QUEUE=bookagent-video,CLOUD_TASKS_TARGET_URL=https://bookagent-intelligence-engine-dke2y5ap6q-uc.a.run.app,LEGACY_SUPABASE_ENABLED=true
+      # Secrets ativos: Anthropic (AI), Firebase NEXT_PUBLIC_* (runtime middleware),
+      # Supabase-service-role mantido pros módulos legados (billing/analytics/admin)
+      # que ainda leem de Supabase. supabase-jwt-secret foi removido — firebase-admin
+      # valida todos os tokens agora.
+      - --set-secrets=ANTHROPIC_API_KEY=anthropic-key:latest,GEMINI_API_KEY=gemini-api-key:latest,NEXT_PUBLIC_FIREBASE_API_KEY=firebase-api-key:latest,NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=firebase-auth-domain:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role:latest,SUPABASE_URL=supabase-url:latest
+      - --memory=2Gi
+      - --cpu=2
+      - --min-instances=0
+      - --max-instances=10
+      - --timeout=600
+      - --concurrency=40
+    waitFor: ['push-api']
+
+  # Worker service removido — arquitetura Cloud Tasks não precisa worker
+  # separado. Cloud Tasks POST /internal/* no próprio container da API.
+
+# Artifacts publicados
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:${SHORT_SHA}
+
+timeout: 1800s

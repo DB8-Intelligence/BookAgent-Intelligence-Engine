@@ -60,6 +60,8 @@ export function createDefaultTenantContext(
 // ---------------------------------------------------------------------------
 
 export interface ResolveTenantInput {
+  /** Supabase Auth user ID (from JWT) — highest priority */
+  authUserId?: string;
   /** Header X-Tenant-Id */
   tenantIdHeader?: string;
   /** Header X-User-Id */
@@ -87,7 +89,8 @@ export async function resolveTenantContext(
   supabase: SupabaseClient | null,
 ): Promise<TenantContext> {
   // Resolve user ID
-  const userId = input.userIdHeader
+  const userId = input.authUserId
+    ?? input.userIdHeader
     ?? input.bodyUserContext?.whatsapp
     ?? input.bodyUserContext?.name
     ?? 'anonymous';
@@ -95,7 +98,12 @@ export async function resolveTenantContext(
   // Resolve tenant ID
   let tenantId = input.tenantIdHeader ?? undefined;
 
-  // If no explicit tenant, try to resolve from DB
+  // If authenticated via Supabase Auth, resolve tenant by auth_user_id
+  if (!tenantId && supabase && input.authUserId) {
+    tenantId = await resolveTenantIdFromAuthUser(input.authUserId, supabase);
+  }
+
+  // Fallback: try to resolve from legacy user ID
   if (!tenantId && supabase && userId !== 'anonymous') {
     tenantId = await resolveTenantIdFromUser(userId, supabase);
   }
@@ -209,6 +217,25 @@ export function hasTenantLearning(tenantContext: TenantContext): boolean {
 // ---------------------------------------------------------------------------
 // DB Helpers
 // ---------------------------------------------------------------------------
+
+async function resolveTenantIdFromAuthUser(
+  authUserId: string,
+  supabase: SupabaseClient,
+): Promise<string | undefined> {
+  try {
+    const rows = await supabase.select<{ id: string }>(
+      'bookagent_tenants',
+      {
+        filters: [{ column: 'auth_user_id', operator: 'eq', value: authUserId }],
+        select: 'id',
+        limit: 1,
+      },
+    );
+    return rows[0]?.id || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 async function resolveTenantIdFromUser(
   userId: string,

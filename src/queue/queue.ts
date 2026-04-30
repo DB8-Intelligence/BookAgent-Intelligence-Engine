@@ -1,68 +1,53 @@
 /**
- * Queue — Instância da fila BullMQ
+ * Queue — Cloud Tasks based async job enqueueing
  *
- * Fila: "bookagent-processing"
- * Retry: 3 tentativas com backoff exponencial (5s, 10s, 20s)
+ * Substitui BullMQ/Redis por Google Cloud Tasks. Fluxo:
+ *   1. enqueueJob(data) cria uma task Cloud Tasks
+ *   2. Cloud Tasks POST /internal/execute-pipeline com o payload
+ *   3. O endpoint (src/api/routes/internal.ts) roda o pipeline inline
  *
- * A fila usa uma conexão IORedis separada da do Worker (exigência BullMQ).
- *
- * Retorna null se Redis não estiver configurado → modo síncrono.
+ * Modo sync (fallback): se Cloud Tasks não configurado, retorna null e o
+ * processController.ts processa inline via handleSyncMode.
  */
 
-import { Queue } from 'bullmq';
 import type { BookAgentJobData } from './types.js';
-import { getSharedConnection } from './connection.js';
+import { isCloudTasksConfigured, enqueuePipelineTask } from './cloud-tasks.js';
 import { logger } from '../utils/logger.js';
 
-export const QUEUE_NAME = 'bookagent-processing';
-
-let queueInstance: Queue<BookAgentJobData> | null = null;
-
 /**
- * Retorna a instância da fila (lazy singleton).
- * Null se Redis não estiver configurado.
+ * Indica se o modo async (Cloud Tasks) está disponível.
+ * Usado por controllers pra decidir entre queue mode e sync mode.
  */
-export function getQueue(): Queue<BookAgentJobData> | null {
-  if (queueInstance) return queueInstance;
+export function isQueueAvailable(): boolean {
+  return isCloudTasksConfigured();
+}
 
-  const connection = getSharedConnection();
-  if (!connection) return null;
-
-  queueInstance = new Queue<BookAgentJobData>(QUEUE_NAME, {
-    connection,
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: {
-        type: 'exponential',
-        delay: 5000, // 5s, 10s, 20s
-      },
-      removeOnComplete: { count: 100 }, // manter últimos 100 concluídos
-      removeOnFail:     { count: 200 }, // manter últimos 200 com falha
-    },
-  });
-
-  queueInstance.on('error', (err) => {
-    logger.error(`[Queue] Error: ${err.message}`);
-  });
-
-  logger.info(`[Queue] Initialized — name="${QUEUE_NAME}"`);
-  return queueInstance;
+/** Compat alias — código antigo chamava getQueue() esperando um handle */
+export function getQueue(): { available: boolean } | null {
+  return isCloudTasksConfigured() ? { available: true } : null;
 }
 
 /**
- * Adiciona um job à fila com um ID customizado (o jobId da API).
- * Usar jobId customizado permite rastrear pela mesma chave em todo o sistema.
+ * Enfileira um job no Cloud Tasks. Retorna o task name.
+ * Lança se Cloud Tasks não estiver configurado.
  */
 export async function enqueueJob(data: BookAgentJobData): Promise<string> {
-  const queue = getQueue();
-  if (!queue) {
-    throw new Error('[Queue] Redis not configured — cannot enqueue job');
+  if (!isCloudTasksConfigured()) {
+    throw new Error(
+      '[Queue] Cloud Tasks not configured — sync mode only. ' +
+      'Set CLOUD_TASKS_QUEUE, CLOUD_TASKS_LOCATION, CLOUD_TASKS_SA_EMAIL, CLOUD_TASKS_TARGET_URL.',
+    );
   }
 
-  const job = await queue.add('process', data, {
+  const taskName = await enqueuePipelineTask({
     jobId: data.jobId,
+    fileUrl: data.fileUrl,
+    type: data.type,
+    userContext: data.userContext,
+    webhookUrl: data.webhookUrl,
+    tenantContext: data.tenantContext,
   });
 
-  logger.info(`[Queue] Job enqueued: ${data.jobId} (type=${data.type})`);
-  return job.id ?? data.jobId;
+  logger.info(`[Queue] Pipeline task enqueued: ${data.jobId} (task=${taskName})`);
+  return taskName;
 }

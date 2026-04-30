@@ -136,7 +136,10 @@ export async function getOpsGrowth(_req: Request, res: Response): Promise<void> 
 
 async function getSystemStatus() {
   const providers = checkProviderStatus();
-  const concurrency = parseInt(process.env.QUEUE_CONCURRENCY ?? '2', 10);
+  const cloudTasksConfigured =
+    !!process.env.CLOUD_TASKS_LOCATION &&
+    !!process.env.CLOUD_TASKS_SA_EMAIL &&
+    !!process.env.CLOUD_TASKS_TARGET_URL;
 
   return {
     uptime_seconds: Math.round(process.uptime()),
@@ -147,8 +150,9 @@ async function getSystemStatus() {
       tts: providers.tts,
     },
     queue: {
-      concurrency,
-      redis_configured: !!process.env.REDIS_URL || !!process.env.REDIS_HOST,
+      provider: 'google-cloud-tasks',
+      mode: cloudTasksConfigured ? 'cloud-tasks-async' : 'sync-inline',
+      configured: cloudTasksConfigured,
     },
     plans: Object.keys(PLANS),
     cost_model: {

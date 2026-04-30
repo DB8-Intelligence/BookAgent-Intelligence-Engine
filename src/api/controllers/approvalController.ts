@@ -25,6 +25,12 @@ import type { SocialPlatform, MediaMetadataContent } from '../../types/social.js
 import { socialPublisher } from '../../services/social-publisher.js';
 import { logger } from '../../utils/logger.js';
 import { VALID_TRANSITIONS } from '../../types/dashboard.js';
+import {
+  enqueuePublicationTask,
+  isCloudTasksConfigured,
+  buildTaskId,
+  type PublicationTaskPayload,
+} from '../../queue/cloud-tasks.js';
 
 // ============================================================================
 // Dependency injection — Supabase client (opcional)
@@ -39,21 +45,34 @@ export function setSupabaseClientForApproval(client: SupabaseClientInstance): vo
 }
 
 // ============================================================================
-// n8n webhook URL (configurable via env)
+// Publication dispatch — async via Cloud Tasks (sync inline fallback em dev)
 // ============================================================================
+//
+// Em prod: enfileira uma task /tasks/publication. O handler chama o webhook
+// n8n e atualiza o store de tasks. A response volta rápido (taskId), liberando
+// o request HTTP enquanto a publicação roda em background.
+//
+// Em dev (sem Cloud Tasks configurado): chama o webhook n8n inline pra
+// preservar feedback rápido — mesmo comportamento do triggerN8nApproval
+// anterior, agora sob a mesma assinatura de retorno.
 
-function getN8nApprovalUrl(): string {
-  const base = process.env.N8N_WEBHOOK_BASE_URL
-    ?? 'https://automacao.db8intelligence.com.br';
-  return `${base}/webhook/bookagent/aprovacao`;
+function payloadToPublicationTask(payload: N8nApprovalPayload): PublicationTaskPayload {
+  return {
+    jobId: payload.jobId,
+    userId: payload.userId,
+    decision: payload.decision,
+    comment: payload.comment ?? '',
+    sourceChannel: payload.sourceChannel,
+    approvalRound: payload.approvalRound ?? 1,
+    approvalType: payload.approvalType,
+    forcePublish: payload.forcePublish,
+    platforms: payload.platforms,
+  };
 }
 
-// ============================================================================
-// Helper: trigger Fluxo 4 do n8n
-// ============================================================================
-
-async function triggerN8nApproval(payload: N8nApprovalPayload): Promise<boolean> {
-  const url = getN8nApprovalUrl();
+async function callN8nWebhookInline(payload: N8nApprovalPayload): Promise<void> {
+  const base = process.env.N8N_WEBHOOK_BASE_URL ?? 'https://automacao.db8intelligence.com.br';
+  const url = `${base}/webhook/bookagent/aprovacao`;
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -62,16 +81,38 @@ async function triggerN8nApproval(payload: N8nApprovalPayload): Promise<boolean>
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {
-      logger.warn(`[approvalController] n8n retornou ${res.status} para job ${payload.jobId}`);
+      logger.warn(`[approvalController] n8n retornou ${res.status} para job ${payload.jobId} (inline)`);
     }
-    return res.ok;
   } catch (err) {
     logger.error(
-      `[approvalController] Falha ao acionar n8n para job ${payload.jobId}: ` +
+      `[approvalController] Falha ao acionar n8n inline para job ${payload.jobId}: ` +
       `${err instanceof Error ? err.message : String(err)}`,
     );
-    return false;
   }
+}
+
+async function dispatchPublication(
+  payload: N8nApprovalPayload,
+): Promise<{ taskId: string; enqueued: boolean }> {
+  const task = payloadToPublicationTask(payload);
+  const stepId = `${task.approvalRound}-${task.decision}`;
+  const taskId = buildTaskId('publication', task.jobId, stepId);
+
+  if (isCloudTasksConfigured()) {
+    try {
+      await enqueuePublicationTask(task);
+      return { taskId, enqueued: true };
+    } catch (err) {
+      logger.error(
+        `[approvalController] enqueue falhou pro job ${task.jobId}, caindo pra inline: ` +
+        `${err instanceof Error ? err.message : String(err)}`,
+      );
+      // Fall-through pro inline — não derruba a request por falha de fila.
+    }
+  }
+
+  await callN8nWebhookInline(payload);
+  return { taskId, enqueued: false };
 }
 
 // ============================================================================
@@ -211,7 +252,7 @@ export async function approveJob(req: Request, res: Response): Promise<void> {
     forcePublish,
   };
 
-  const n8nTriggered = await triggerN8nApproval(payload);
+  const dispatch = await dispatchPublication(payload);
 
   sendSuccess(res, {
     jobId,
@@ -220,7 +261,8 @@ export async function approveJob(req: Request, res: Response): Promise<void> {
     message: approvalType === 'final'
       ? 'Aprovação final registrada.'
       : 'Prévia aprovada. O processo continua.',
-    n8nTriggered,
+    taskId: dispatch.taskId,
+    enqueued: dispatch.enqueued,
   }, 202);
 }
 
@@ -262,14 +304,15 @@ export async function rejectJob(req: Request, res: Response): Promise<void> {
     approvalType,
   };
 
-  const n8nTriggered = await triggerN8nApproval(payload);
+  const dispatch = await dispatchPublication(payload);
 
   sendSuccess(res, {
     jobId,
     decision: 'rejected',
     status: nextStatus,
     message: 'Rejeição registrada. Aguardando instrução para revisão.',
-    n8nTriggered,
+    taskId: dispatch.taskId,
+    enqueued: dispatch.enqueued,
   }, 202);
 }
 
@@ -319,7 +362,7 @@ export async function commentJob(req: Request, res: Response): Promise<void> {
     approvalRound,
   };
 
-  const n8nTriggered = await triggerN8nApproval(payload);
+  const dispatch = await dispatchPublication(payload);
 
   sendSuccess(res, {
     jobId,
@@ -328,7 +371,8 @@ export async function commentJob(req: Request, res: Response): Promise<void> {
       ? 'awaiting_intermediate_review'
       : 'awaiting_final_review' as DashboardJobStatus,
     message: 'Comentário registrado com sucesso.',
-    n8nTriggered,
+    taskId: dispatch.taskId,
+    enqueued: dispatch.enqueued,
   }, 201);
 }
 
@@ -388,14 +432,15 @@ export async function publishJob(req: Request, res: Response): Promise<void> {
     platforms,
   };
 
-  const n8nTriggered = await triggerN8nApproval(payload);
+  const dispatch = await dispatchPublication(payload);
 
   sendSuccess(res, {
     jobId,
     decision: 'approved',
     status: 'final_approved' as DashboardJobStatus,
     message: `Publicação iniciada para: ${platforms?.join(', ')}`,
-    n8nTriggered,
+    taskId: dispatch.taskId,
+    enqueued: dispatch.enqueued,
   }, 202);
 }
 

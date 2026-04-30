@@ -44,11 +44,14 @@ export class FFmpegStoryboardRenderer {
     const filterComplex = this.buildFilterChain(storyboard);
     args.push('-filter_complex', filterComplex);
 
-    // Encoder
+    // Map concatenated output
+    args.push('-map', '[final]');
+
+    // Encoder — ultrafast prioritizes speed over filesize (Cloud Run is CPU-bound)
     args.push(
       '-c:v', 'libx264',
-      '-preset', 'medium',
-      '-crf', '18',
+      '-preset', 'ultrafast',
+      '-crf', '23', // 23 is visually lossless enough; was 18 (overkill for social media)
       '-pix_fmt', 'yuv420p',
       outputPath,
     );
@@ -71,18 +74,36 @@ export class FFmpegStoryboardRenderer {
       // 1. Crop 9:16 baseado no POI
       filters.push(this.buildCrop(frame));
 
-      // 2. Motion (Ken Burns ou nada)
+      // 2. Motion (Ken Burns / Pan-Scan generate frames via zoompan)
+      //    Static frames need explicit duration via loop + trim
       const motion = this.buildMotion(frame);
-      if (motion) filters.push(motion);
+      if (motion) {
+        // zoompan outputs at 25fps by default; set s= for output resolution
+        filters.push(motion + ':s=1080x1920:fps=30');
+      } else {
+        // Static: scale first, then generate frames for the duration
+        const durationFrames = Math.round((frame.durationMs / 1000) * 30);
+        filters.push(
+          'scale=1080:1920:force_original_aspect_ratio=decrease,' +
+            'pad=1080:1920:(ow-iw)/2:(oh-ih)/2,' +
+            `loop=${durationFrames}:1:0,` +
+            'setpts=N/30/TB',
+        );
+      }
 
-      // 3. Scale para 1080x1920
-      filters.push(
-        'scale=1080:1920:force_original_aspect_ratio=decrease,' +
-          'pad=1080:1920:(ow-iw)/2:(oh-ih)/2',
-      );
+      // 3. Scale for zoompan outputs (already 1080x1920 from zoompan s=)
+      if (motion) {
+        filters.push('setpts=N/30/TB');
+      }
 
       parts.push(`${input}${filters.join(',')}[out${i}]`);
     }
+
+    // Concat all processed streams into [final]
+    const concatInputs = storyboard.frames.map((_, i) => `[out${i}]`).join('');
+    parts.push(
+      `${concatInputs}concat=n=${storyboard.frames.length}:v=1:a=0[final]`,
+    );
 
     return parts.join(';');
   }

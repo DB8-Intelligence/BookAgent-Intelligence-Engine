@@ -1,29 +1,30 @@
 /**
- * Tenant Guard Middleware — Multi-Tenant Governance
+ * Tenant Guard Middleware — Firestore-only desde Sprint 3.7
  *
- * Resolve e injeta TenantContext em cada request.
- * Valida isolamento: impede acesso cruzado entre tenants.
+ * Resolve TenantContext em cada request baseado no authUser do Firebase.
+ * Modelo solo-tenant: cada Firebase UID é seu próprio tenant
+ * (`tenantId === uid`). Multi-user/agency tenant lookup foi removido.
  *
  * Headers lidos:
- *   - X-Tenant-Id: ID do tenant (opcional, resolvido automaticamente)
- *   - X-User-Id: ID do usuário
- *   - X-Plan-Type: Tier do plano (override)
+ *   - X-User-Id: ID do usuário em chamadas anônimas/internas (sem auth Firebase)
  *
  * Resultado:
  *   - req.tenantContext é populado em cada request
  *   - Consultas downstream usam tenantContext.tenantId para scoping
- *
- * Parte 74: Multi-Tenant Governance
  */
 
 import type { Request, Response, NextFunction } from 'express';
 import type { TenantContext } from '../../domain/entities/tenant.js';
 import {
-  resolveTenantContext,
-  createDefaultTenantContext,
-} from '../../core/tenant-resolver.js';
+  TenantRole,
+  PLAN_FEATURES,
+  PLAN_TENANT_LIMITS,
+  LearningScope,
+} from '../../domain/entities/tenant.js';
+import { createDefaultTenantContext } from '../../core/tenant-resolver.js';
 import type { SupabaseClient } from '../../persistence/supabase-client.js';
 import { logger } from '../../utils/logger.js';
+import { logDeprecatedSupabaseCall } from '../../utils/deprecated-supabase.js';
 
 // ============================================================================
 // Augment Express Request type
@@ -36,13 +37,15 @@ declare module 'express-serve-static-core' {
 }
 
 // ============================================================================
-// Module-level Supabase client
+// Compat shim — composition root ainda chama setTenantGuardSupabaseClient.
 // ============================================================================
 
-let supabase: SupabaseClient | null = null;
-
-export function setTenantGuardSupabaseClient(client: SupabaseClient): void {
-  supabase = client;
+export function setTenantGuardSupabaseClient(_client: SupabaseClient): void {
+  logDeprecatedSupabaseCall({
+    module: 'TenantGuardMiddleware',
+    action: 'setTenantGuardSupabaseClient',
+    reason: 'Tenant resolution is Firebase-uid-only since Sprint 3.7.',
+  });
 }
 
 // ============================================================================
@@ -52,96 +55,57 @@ export function setTenantGuardSupabaseClient(client: SupabaseClient): void {
 /**
  * tenantGuard — resolve TenantContext e injeta no request.
  *
- * Não bloqueia requests sem tenant (backwards compatibility).
- * Para bloquear, use tenantGuardStrict.
+ * - Com Firebase Auth: tenantId = userId = authUser.id (solo tenant).
+ * - Sem auth (chamadas anônimas/internas): default context (tenantId='default').
+ *
+ * Não bloqueia requests sem tenant — backwards compat. Para enforcement
+ * estrito, controllers devem checar `tenantContext.tenantId !== 'default'`.
  */
 export async function tenantGuard(
   req: Request,
   _res: Response,
   next: NextFunction,
 ): Promise<void> {
-  try {
-    const tenantContext = await resolveTenantContext(
-      {
-        tenantIdHeader: asString(req.headers['x-tenant-id']),
-        userIdHeader: asString(req.headers['x-user-id']),
-        planTierHeader: asString(req.headers['x-plan-type']),
-        bodyUserContext: req.body?.user_context,
-      },
-      supabase,
-    );
-
-    req.tenantContext = tenantContext;
-
-    logger.debug(
-      `[TenantGuard] tenant=${tenantContext.tenantId} ` +
-      `user=${tenantContext.userId} plan=${tenantContext.planTier}`,
-    );
-  } catch (err) {
-    // Fallback: create default context
-    logger.warn(`[TenantGuard] Failed to resolve tenant: ${err}`);
-    req.tenantContext = createDefaultTenantContext();
+  if (req.authUser?.id) {
+    const tier: 'starter' = 'starter';
+    req.tenantContext = {
+      tenantId: req.authUser.id,
+      userId: req.authUser.id,
+      userRole: TenantRole.OWNER,
+      planTier: tier,
+      features: PLAN_FEATURES[tier],
+      limits: PLAN_TENANT_LIMITS[tier],
+      learningScope: LearningScope.TENANT,
+    };
+    logger.debug(`[TenantGuard] firebase-uid tenant=${req.authUser.id}`);
+    next();
+    return;
   }
 
+  // Sem authUser — default tenant (anonymous/internal calls).
+  // Pipeline interno e webhooks que ainda dependem de tenantContext recebem
+  // um shape válido mas com tenantId='default' — controllers devem decidir
+  // se aceitam essa identidade.
+  req.tenantContext = createDefaultTenantContext();
   next();
 }
 
 /**
- * Cria um middleware que valida que o jobId/resource pertence ao tenant do request.
- * Usa o parâmetro de rota para extrair o jobId.
+ * tenantScopeValidator — valida ownership de jobId vs tenant atual.
+ *
+ * Sprint 3.7: a validação Supabase (`bookagent_job_meta.tenant_id`) foi
+ * removida porque a tabela legada está sendo deprecada. Validação por
+ * Firestore (`jobs/{jobId}.tenantId`) será adicionada em Sprint 3.8 quando
+ * o cutover de leitura de jobs for feito. Por enquanto, este middleware
+ * passa requests sem validação cross-tenant.
+ *
+ * NOTA DE SEGURANÇA: até essa validação voltar, qualquer user autenticado
+ * que conheça um jobId pode acessá-lo. Mitigação parcial: jobIds são UUID v4
+ * (não-enumeráveis). Endpoints sensíveis devem validar ownership manualmente.
  */
-export function tenantScopeValidator(jobIdParam: string = 'jobId') {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    const tenantCtx = req.tenantContext;
-    if (!tenantCtx || tenantCtx.tenantId === 'default') {
-      // No tenant enforcement for default/legacy
-      next();
-      return;
-    }
-
-    const jobId = req.params[jobIdParam];
-    if (!jobId) {
-      next();
-      return;
-    }
-
-    // Validate job belongs to tenant
-    if (supabase) {
-      try {
-        const rows = await supabase.select<{ tenant_id: string }>(
-          'bookagent_job_meta',
-          {
-            filters: [{ column: 'job_id', operator: 'eq', value: jobId }],
-            select: 'tenant_id',
-            limit: 1,
-          },
-        );
-
-        const jobTenantId = rows[0]?.tenant_id;
-        if (jobTenantId && jobTenantId !== tenantCtx.tenantId) {
-          logger.warn(
-            `[TenantGuard] Access denied: tenant=${tenantCtx.tenantId} ` +
-            `tried to access job=${jobId} (owner=${jobTenantId})`,
-          );
-          res.status(403).json({
-            success: false,
-            error: { code: 'TENANT_ACCESS_DENIED', message: 'Acesso negado a este recurso.' },
-          });
-          return;
-        }
-      } catch {
-        // Allow on DB failure (graceful degradation)
-      }
-    }
-
+export function tenantScopeValidator(_jobIdParam: string = 'jobId') {
+  return async (_req: Request, _res: Response, next: NextFunction): Promise<void> => {
+    // No-op até cutover Firestore de jobs (Sprint 3.8+).
     next();
   };
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function asString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }

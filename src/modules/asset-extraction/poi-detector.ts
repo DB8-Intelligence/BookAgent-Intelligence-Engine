@@ -1,13 +1,18 @@
 /**
  * POI (Point of Interest) Detector
  *
- * Detecta onde está o objeto mais saliente na imagem usando análise
- * de gradiente (bordas) e variância de cor. Output normalizado 0..1.
+ * Detecta onde está o objeto mais saliente na imagem.
+ * Output normalizado 0..1.
  *
- * Estratégia multi-método (fallback cascade):
- *  1. Edge detection (Sobel simplificado em greyscale 100x100)
- *  2. Color variance (vizinhança 3x3 em RGB 50x50)
- *  3. Centro da imagem (0.5, 0.5) como fallback seguro
+ * Cascade (controlado por env POI_DETECTION_METHOD):
+ *  1. CLIP (ML) — zero-shot classification via @huggingface/transformers
+ *  2. Edge detection (Sobel simplificado em greyscale 100x100)
+ *  3. Color variance (vizinhança 3x3 em RGB 50x50)
+ *  4. Centro da imagem (0.5, 0.5) como fallback seguro
+ *
+ * Feature flag: POI_DETECTION_METHOD
+ *   - 'clip'      → tenta CLIP primeiro, fallback para heurístico
+ *   - 'heuristic' → apenas edge detection + color variance (default)
  *
  * Módulo puro — recebe Buffer, retorna coordenadas. Sem I/O de disco.
  */
@@ -27,8 +32,15 @@ export interface POIResult {
   /** Confiança da detecção 0..1 */
   readonly confidence: number;
   /** Método que produziu o resultado */
-  readonly method: 'edge-detection' | 'color-variance' | 'default';
+  readonly method: 'edge-detection' | 'color-variance' | 'clip' | 'default';
 }
+
+// ---------------------------------------------------------------------------
+// Feature flag
+// ---------------------------------------------------------------------------
+
+const POI_METHOD = process.env.POI_DETECTION_METHOD ?? 'heuristic';
+const USE_CLIP = POI_METHOD === 'clip';
 
 // ---------------------------------------------------------------------------
 // Implementação
@@ -37,9 +49,31 @@ export interface POIResult {
 export class POIDetector {
   /**
    * Detectar Point of Interest em uma imagem.
+   * Cascade: CLIP (se ativo) → edge detection → color variance → center.
    */
   async detectPOI(imageBuffer: Buffer): Promise<POIResult> {
     try {
+      // 1. CLIP ML detection (if enabled)
+      if (USE_CLIP) {
+        try {
+          const { CLIPPOIDetector } = await import('./poi-detector-clip.js');
+          const clip = new CLIPPOIDetector();
+          const clipResult = await clip.detectPOI(imageBuffer);
+          if (clipResult.confidence > 0.15) {
+            return {
+              x: clipResult.x,
+              y: clipResult.y,
+              confidence: clipResult.confidence,
+              method: 'clip',
+            };
+          }
+          logger.info('[POIDetector] CLIP confidence too low, falling back to heuristic');
+        } catch (err) {
+          logger.warn('[POIDetector] CLIP failed, falling back to heuristic:', err);
+        }
+      }
+
+      // 2. Heuristic cascade
       const edges = await this.detectEdges(imageBuffer);
       if (edges && edges.confidence > 0.5) {
         return edges;

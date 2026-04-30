@@ -210,7 +210,7 @@ function generateSummary(textBlocks: TextBlock[]): string {
 // idêntico, inclusive para PDFs processados pelas estratégias antigas.
 // ============================================================================
 
-const SPATIAL_ELEVATION_MIN_CONFIDENCE = 50;
+const SPATIAL_ELEVATION_MIN_CONFIDENCE = 30;
 
 /**
  * Eleva a confidence dos blocks com base em proximidade espacial real.

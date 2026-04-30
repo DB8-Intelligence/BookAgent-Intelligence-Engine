@@ -82,8 +82,9 @@ export class RenderExportModule implements IModule {
       ? await exportLandingPagePlans(lpPlans, aiService)
       : [];
 
-    // --- Consolidar resultado ---
-    const allArtifacts = [...mediaArtifacts, ...blogArtifacts, ...lpArtifacts];
+    // --- Resolver placeholders {{asset:uuid}} → URLs reais ---
+    const rawArtifacts = [...mediaArtifacts, ...blogArtifacts, ...lpArtifacts];
+    const allArtifacts = resolveAssetPlaceholders(rawArtifacts, context.assetUrlMap);
 
     const result: ExportResult = {
       totalArtifacts: allArtifacts.length,
@@ -111,6 +112,47 @@ export class RenderExportModule implements IModule {
 
 function countByType(artifacts: ExportArtifact[], type: ArtifactType): number {
   return artifacts.filter((a) => a.artifactType === type).length;
+}
+
+/**
+ * Substitui placeholders {{asset:uuid}} por URLs públicas reais
+ * nos artefatos HTML, Markdown e JSON.
+ */
+function resolveAssetPlaceholders(
+  artifacts: ExportArtifact[],
+  assetUrlMap?: Record<string, string>,
+): ExportArtifact[] {
+  if (!assetUrlMap || Object.keys(assetUrlMap).length === 0) {
+    return artifacts;
+  }
+
+  let resolved = 0;
+
+  const result = artifacts.map((artifact) => {
+    if (typeof artifact.content !== 'string') return artifact;
+
+    let content = artifact.content;
+    const regex = /\{\{asset:([0-9a-f-]{36})\}\}/g;
+
+    content = content.replace(regex, (_match, assetId: string) => {
+      const url = assetUrlMap[assetId];
+      if (url) {
+        resolved++;
+        return url;
+      }
+      return _match; // Keep placeholder if no URL found
+    });
+
+    if (content === artifact.content) return artifact;
+
+    return { ...artifact, content };
+  });
+
+  if (resolved > 0) {
+    logger.info(`[RenderExport] Resolved ${resolved} asset placeholders to public URLs`);
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------

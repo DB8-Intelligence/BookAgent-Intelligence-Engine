@@ -14,6 +14,31 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 const API_PREFIX = "/api/v1";
 
 // ============================================================================
+// API Call Ring Buffer — captures last 10 calls for bug context
+// ============================================================================
+
+export interface ApiLogEntry {
+  method: string;
+  path: string;
+  status: number;
+  error?: string;
+  timestamp: string;
+  duration_ms: number;
+}
+
+const apiLogBuffer: ApiLogEntry[] = [];
+const API_LOG_MAX = 10;
+
+function recordApiCall(entry: ApiLogEntry): void {
+  apiLogBuffer.push(entry);
+  if (apiLogBuffer.length > API_LOG_MAX) apiLogBuffer.shift();
+}
+
+export function getApiLog(): ApiLogEntry[] {
+  return [...apiLogBuffer];
+}
+
+// ============================================================================
 // Response Envelope
 // ============================================================================
 
@@ -80,7 +105,10 @@ export interface ProcessInput {
   file_url: string;
   type: InputType;
   user_context?: UserContext;
+  selected_formats?: string[];
   webhook_url?: string;
+  authorization_acknowledged?: boolean;
+  authorization_timestamp?: string | null;
 }
 
 export interface ProcessResult {
@@ -182,8 +210,12 @@ export interface HealthResponse {
   engine: string;
   version: string;
   uptime: number;
-  persistence: { mode: string; supabase: boolean };
-  queue: { mode: string; enabled: boolean };
+  persistence: {
+    primary: "firestore";
+    firestore: { enabled: boolean; projectId: string | null };
+    supabase: { mode: string; enabled: boolean; scope: "legacy-modules-only" };
+  };
+  queue: { mode: "cloud-tasks-async" | "sync-inline"; enabled: boolean; provider: "google-cloud-tasks" | null };
   providers: {
     ai: { provider: string; available: boolean };
     tts: { provider: string; available: boolean };
@@ -238,6 +270,7 @@ export interface DashboardJob {
   statusLabel: string;
   statusBadge: string;
   inputType: string;
+  inputFileUrl: string | null;
   artifactsCount: number;
   publicationsCount: number;
   hasPendingReview: boolean;
@@ -257,6 +290,11 @@ export interface DashboardArtifact {
   previewUrl: string | null;
   status: string;
   createdAt: string;
+}
+
+export interface GalleryItem extends DashboardArtifact {
+  /** Ex: "video/mp4", "image/png" — inferido do downloadUrl no backend */
+  mimeType: string | null;
 }
 
 export interface DashboardReview {
@@ -356,7 +394,7 @@ export interface AnalyticsPlatformBreakdown {
 export interface DashboardAnalytics {
   period: { from: string; to: string };
   granularity: string;
-  jobs: { total: number; successRate: number; throughput: { date: string; count: number }[] };
+  jobs: { total: number; successRate: number; throughput: AnalyticsTimeSeries };
   publications: { total: number; successRate: number; byPlatform: Record<string, number> };
   generatedAt: string;
 }
@@ -401,32 +439,79 @@ async function request<T>(
 ): Promise<T> {
   const url = `${BASE_URL}${API_PREFIX}${path}`;
 
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
+  const apiKey = process.env.NEXT_PUBLIC_BOOKAGENT_API_KEY ?? "";
 
-  // Handle non-JSON responses (e.g., download)
-  const contentType = res.headers.get("content-type") ?? "";
-  if (!contentType.includes("application/json")) {
-    if (!res.ok) throw new BookAgentApiError("HTTP_ERROR", `HTTP ${res.status}`);
-    return res as unknown as T;
+  // Firebase ID token + uid. O backend valida via firebase-admin em
+  // firebaseAuthMiddleware; x-user-id é fallback só pra dev sem Firebase.
+  let accessToken = "";
+  let userId = "";
+  if (typeof window !== "undefined") {
+    try {
+      const { getFirebaseAuth } = await import("@/lib/firebase/client");
+      const user = getFirebaseAuth().currentUser;
+      if (user) {
+        accessToken = await user.getIdToken();
+        userId = user.uid;
+      }
+    } catch {
+      // Firebase não inicializado — cai no api key / auth-less
+    }
   }
 
-  const json = (await res.json()) as ApiEnvelope<T>;
+  const startMs = Date.now();
+  const method = (init?.method ?? "GET").toUpperCase();
+  let status = 0;
+  let apiError: string | undefined;
 
-  if (!json.success || json.data === undefined) {
-    throw new BookAgentApiError(
-      json.error?.code ?? "UNKNOWN",
-      json.error?.message ?? `API error ${res.status}`,
-      json.error?.details,
-    );
+  try {
+    const res = await fetch(url, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
+        ...(userId && { "x-user-id": userId }),
+        ...(apiKey && { "x-api-key": apiKey }),
+        ...init?.headers,
+      },
+    });
+
+    status = res.status;
+
+    // Handle non-JSON responses (e.g., download)
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("application/json")) {
+      if (!res.ok) {
+        apiError = `HTTP ${res.status}`;
+        throw new BookAgentApiError("HTTP_ERROR", apiError);
+      }
+      return res as unknown as T;
+    }
+
+    const json = (await res.json()) as ApiEnvelope<T>;
+
+    if (!json.success || json.data === undefined) {
+      apiError = json.error?.message ?? `API error ${res.status}`;
+      throw new BookAgentApiError(
+        json.error?.code ?? "UNKNOWN",
+        apiError,
+        json.error?.details,
+      );
+    }
+
+    return json.data;
+  } catch (err) {
+    if (!apiError && err instanceof Error) apiError = err.message;
+    throw err;
+  } finally {
+    recordApiCall({
+      method,
+      path,
+      status,
+      error: apiError,
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startMs,
+    });
   }
-
-  return json.data;
 }
 
 // ============================================================================
@@ -467,8 +552,14 @@ export const bookagent = {
     artifact: (jobId: string, artifactId: string) =>
       request<ArtifactDetail>(`/jobs/${jobId}/artifacts/${artifactId}`),
 
-    downloadUrl: (jobId: string, artifactId: string) =>
-      `${BASE_URL}${API_PREFIX}/jobs/${jobId}/artifacts/${artifactId}/download`,
+    downloadUrl: (jobId: string, artifactId: string) => {
+      const apiKey = process.env.NEXT_PUBLIC_BOOKAGENT_API_KEY ?? "";
+      const base = `${BASE_URL}${API_PREFIX}/jobs/${jobId}/artifacts/${artifactId}/download`;
+      return apiKey ? `${base}?api_key=${apiKey}` : base;
+    },
+
+    delete: (jobId: string) =>
+      request<{ jobId: string; deleted: boolean }>(`/jobs/${jobId}`, { method: "DELETE" }),
   },
 
   // ---------- Dashboard ----------
@@ -485,6 +576,14 @@ export const bookagent = {
       if (to) p.set("to", to);
       const qs = p.toString();
       return request<DashboardAnalytics>(`/dashboard/analytics${qs ? `?${qs}` : ""}`);
+    },
+    gallery: (filters?: { type?: string; onlyWithDownload?: boolean; limit?: number }) => {
+      const p = new URLSearchParams();
+      if (filters?.type) p.set("type", filters.type);
+      if (filters?.onlyWithDownload) p.set("onlyWithDownload", "true");
+      if (filters?.limit) p.set("limit", String(filters.limit));
+      const qs = p.toString();
+      return request<{ items: GalleryItem[]; total: number }>(`/dashboard/gallery${qs ? `?${qs}` : ""}`);
     },
     /**
      * Lista global de publicações.
@@ -523,6 +622,10 @@ export const bookagent = {
       request<{ jobId: string; decision: string; status: string; message: string; n8nTriggered: boolean }>(`/jobs/${jobId}/publish`, { method: "POST", body: JSON.stringify(data) }),
     socialPublish: (jobId: string, data: { userId: string; platforms?: string[]; caption?: string; hashtags?: string[]; imageUrl?: string }) =>
       request<{ jobId: string; results: DashboardPublication[]; successCount: number; failureCount: number; finalStatus: string }>(`/jobs/${jobId}/social-publish`, { method: "POST", body: JSON.stringify(data) }),
+    renderVideo: (jobId: string, artifactId?: string) =>
+      request<{ jobId: string; artifactId: string; status: string; bullJobId?: string; sceneCount: number; format: string; message: string }>(`/jobs/${jobId}/render-video`, { method: "POST", body: JSON.stringify(artifactId ? { artifactId } : {}) }),
+    videoStatus: (jobId: string) =>
+      request<{ jobId: string; videoRenderStatus: string; outputPath?: string; error?: string }>(`/jobs/${jobId}/video-status`),
   },
 
   // ---------- Co-Pilot ----------
@@ -534,6 +637,25 @@ export const bookagent = {
   ops: {
     dashboard: () => request<Record<string, unknown>>("/ops/dashboard"),
     queue: () => request<Record<string, unknown>>("/ops/queue"),
+  },
+
+  // ---------- Bugs ----------
+  bugs: {
+    create: (data: { title: string; description?: string; severity: string; context: Record<string, unknown> }) =>
+      request<Record<string, unknown>>("/bugs", { method: "POST", body: JSON.stringify(data) }),
+    mine: () =>
+      request<Array<Record<string, unknown>>>("/bugs/mine"),
+    list: (filters?: { severity?: string; status?: string }) => {
+      const p = new URLSearchParams();
+      if (filters?.severity) p.set("severity", filters.severity);
+      if (filters?.status) p.set("status", filters.status);
+      const qs = p.toString();
+      return request<Array<Record<string, unknown>>>(`/bugs${qs ? `?${qs}` : ""}`);
+    },
+    triage: (id: string, data: { status?: string; admin_notes?: string }) =>
+      request<Record<string, unknown>>(`/bugs/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    isAdmin: () =>
+      request<{ is_admin: boolean }>("/bugs/is-admin"),
   },
 };
 

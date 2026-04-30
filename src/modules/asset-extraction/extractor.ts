@@ -88,7 +88,10 @@ export class AssetExtractor {
     // independente da estratégia de extração de assets embarcados.
     const pageFormatsPromise = this.extractPageFormats(filePath, jobId, totalPages);
 
-    const [assets, pageFormats] = await Promise.all([assetsPromise, pageFormatsPromise]);
+    const [rawAssets, pageFormats] = await Promise.all([assetsPromise, pageFormatsPromise]);
+
+    // Upload individual photos to Supabase Storage (parallel with page formats already done)
+    const assets = await this.uploadIndividualAssets(rawAssets, jobId);
 
     return {
       assets,
@@ -432,6 +435,50 @@ export class AssetExtractor {
 
     // 4. Combinar e ordenar por página
     return [...embeddedAssets, ...renderedAssets].sort((a, b) => a.page - b.page);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Upload individual assets to Supabase Storage
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Faz upload de cada asset extraído (foto individual) ao Supabase Storage.
+   * Popula `publicUrl` em cada asset. Se o uploader não estiver configurado,
+   * retorna os assets inalterados (graceful no-op).
+   *
+   * Path no bucket: {jobId}/assets/{assetId}.{format}
+   */
+  private async uploadIndividualAssets(
+    assets: ExtractedAsset[],
+    jobId: string,
+  ): Promise<ExtractedAsset[]> {
+    if (!this.pageUploader || assets.length === 0) {
+      return assets;
+    }
+
+    const { readFile } = await import('fs/promises');
+    const uploaded: ExtractedAsset[] = [];
+
+    for (const asset of assets) {
+      try {
+        const buffer = await readFile(asset.filePath);
+        const contentType = asset.format === 'png' ? 'image/png' : 'image/jpeg';
+        const storagePath = `${jobId}/assets/${asset.id}.${asset.format}`;
+        const publicUrl = await this.pageUploader.upload(storagePath, buffer, contentType);
+
+        uploaded.push({ ...asset, publicUrl });
+        logger.debug(`Asset upload: ${asset.id} → ${storagePath}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn(`Asset upload failed for ${asset.id}: ${msg}`);
+        uploaded.push(asset); // preserve asset without publicUrl
+      }
+    }
+
+    logger.info(
+      `Asset upload: ${uploaded.filter(a => a.publicUrl).length}/${assets.length} assets uploaded to Supabase`,
+    );
+    return uploaded;
   }
 
   // ---------------------------------------------------------------------------

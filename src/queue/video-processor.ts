@@ -14,7 +14,6 @@
  * Parte 59.2: Fechamento Operacional do Video Render Async
  */
 
-import type { Job as BullJob } from 'bullmq';
 import type { VideoRenderJobData } from './types.js';
 import type { SupabaseClient } from '../persistence/supabase-client.js';
 import type { RenderSpec } from '../types/render-spec.js';
@@ -25,8 +24,14 @@ import { SoundtrackCategory } from '../domain/entities/audio-plan.js';
 import { logger } from '../utils/logger.js';
 import { metrics } from '../observability/metrics.js';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { v4 as uuid } from 'uuid';
+import {
+  saveArtifact as saveArtifactInFirestore,
+  updateJob as updateJobInFirestore,
+  getJob as getJobFromFirestore,
+} from '../persistence/google-persistence.js';
+import { GCSStorageAdapter } from '../adapters/storage/gcs.js';
 
 // ============================================================================
 // Types
@@ -43,18 +48,34 @@ export interface VideoProcessorDeps {
 // ============================================================================
 
 /**
- * Processes a single video render job from BullMQ.
+ * Input wrapper — aceita o payload direto ou embrulhado em { data: ... }
+ * para compat com chamadas antigas que passavam um BullJob-like.
+ */
+export type VideoRenderJobInput =
+  | VideoRenderJobData
+  | { data: VideoRenderJobData; attemptsMade?: number; opts?: { attempts?: number } };
+
+function unwrapPayload(input: VideoRenderJobInput): VideoRenderJobData {
+  if ('data' in input && typeof (input as { data: unknown }).data === 'object') {
+    return (input as { data: VideoRenderJobData }).data;
+  }
+  return input as VideoRenderJobData;
+}
+
+/**
+ * Processa um video render task. Aceita payload direto (Cloud Tasks)
+ * ou wrapped em { data } (compat com chamadas antigas inline).
  */
 export async function processVideoRenderJob(
-  bullJob: BullJob<VideoRenderJobData>,
+  input: VideoRenderJobInput,
   deps: VideoProcessorDeps,
 ): Promise<void> {
-  const { jobId, artifactId, renderSpecJson, assetUrls, webhookUrl } = bullJob.data;
-  const attempt = bullJob.attemptsMade + 1;
+  const payload = unwrapPayload(input);
+  const { jobId, artifactId, renderSpecJson, assetUrls, webhookUrl } = payload;
   const startTime = Date.now();
 
   logger.info(
-    `[VideoProcessor] Starting render: job=${jobId} artifact=${artifactId} attempt=${attempt}`
+    `[VideoProcessor] Starting render: job=${jobId} artifact=${artifactId}`
   );
 
   // Update status to processing
@@ -88,7 +109,7 @@ export async function processVideoRenderJob(
 
     // 2b. Resolve background music (Parte 62)
     let musicTrackPath: string | undefined;
-    const soundtrackHint = bullJob.data.soundtrackCategory;
+    const soundtrackHint = payload.soundtrackCategory;
     const specMusic = spec.backgroundMusic;
 
     if (specMusic?.trackPath && existsSync(specMusic.trackPath)) {
@@ -108,8 +129,8 @@ export async function processVideoRenderJob(
     }
 
     // 2c. Resolve narration audio path (Parte 62)
-    const narrationPath = bullJob.data.narrationAudioPath && existsSync(bullJob.data.narrationAudioPath)
-      ? bullJob.data.narrationAudioPath
+    const narrationPath = payload.narrationAudioPath && existsSync(payload.narrationAudioPath)
+      ? payload.narrationAudioPath
       : undefined;
 
     // 3. Generate subtitles (Parte 64)
@@ -167,16 +188,36 @@ export async function processVideoRenderJob(
 
     const durationMs = Date.now() - startTime;
 
-    // 5. Persist .mp4 as artifact
+    // 5a. Upload .mp4 ao GCS public bucket (URL pública permanente)
+    const artifactId = uuid();
+    const gcsPath = `outputs/${jobId}/videos/${artifactId}.mp4`;
+    const artifactTitle = `Video: ${spec.format} (${result.resolution[0]}x${result.resolution[1]})`;
+    const artifactStatus: 'valid' | 'partial' | 'invalid' =
+      result.warnings.length > 0 ? 'partial' : 'valid';
+    let publicUrl: string | null = null;
+
+    try {
+      const gcs = new GCSStorageAdapter({});
+      const buf = readFileSync(result.outputPath);
+      publicUrl = await gcs.uploadPublic(gcsPath, buf, 'video/mp4');
+      logger.info(`[VideoProcessor] uploaded to GCS: ${publicUrl}`);
+    } catch (err) {
+      logger.warn(
+        `[VideoProcessor] GCS upload failed (arquivo local continua válido): ${(err as Error).message}`,
+      );
+    }
+
+    // 5b. Persistir no Supabase (analytics legacy — mantém visibilidade)
     if (deps.supabase) {
       const artifactRow = {
-        id: uuid(),
+        id: artifactId,
         job_id: jobId,
         artifact_type: 'VIDEO_RENDER',
         export_format: 'MP4',
         output_format: spec.format,
-        title: `Video: ${spec.format} (${result.resolution[0]}x${result.resolution[1]})`,
+        title: artifactTitle,
         file_path: result.outputPath,
+        public_url: publicUrl,
         size_bytes: result.sizeBytes,
         status: result.warnings.length > 0 ? 'PARTIAL' : 'VALID',
         warnings: result.warnings,
@@ -187,11 +228,36 @@ export async function processVideoRenderJob(
       try {
         await deps.supabase.insert('bookagent_job_artifacts', artifactRow);
       } catch (err) {
-        logger.warn(`[VideoProcessor] Failed to persist video artifact: ${err}`);
+        logger.warn(`[VideoProcessor] Failed to persist Supabase artifact: ${err}`);
       }
     }
 
-    // 6. Update status to completed
+    // 5c. Persistir no Firestore — fonte de verdade pra galeria do dashboard.
+    // tenantId denormalizado a partir de jobs/{jobId} pra permitir query
+    // direta `artifacts where tenantId == X` sem JOIN.
+    try {
+      const jobDoc = await getJobFromFirestore(jobId);
+      const tenantId = jobDoc?.tenantId ?? jobId;
+
+      await saveArtifactInFirestore({
+        artifactId,
+        jobId,
+        tenantId,
+        artifactType: 'VIDEO_RENDER',
+        exportFormat: 'mp4',
+        title: artifactTitle,
+        sizeBytes: result.sizeBytes,
+        publicUrl,
+        filePath: result.outputPath,
+        mimeType: 'video/mp4',
+        status: artifactStatus,
+      });
+      logger.info(`[VideoProcessor] Firestore artifact saved: ${artifactId} tenant=${tenantId}`);
+    } catch (err) {
+      logger.warn(`[VideoProcessor] Firestore artifact save failed: ${(err as Error).message}`);
+    }
+
+    // 6. Update status to completed (Supabase legacy + Firestore dual-write)
     await updateVideoStatus(deps.supabase, jobId, 'completed', {
       video_render_completed_at: new Date().toISOString(),
       video_render_output_path: result.outputPath,
@@ -199,6 +265,14 @@ export async function processVideoRenderJob(
       video_render_duration_seconds: result.durationSeconds,
       video_render_scene_count: result.sceneCount,
     });
+    try {
+      await updateJobInFirestore(jobId, {
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      logger.warn(`[VideoProcessor] Firestore job status update failed: ${(err as Error).message}`);
+    }
 
     // 7. Track metrics
     metrics.track('job_completed', {
@@ -235,7 +309,7 @@ export async function processVideoRenderJob(
     const message = err instanceof Error ? err.message : String(err);
 
     logger.error(
-      `[VideoProcessor] Failed: job=${jobId} attempt=${attempt} ` +
+      `[VideoProcessor] Failed: job=${jobId} ` +
       `after ${(durationMs / 1000).toFixed(1)}s: ${message}`
     );
 
@@ -245,26 +319,32 @@ export async function processVideoRenderJob(
       planTier: 'starter',
       jobId,
       errorCode: 'VIDEO_RENDER_FAILED',
-      metadata: { attempt, message },
+      metadata: { message },
     });
 
-    // Mark as failed on last attempt
-    const maxAttempts = bullJob.opts.attempts ?? 2;
-    if (attempt >= maxAttempts) {
-      await updateVideoStatus(deps.supabase, jobId, 'failed', {
-        video_render_error: message,
+    // Mark as failed — Cloud Tasks retries are controlled by HTTP 500 response
+    await updateVideoStatus(deps.supabase, jobId, 'failed', {
+      video_render_error: message,
+    });
+    try {
+      await updateJobInFirestore(jobId, {
+        status: 'failed',
+        errorMessage: message,
+        completedAt: new Date().toISOString(),
       });
-
-      if (webhookUrl) {
-        await sendVideoWebhook(webhookUrl, {
-          jobId,
-          status: 'failed',
-          error: message,
-        });
-      }
+    } catch (fireErr) {
+      logger.warn(`[VideoProcessor] Firestore failure update failed: ${(fireErr as Error).message}`);
     }
 
-    throw err; // Re-throw for BullMQ retry
+    if (webhookUrl) {
+      await sendVideoWebhook(webhookUrl, {
+        jobId,
+        status: 'failed',
+        error: message,
+      });
+    }
+
+    throw err; // HTTP 500 → Cloud Tasks retry (se retries > 0)
   }
 }
 

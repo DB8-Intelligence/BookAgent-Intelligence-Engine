@@ -1,0 +1,29 @@
+# Exclude from Cloud Build source upload.
+# Sem isso, gcloud cai pro .gitignore e ignora artefatos pesados não-tracked.
+
+# Honor .gitignore patterns
+#!include:.gitignore
+
+# Build context bloat — patterns ancorados em `/` pra não colidir com src/adapters/storage etc.
+/.transformers-cache/
+*.zip
+/dist/
+/output/
+/storage/
+
+# Local dev / Claude / IDE
+.claude/
+.vscode/
+.idea/
+.DS_Store
+
+# Docs e binários que o Docker build não usa
+docs/*.docx
+docs/*.html
+docs/DASHBOARD_RESTAURADO.html
+*.log
+tests/fixtures/
+
+# Git metadata (gcloud já exclui .git por padrão, mas explícito não dói)
+.git/
+.gitattributes

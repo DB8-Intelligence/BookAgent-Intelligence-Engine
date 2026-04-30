@@ -25,6 +25,7 @@ import {
   getDashboardInsights,
   getDashboardPublications,
   getDashboardCampaigns,
+  getDashboardGallery,
 } from '../controllers/customerDashboardController.js';
 import { getCustomerAnalytics } from '../controllers/analyticsController.js';
 import {
@@ -48,6 +49,7 @@ router.get('/insights',         getDashboardInsights);
 router.get('/analytics',        getCustomerAnalytics);
 router.get('/publications',     getDashboardPublications);
 router.get('/campaigns',        getDashboardCampaigns);
+router.get('/gallery',          getDashboardGallery);
 
 // --- Action endpoints (proxied from approval controller) ---
 router.post('/jobs/:jobId/approve',        approveJob);

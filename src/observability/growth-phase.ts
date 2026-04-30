@@ -89,7 +89,7 @@ function buildPhaseInfo(
           'Acompanhar tempo de resposta e satisfação manualmente',
           'Resolver bugs rapidamente — cada usuário conta',
           'Monitorar churn do primeiro mês (meta: < 30%)',
-          'Manter Railway Hobby + Supabase Free — custo mínimo',
+          'Manter Cloud Run min-instances=0 + Firestore Native — custo mínimo',
         ],
         readyForNext: activeUsers >= 50,
         nextPhaseCriteria: [

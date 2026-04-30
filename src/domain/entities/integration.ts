@@ -13,7 +13,7 @@
  *
  * Separação config/secrets:
  *   - IntegrationConfig: dados públicos (URLs, IDs, feature flags)
- *   - Secrets ficam em env vars no Railway — nunca no config
+ *   - Secrets ficam em env vars do Cloud Run (Secret Manager) — nunca no config
  *
  * Persistência: bookagent_integrations, bookagent_integration_events
  *

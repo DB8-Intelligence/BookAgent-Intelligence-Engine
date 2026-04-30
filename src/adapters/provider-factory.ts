@@ -5,13 +5,16 @@
  * Permite trocar providers sem modificar módulos do pipeline.
  *
  * Configuração via environment variables:
- * - AI_PROVIDER: "anthropic" | "openai" | "gemini" (default: "anthropic")
+ * - AI_PROVIDER: "anthropic" | "openai" | "gemini" (default: "gemini")
  * - TTS_PROVIDER: "openai-tts" | "elevenlabs" (default: "openai-tts")
  * - AI_GENERATION_MODE: "auto" | "ai" | "local" (default: "auto")
  * - ANTHROPIC_API_KEY, ANTHROPIC_MODEL: Claude
  * - OPENAI_API_KEY, OPENAI_MODEL: GPT-4o
- * - GEMINI_API_KEY, GEMINI_MODEL: Google Gemini
+ * - GEMINI_API_KEY, GEMINI_MODEL: Google Gemini (public API)
  * - ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID: ElevenLabs TTS
+ *
+ * Sprint 3.10: VertexAdapter removido. Gemini é o caminho Google único
+ * (REST API direta com GEMINI_API_KEY do Google AI Studio).
  *
  * Uso:
  *   const ai = createAIAdapter();         // usa env vars
@@ -36,11 +39,11 @@ export type AIProviderName = 'anthropic' | 'openai' | 'gemini';
 
 /**
  * Cria um adapter de IA com base no provider especificado.
- * Se não especificado, usa AI_PROVIDER do env (default: "anthropic").
+ * Se não especificado, usa AI_PROVIDER do env (default: "gemini").
  * Lança erro se a API key não estiver configurada.
  */
 export function createAIAdapter(provider?: AIProviderName): IAIAdapter {
-  const name = provider ?? (process.env.AI_PROVIDER as AIProviderName) ?? 'anthropic';
+  const name = provider ?? (process.env.AI_PROVIDER as AIProviderName) ?? 'gemini';
 
   switch (name) {
     case 'anthropic':
@@ -59,7 +62,7 @@ export function createAIAdapter(provider?: AIProviderName): IAIAdapter {
  * Ideal para graceful degradation: sem key → usa geração local.
  */
 export function tryCreateAIAdapter(provider?: AIProviderName): IAIAdapter | null {
-  const name = provider ?? (process.env.AI_PROVIDER as AIProviderName) ?? 'anthropic';
+  const name = provider ?? (process.env.AI_PROVIDER as AIProviderName) ?? 'gemini';
 
   switch (name) {
     case 'anthropic':
@@ -139,15 +142,15 @@ export interface ProviderStatus {
  * Reflete todos os providers com API key, não apenas o padrão (AI_PROVIDER).
  */
 export function checkProviderStatus(): ProviderStatus {
-  const aiProvider = (process.env.AI_PROVIDER as AIProviderName) ?? 'anthropic';
+  const aiProvider = (process.env.AI_PROVIDER as AIProviderName) ?? 'gemini';
   const ttsProvider = (process.env.TTS_PROVIDER as TTSProviderName) ?? 'openai-tts';
   const aiMode = process.env.AI_GENERATION_MODE ?? 'auto';
 
   // Quais providers têm chaves configuradas
   const availableProviders: string[] = [];
-  if (process.env.ANTHROPIC_API_KEY) availableProviders.push('anthropic');
-  if (process.env.OPENAI_API_KEY)    availableProviders.push('openai');
-  if (process.env.GEMINI_API_KEY)    availableProviders.push('gemini');
+  if (process.env.ANTHROPIC_API_KEY)     availableProviders.push('anthropic');
+  if (process.env.OPENAI_API_KEY)        availableProviders.push('openai');
+  if (process.env.GEMINI_API_KEY)        availableProviders.push('gemini');
 
   const aiAvailable = availableProviders.length > 0;
 

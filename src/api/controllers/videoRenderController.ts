@@ -20,7 +20,8 @@ import { z } from 'zod';
 import { sendSuccess, sendError } from '../helpers/response.js';
 import { logger } from '../../utils/logger.js';
 import type { SupabaseClient } from '../../persistence/supabase-client.js';
-import { enqueueVideoRender, getVideoQueue } from '../../queue/video-queue.js';
+import { enqueueVideoRender } from '../../queue/video-queue.js';
+import { isCloudTasksConfigured } from '../../queue/cloud-tasks.js';
 import { metrics } from '../../observability/metrics.js';
 
 // ============================================================================
@@ -99,7 +100,7 @@ export async function renderVideo(req: Request, res: Response): Promise<void> {
     // Find RenderSpec artifact
     const filters = [
       { column: 'job_id', operator: 'eq' as const, value: jobId },
-      { column: 'artifact_type', operator: 'eq' as const, value: 'MEDIA_RENDER_SPEC' },
+      { column: 'artifact_type', operator: 'eq' as const, value: 'media-render-spec' },
     ];
 
     if (parsed.data.artifactId) {
@@ -120,10 +121,12 @@ export async function renderVideo(req: Request, res: Response): Promise<void> {
 
     const artifact = artifacts[0];
 
-    // Validate the spec is parseable
+    // Validate the spec is parseable (content may be object from JSONB or string)
     let spec: Record<string, unknown>;
     try {
-      spec = JSON.parse(artifact.content);
+      spec = typeof artifact.content === 'string'
+        ? JSON.parse(artifact.content)
+        : artifact.content as Record<string, unknown>;
     } catch {
       sendError(res, 'INVALID_SPEC', 'RenderSpec artifact contains invalid JSON', 422);
       return;
@@ -135,14 +138,42 @@ export async function renderVideo(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Build asset URL map from referenced IDs
-    const assetUrls: Record<string, string> = {};
-    if (artifact.referenced_asset_ids) {
-      for (const assetId of artifact.referenced_asset_ids) {
-        // In V1: assets are referenced by ID, resolved to file path by the worker
-        // In production: this would be a Supabase Storage URL
-        assetUrls[assetId] = assetId; // Worker resolves via StorageManager
+    // Build asset URL map — resolve asset IDs to public Supabase Storage URLs
+    let assetUrls: Record<string, string> = {};
+
+    try {
+      const jobRows = await supabase.select<{ asset_url_map: Record<string, string> | null }>(
+        'bookagent_jobs',
+        {
+          filters: [{ column: 'id', operator: 'eq', value: jobId }],
+          select: 'asset_url_map',
+          limit: 1,
+        },
+      );
+      const savedMap = jobRows[0]?.asset_url_map;
+      if (savedMap && typeof savedMap === 'object') {
+        const parsed = typeof savedMap === 'string' ? JSON.parse(savedMap) : savedMap;
+        // Remove internal keys
+        const { __processingId, ...urlMap } = parsed as Record<string, string>;
+        assetUrls = urlMap;
+
+        // If assetUrls has real URLs (starts with http), use them directly
+        const hasRealUrls = Object.values(assetUrls).some((v) => v?.startsWith('http'));
+        if (hasRealUrls) {
+          logger.info(`[VideoRender] Loaded ${Object.keys(assetUrls).length} asset URLs from persisted map`);
+        } else if (__processingId) {
+          // Build URLs from processingId + page number pattern
+          assetUrls = await buildAssetUrlsFromStorage(__processingId, artifact.referenced_asset_ids ?? [], supabase);
+        }
       }
+    } catch (err) {
+      logger.warn(`[VideoRender] Failed to load asset URL map: ${err}`);
+    }
+
+    // Fallback: try to find storage folder by matching recent uploads
+    if (Object.keys(assetUrls).length === 0 && artifact.referenced_asset_ids) {
+      logger.warn(`[VideoRender] No asset URL map for job ${jobId} — trying storage scan`);
+      assetUrls = await buildAssetUrlsFallback(jobId, artifact.referenced_asset_ids, spec, supabase);
     }
 
     // Update status to queued
@@ -160,28 +191,51 @@ export async function renderVideo(req: Request, res: Response): Promise<void> {
       logger.warn(`[VideoRender] Failed to update job_meta for ${jobId}: ${err}`);
     }
 
-    // Enqueue to dedicated video queue
-    const videoQueue = getVideoQueue();
-    if (!videoQueue) {
-      // Fallback: no Redis configured — accept but warn
-      logger.warn(`[VideoRender] Redis not configured — video render queued in DB only`);
-      sendSuccess(res, {
-        jobId,
-        artifactId: artifact.id,
-        status: 'queued',
-        sceneCount,
-        format: spec.format,
-        resolution: spec.resolution,
-        message: 'Video render recorded. Worker will process when available.',
-        queueAvailable: false,
-      }, 202);
+    // Enqueue via Cloud Tasks (async) OR process inline (sync fallback)
+    const renderSpecJson = typeof artifact.content === 'string'
+      ? artifact.content
+      : JSON.stringify(artifact.content);
+
+    if (!isCloudTasksConfigured()) {
+      // Sync fallback — process inline with ffmpeg local
+      logger.info(`[VideoRender] Cloud Tasks off — rendering INLINE for ${artifact.id}`);
+      const { processVideoRenderJob } = await import('../../queue/video-processor.js');
+      try {
+        await processVideoRenderJob(
+          {
+            jobId,
+            artifactId: artifact.id,
+            renderSpecJson,
+            assetUrls,
+            webhookUrl: typeof req.body?.webhookUrl === 'string' ? req.body.webhookUrl : undefined,
+          },
+          {
+            supabase: supabase ?? null,
+            outputDir: 'storage/outputs/video',
+            tempDir: 'storage/temp/video',
+          },
+        );
+        sendSuccess(res, {
+          jobId,
+          artifactId: artifact.id,
+          status: 'completed',
+          sceneCount,
+          format: spec.format,
+          resolution: spec.resolution,
+          message: 'Video rendered inline (sync mode)',
+          queueAvailable: false,
+        }, 200);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        sendError(res, 'RENDER_FAILED', `Inline render failed: ${msg}`, 500);
+      }
       return;
     }
 
     const bullJobId = await enqueueVideoRender({
       jobId,
       artifactId: artifact.id,
-      renderSpecJson: artifact.content,
+      renderSpecJson,
       assetUrls,
       webhookUrl: typeof req.body?.webhookUrl === 'string' ? req.body.webhookUrl : undefined,
     });
@@ -238,8 +292,17 @@ export async function getVideoStatus(req: Request, res: Response): Promise<void>
       limit: 1,
     });
 
+    // No job_meta row yet = video render never triggered. Return as 'not_requested'
+    // rather than 404, so frontend polling doesn't log errors for jobs that simply
+    // haven't kicked off rendering yet (e.g. blog/LP-only jobs, or jobs completed
+    // before auto-trigger was deployed).
     if (rows.length === 0) {
-      sendError(res, 'NOT_FOUND', 'Job not found', 404);
+      sendSuccess(res, {
+        jobId,
+        videoRenderStatus: 'not_requested',
+        artifactId: null,
+        requestedAt: null,
+      });
       return;
     }
 
@@ -293,4 +356,122 @@ export async function getVideoStatus(req: Request, res: Response): Promise<void>
     logger.error(`[VideoRender] getVideoStatus failed for job=${jobId}: ${err}`);
     sendError(res, 'INTERNAL_ERROR', 'Failed to get video status', 500);
   }
+}
+
+// ============================================================================
+// Helpers — Asset URL Resolution
+// ============================================================================
+//
+// Fallback legado: reconstrói URLs de páginas que ficaram no Supabase Storage
+// em jobs antigos. Novos jobs usam GCS direto (gs:// URIs no assetUrlMap
+// do Firestore). Este helper só dispara quando jobs pré-migração precisam
+// re-renderizar — se SUPABASE_URL não estiver configurado, retorna path vazio.
+
+const SUPABASE_URL = process.env.SUPABASE_URL ?? '';
+const BOOK_ASSETS_BUCKET = process.env.BOOK_ASSETS_BUCKET ?? 'book-assets';
+
+function buildPageUrl(processingId: string, pageNum: number): string {
+  if (!SUPABASE_URL) return '';
+  return `${SUPABASE_URL}/storage/v1/object/public/${BOOK_ASSETS_BUCKET}/${processingId}/pages/png/page-${pageNum}.png`;
+}
+
+/**
+ * Build asset URLs from a known processingId by distributing assets across pages.
+ * Each asset maps to a page — we assign sequentially since the exact mapping is lost.
+ */
+async function buildAssetUrlsFromStorage(
+  processingId: string,
+  assetIds: string[],
+  _supabase: SupabaseClient,
+): Promise<Record<string, string>> {
+  const map: Record<string, string> = {};
+
+  // Distribute assets across pages (1-indexed)
+  for (let i = 0; i < assetIds.length; i++) {
+    const pageNum = (i % 26) + 1; // Cycle through available pages
+    map[assetIds[i]] = buildPageUrl(processingId, pageNum);
+  }
+
+  logger.info(`[VideoRender] Built ${Object.keys(map).length} asset URLs from processingId ${processingId}`);
+  return map;
+}
+
+/**
+ * Fallback: query storage.objects to find the processing folder
+ * that was created around the same time as this job.
+ */
+async function buildAssetUrlsFallback(
+  jobId: string,
+  assetIds: string[],
+  _spec: Record<string, unknown>,
+  supabaseClient: SupabaseClient,
+): Promise<Record<string, string>> {
+  const map: Record<string, string> = {};
+
+  try {
+    // Get job creation time
+    const jobRows = await supabaseClient.select<{ created_at: string }>(
+      'bookagent_jobs',
+      {
+        filters: [{ column: 'id', operator: 'eq', value: jobId }],
+        select: 'created_at',
+        limit: 1,
+      },
+    );
+    if (jobRows.length === 0) return map;
+
+    const jobCreated = jobRows[0].created_at;
+
+    // Find storage folders created within 30 min of the job via raw SQL
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!serviceKey) return map;
+
+    const sqlRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+      },
+    }).catch(() => null);
+
+    // Direct approach: use PostgREST to query storage.objects
+    const storageUrl = `${SUPABASE_URL}/rest/v1/storage/objects?bucket_id=eq.${BOOK_ASSETS_BUCKET}&name=like.%25/pages/png/page-1.png&order=created_at.desc&limit=10&select=name,created_at`;
+    const storageRes = await fetch(storageUrl, {
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+      },
+    }).catch(() => null);
+
+    if (storageRes?.ok) {
+      const folders = (await storageRes.json()) as Array<{ name: string; created_at: string }>;
+      // Find the folder created closest to this job
+      const jobTime = new Date(jobCreated).getTime();
+      let bestMatch = '';
+      let bestDiff = Infinity;
+
+      for (const f of folders) {
+        const folderId = f.name.split('/')[0];
+        const folderTime = new Date(f.created_at).getTime();
+        const diff = Math.abs(folderTime - jobTime);
+        if (diff < bestDiff && diff < 30 * 60 * 1000) {
+          bestDiff = diff;
+          bestMatch = folderId;
+        }
+      }
+
+      if (bestMatch) {
+        logger.info(`[VideoRender] Found storage folder ${bestMatch} for job ${jobId} (diff=${Math.round(bestDiff / 1000)}s)`);
+        for (let i = 0; i < assetIds.length; i++) {
+          const pageNum = (i % 26) + 1;
+          map[assetIds[i]] = buildPageUrl(bestMatch, pageNum);
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn(`[VideoRender] Fallback URL resolution failed: ${err}`);
+  }
+
+  return map;
 }

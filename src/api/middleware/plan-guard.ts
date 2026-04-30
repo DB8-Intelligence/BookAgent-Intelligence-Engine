@@ -1,33 +1,42 @@
 /**
- * Plan Guard Middleware — BookAgent Intelligence Engine
+ * Plan Guard Middleware — Firestore-only desde Sprint 3.7
  *
- * Verifica se o usuário pode criar um novo job com base em:
- *   1. Plano (basic/pro/business) — obtido do header X-Plan-Type ou do Supabase
- *   2. Consumo do mês atual — obtido do Supabase (bookagent_job_meta)
- *   3. Tamanho do arquivo — validado contra o limite do plano
+ * Verifica se o tenant pode criar um novo job consultando os créditos
+ * em `tenants/{tenantId}.credits` (Firestore via `firestore-billing.ts`).
+ * Substitui o caminho legado que lia `bookagent_job_meta` no Supabase.
  *
  * Integração:
  *   - Registrado na rota POST /api/v1/process antes do controller
- *   - Lê user_id de req.body.user_context.whatsapp ou header X-User-Id
- *   - Passa req.planTier e req.planLimits para o controller
+ *   - Lê tenantId/userId do `req.tenantContext` (populado por `tenantGuard`)
+ *   - Fallback: header `X-User-Id` ou `req.body.user_context.whatsapp` em
+ *     chamadas legacy/internas sem auth Firebase
+ *   - Passa req.resolvedUserId / req.resolvedPlanTier pro controller
  *
- * Parte 55: Escala Real e Monetização
+ * Comportamento na ausência de tenant Firestore:
+ *   - Tenant ainda não criado → permitido (novo user vai criar via consume)
+ *   - Tenant existe + sem saldo → 402 PLAN_LIMIT_REACHED
  */
 
 import type { Request, Response, NextFunction } from 'express';
-import { getPlan, canCreateJob, type PlanTier } from '../../plans/plan-config.js';
+import { getPlan, type PlanTier } from '../../plans/plan-config.js';
 import { sendError } from '../helpers/response.js';
 import { logger } from '../../utils/logger.js';
 import type { SupabaseClient } from '../../persistence/supabase-client.js';
+import { isAdmin } from '../../modules/billing/admin-bypass.js';
+import { checkJobAllowed } from '../../modules/billing/firestore-billing.js';
+import { logDeprecatedSupabaseCall } from '../../utils/deprecated-supabase.js';
 
 // ============================================================================
-// Module-level Supabase client (optional — injected from bootstrap)
+// Compat shim — composition root ainda chama setPlanGuardSupabaseClient.
+// Mantemos como no-op pra não quebrar bootstrap.
 // ============================================================================
 
-let supabase: SupabaseClient | null = null;
-
-export function setPlanGuardSupabaseClient(client: SupabaseClient): void {
-  supabase = client;
+export function setPlanGuardSupabaseClient(_client: SupabaseClient): void {
+  logDeprecatedSupabaseCall({
+    module: 'PlanGuardMiddleware',
+    action: 'setPlanGuardSupabaseClient',
+    reason: 'Plan-guard uses firestore-billing.checkJobAllowed since Sprint 3.7.',
+  });
 }
 
 // ============================================================================
@@ -45,13 +54,19 @@ declare module 'express-serve-static-core' {
 // Helpers
 // ============================================================================
 
-/** Extrai user_id do body ou do header X-User-Id. */
+/** Extrai user_id do tenantContext (Firebase-first), header ou body. */
 function resolveUserId(req: Request): string | null {
-  // Header explícito (API calls, n8n)
+  // Firebase tenant context — fonte primária pós-Sprint-3.7
+  const ctxUid = req.tenantContext?.userId;
+  if (typeof ctxUid === 'string' && ctxUid.trim() && ctxUid !== 'anonymous') {
+    return ctxUid.trim();
+  }
+
+  // Header explícito (n8n / API interna)
   const header = req.headers['x-user-id'];
   if (typeof header === 'string' && header.trim()) return header.trim();
 
-  // Body: user_context.whatsapp como identificador no canal WhatsApp
+  // Body legacy: user_context.whatsapp como identificador no canal WhatsApp
   const uc = req.body?.user_context;
   if (uc?.whatsapp) return String(uc.whatsapp);
   if (uc?.name) return String(uc.name);
@@ -59,52 +74,22 @@ function resolveUserId(req: Request): string | null {
   return null;
 }
 
-/** Conta jobs criados pelo userId no mês corrente via Supabase. */
-async function countJobsThisMonth(userId: string): Promise<number> {
-  if (!supabase) return 0;
-  try {
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-
-    // PostgREST: ?user_id=eq.{id}&created_at=gte.{date}
-    const rows = await supabase.select<{ job_id: string }>(
-      'bookagent_job_meta',
-      {
-        filters: [
-          { column: 'user_id', operator: 'eq', value: userId },
-          { column: 'created_at', operator: 'gte', value: startOfMonth.toISOString() },
-        ],
-        select: 'job_id',
-      },
-    );
-    return rows.length;
-  } catch {
-    return 0; // falha silenciosa — não bloqueia por erro de DB
-  }
+/** Resolve tenantId — prioriza tenantContext, fallback pra userId (solo tenant). */
+function resolveTenantId(req: Request, userId: string): string {
+  return req.tenantContext?.tenantId ?? userId;
 }
 
-/** Obtém o plano do usuário do Supabase (último registro). Fallback: 'starter'. */
-async function resolveUserPlan(userId: string): Promise<PlanTier> {
-  // Header explícito tem precedência (n8n, API interna)
-  // O header é lido pelo chamador — aqui apenas fallback de DB
-  if (!supabase) return 'starter';
-  try {
-    const rows = await supabase.select<{ plan_type: string }>(
-      'bookagent_job_meta',
-      {
-        filters: [{ column: 'user_id', operator: 'eq', value: userId }],
-        select: 'plan_type',
-        orderBy: 'created_at',
-        orderDesc: true,
-        limit: 1,
-      },
-    );
-    const tier = rows[0]?.plan_type as PlanTier | undefined;
-    return tier === 'pro' || tier === 'agency' ? tier : 'starter';
-  } catch {
-    return 'starter';
+/** Resolve plan tier do tenantContext ou header. Default starter. */
+function resolvePlanTier(req: Request): PlanTier {
+  const fromCtx = req.tenantContext?.planTier;
+  if (fromCtx === 'pro' || fromCtx === 'agency' || fromCtx === 'starter') return fromCtx;
+
+  const header = req.headers['x-plan-type'];
+  if (typeof header === 'string') {
+    const tier = header as PlanTier;
+    if (tier === 'pro' || tier === 'agency' || tier === 'starter') return tier;
   }
+  return 'starter';
 }
 
 // ============================================================================
@@ -112,11 +97,11 @@ async function resolveUserPlan(userId: string): Promise<PlanTier> {
 // ============================================================================
 
 /**
- * planGuard — verifica limites do plano antes de iniciar um job.
+ * planGuard — verifica limites do plano via Firestore antes de iniciar um job.
  *
- * Responde 402 (limite de jobs atingido) ou 413 (arquivo muito grande).
- * Se não houver user_id identificável, passa sem bloqueio (compatibilidade
- * com chamadas legacy/internas sem autenticação explícita).
+ * Responde 402 (limite mensal atingido) ou 429 (concurrent — não enforced
+ * desde Sprint 3.7; Firestore credits transactional já previne overrun).
+ * Sem user_id identificável: passa sem bloqueio (compatibilidade legacy).
  */
 export async function planGuard(
   req: Request,
@@ -126,34 +111,53 @@ export async function planGuard(
   const userId = resolveUserId(req);
 
   if (!userId) {
-    // Sem user_id — modo anônimo/interno, não aplicar limites
     next();
     return;
   }
 
-  // Resolve plano: header X-Plan-Type → DB → 'starter'
-  const headerPlan = req.headers['x-plan-type'];
-  let tier: PlanTier = typeof headerPlan === 'string'
-    ? (headerPlan as PlanTier)
-    : await resolveUserPlan(userId);
+  // Admin bypass — DB8 team / founder can create jobs without plan limits
+  if (isAdmin({ userId, email: req.authUser?.email })) {
+    req.resolvedUserId = userId;
+    req.resolvedPlanTier = 'agency';
+    logger.debug(`[PlanGuard] Admin bypass for user=${userId}`);
+    next();
+    return;
+  }
 
-  // Garante que tier é válido
-  if (tier !== 'pro' && tier !== 'agency') tier = 'starter';
-
+  const tenantId = resolveTenantId(req, userId);
+  const tier = resolvePlanTier(req);
   const plan = getPlan(tier);
 
-  // Verificar tamanho do arquivo (se informado no body)
-  const fileUrl: string | undefined = req.body?.file_url;
-  // Nota: não fazemos HEAD request aqui para não adicionar latência.
-  // O arquivo será baixado pelo worker; o limite de tamanho é soft-enforced.
-  // Hard-enforce acontece no worker.
+  // Check via Firestore — `tenants/{tenantId}.credits.jobsUsed/jobsLimit`.
+  // Se o tenant ainda não existe (primeira chamada), check retorna allowed=false
+  // com reason='Tenant não encontrado'. Tratamos como "permitido" pra novos
+  // users — o consumeJobCredit no job-processor cria o tenant lazy.
+  let check;
+  try {
+    check = await checkJobAllowed(tenantId, 1);
+  } catch (err) {
+    logger.warn(`[PlanGuard] Firestore check failed for tenant=${tenantId}: ${err}`);
+    // Fail-open: se Firestore estiver instável, deixa passar — consume*
+    // ainda é transacional e não passa do limite real.
+    req.resolvedUserId = userId;
+    req.resolvedPlanTier = tier;
+    next();
+    return;
+  }
 
-  // Verificar consumo do mês
-  const jobsThisMonth = await countJobsThisMonth(userId);
-  if (!canCreateJob(tier, jobsThisMonth)) {
+  // Tenant não encontrado = primeiro job desse user. Permitido.
+  if (!check.allowed && check.reason?.includes('não encontrado')) {
+    logger.debug(`[PlanGuard] tenant=${tenantId} new (not found yet) — allowing first job`);
+    req.resolvedUserId = userId;
+    req.resolvedPlanTier = tier;
+    next();
+    return;
+  }
+
+  if (!check.allowed) {
     logger.warn(
-      `[PlanGuard] Limite mensal atingido para user=${userId} plan=${tier} ` +
-      `(${jobsThisMonth}/${plan.limits.jobsPerMonth} jobs)`,
+      `[PlanGuard] Limite atingido tenant=${tenantId} plan=${tier} ` +
+      `(${check.used}/${check.limit} jobs)`,
     );
     sendError(
       res,
@@ -161,45 +165,16 @@ export async function planGuard(
       `Limite de ${plan.limits.jobsPerMonth} jobs/mês atingido para o plano ${plan.name}. ` +
       `Faça upgrade para continuar.`,
       402,
-      { jobsUsed: jobsThisMonth, limit: plan.limits.jobsPerMonth, planTier: tier },
+      { jobsUsed: check.used, limit: check.limit, planTier: tier, resetAt: check.resetAt },
     );
     return;
   }
 
-  // Verificar jobs simultâneos
-  if (supabase) {
-    try {
-      const inProgress = await supabase.select<{ job_id: string }>(
-        'bookagent_job_meta',
-        {
-          filters: [
-            { column: 'user_id', operator: 'eq', value: userId },
-            { column: 'approval_status', operator: 'eq', value: 'processing' },
-          ],
-          select: 'job_id',
-        },
-      );
-      if (inProgress.length >= plan.limits.concurrentJobs) {
-        sendError(
-          res,
-          'CONCURRENT_LIMIT',
-          `Máximo de ${plan.limits.concurrentJobs} job(s) simultâneo(s) para o plano ${plan.name}.`,
-          429,
-          { inProgress: inProgress.length, limit: plan.limits.concurrentJobs },
-        );
-        return;
-      }
-    } catch {
-      // falha silenciosa
-    }
-  }
-
-  // Injetar no request para uso downstream
   req.resolvedUserId = userId;
   req.resolvedPlanTier = tier;
 
   logger.debug(
-    `[PlanGuard] user=${userId} plan=${tier} jobs_this_month=${jobsThisMonth}/${plan.limits.jobsPerMonth}`,
+    `[PlanGuard] tenant=${tenantId} plan=${tier} jobs=${check.used}/${check.limit}`,
   );
 
   next();
