@@ -32,7 +32,29 @@ export class IngestionModule implements IModule {
     // --- Passo 1: Obter o arquivo ---
     let localFilePath: string;
 
-    if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+    if (fileUrl.startsWith('gs://')) {
+      // Download direto do GCS via SDK (Workload Identity)
+      const m = fileUrl.match(/^gs:\/\/([^/]+)\/(.+)$/);
+      if (!m) {
+        throw new Error(`Ingestion: gs:// URL inválida: ${fileUrl}`);
+      }
+      const [, bucketName, objectPath] = m;
+
+      logger.info(`Ingestion: baixando ${fileUrl} via GCS SDK`);
+
+      const { Storage } = await import('@google-cloud/storage');
+      const storage = new Storage({ projectId: process.env.GOOGLE_CLOUD_PROJECT });
+
+      const ext = type === InputType.PDF ? '.pdf' : '';
+      localFilePath = join('storage', 'temp', context.jobId, `input${ext}`);
+
+      const { mkdir } = await import('node:fs/promises');
+      await mkdir(join('storage', 'temp', context.jobId), { recursive: true });
+
+      await storage.bucket(bucketName).file(objectPath).download({
+        destination: localFilePath,
+      });
+    } else if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
       // Download do arquivo
       logger.info(`Ingestion: baixando ${fileUrl}`);
       const response = await fetch(fileUrl);
