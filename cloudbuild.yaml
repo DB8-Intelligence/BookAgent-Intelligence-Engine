@@ -174,7 +174,7 @@ steps:
       - --platform=managed
       - --allow-unauthenticated
       - --service-account=${_SA_EMAIL}
-      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},FIREBASE_PROJECT_ID=${PROJECT_ID},AI_PROVIDER=gemini,GCS_ENABLED=true,VIDEO_RENDERER=ffmpeg,NODE_ENV=production,CLOUD_TASKS_LOCATION=${_REGION},CLOUD_TASKS_SA_EMAIL=${_SA_EMAIL},CLOUD_TASKS_PIPELINE_QUEUE=bookagent-pipeline,CLOUD_TASKS_VIDEO_QUEUE=bookagent-video,CLOUD_TASKS_TARGET_URL=https://bookagent-intelligence-engine-dke2y5ap6q-uc.a.run.app,LEGACY_SUPABASE_ENABLED=true
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},FIREBASE_PROJECT_ID=${PROJECT_ID},AI_PROVIDER=gemini,GCS_ENABLED=true,GCS_BUCKET=bookreel-uploads,GCS_PUBLIC_BUCKET=bookreel-public,VIDEO_RENDERER=ffmpeg,NODE_ENV=production,CLOUD_TASKS_LOCATION=${_REGION},CLOUD_TASKS_SA_EMAIL=${_SA_EMAIL},CLOUD_TASKS_PIPELINE_QUEUE=bookagent-pipeline,CLOUD_TASKS_VIDEO_QUEUE=bookagent-video,CLOUD_TASKS_TARGET_URL=https://bookagent-intelligence-engine-dke2y5ap6q-uc.a.run.app,LEGACY_SUPABASE_ENABLED=true
       # Secrets ativos: Anthropic (AI), Firebase NEXT_PUBLIC_* (runtime middleware),
       # Supabase-service-role mantido pros módulos legados (billing/analytics/admin)
       # que ainda leem de Supabase. supabase-jwt-secret foi removido — firebase-admin
