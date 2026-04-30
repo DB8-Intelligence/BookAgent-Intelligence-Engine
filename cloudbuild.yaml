@@ -104,8 +104,25 @@ steps:
     args:
       - -c
       - |
-        gcloud secrets versions access latest --secret=firebase-api-key > /workspace/NEXT_PUBLIC_FIREBASE_API_KEY
-        gcloud secrets versions access latest --secret=firebase-auth-domain > /workspace/NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+        # Sprint 3.11: retry loop pra eliminar transient failures no Secret Manager
+        # (causa raiz das ~14 build failures observadas em 7d). Tenta 3 vezes
+        # com backoff 5s antes de desistir.
+        fetch_secret() {
+          local secret="$1"
+          local out="$2"
+          for try in 1 2 3; do
+            if gcloud secrets versions access latest --secret="$secret" > "$out" 2>/tmp/secret-err; then
+              echo "[fetch-next-public-envs] $secret OK on attempt $try"
+              return 0
+            fi
+            echo "[fetch-next-public-envs] retry $try for $secret: $(cat /tmp/secret-err)"
+            sleep 5
+          done
+          echo "[fetch-next-public-envs] FATAL: $secret failed after 3 attempts"
+          return 1
+        }
+        fetch_secret firebase-api-key /workspace/NEXT_PUBLIC_FIREBASE_API_KEY
+        fetch_secret firebase-auth-domain /workspace/NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
 
   # 1. Build image (API + Next.js unificados) ----------------------------------
   - id: build-api
@@ -157,7 +174,7 @@ steps:
       - --platform=managed
       - --allow-unauthenticated
       - --service-account=${_SA_EMAIL}
-      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},FIREBASE_PROJECT_ID=${PROJECT_ID},AI_PROVIDER=gemini,GCS_ENABLED=true,VIDEO_RENDERER=ffmpeg,NODE_ENV=production,CLOUD_TASKS_LOCATION=${_REGION},CLOUD_TASKS_SA_EMAIL=${_SA_EMAIL},CLOUD_TASKS_PIPELINE_QUEUE=bookagent-pipeline,CLOUD_TASKS_VIDEO_QUEUE=bookagent-video,LEGACY_SUPABASE_ENABLED=true
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_REGION},FIREBASE_PROJECT_ID=${PROJECT_ID},AI_PROVIDER=gemini,GCS_ENABLED=true,VIDEO_RENDERER=ffmpeg,NODE_ENV=production,CLOUD_TASKS_LOCATION=${_REGION},CLOUD_TASKS_SA_EMAIL=${_SA_EMAIL},CLOUD_TASKS_PIPELINE_QUEUE=bookagent-pipeline,CLOUD_TASKS_VIDEO_QUEUE=bookagent-video,CLOUD_TASKS_TARGET_URL=https://bookagent-intelligence-engine-dke2y5ap6q-uc.a.run.app,LEGACY_SUPABASE_ENABLED=true
       # Secrets ativos: Anthropic (AI), Firebase NEXT_PUBLIC_* (runtime middleware),
       # Supabase-service-role mantido pros módulos legados (billing/analytics/admin)
       # que ainda leem de Supabase. supabase-jwt-secret foi removido — firebase-admin
