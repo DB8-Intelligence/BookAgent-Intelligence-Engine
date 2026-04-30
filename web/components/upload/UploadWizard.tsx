@@ -9,6 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -32,6 +39,9 @@ interface WizardState {
   selectedFormats: string[];
   submitting: boolean;
   error: string | null;
+  /** Set após POST /process retornar 202 com jobId. Abre o modal de
+   *  background processing e libera o usuário pra navegar. */
+  submittedJobId: string | null;
 }
 
 // Produtos selecionáveis pelo usuário
@@ -59,6 +69,7 @@ const INITIAL: WizardState = {
   selectedFormats: SELECTABLE_PRODUCTS.filter(p => p.default).map(p => p.id),
   submitting: false,
   error: null,
+  submittedJobId: null,
 };
 
 const STEPS = [
@@ -262,7 +273,10 @@ export function UploadWizard() {
         authorization_acknowledged: state.authorizationAcknowledged || undefined,
         authorization_timestamp: state.authorizationTimestamp || undefined,
       });
-      router.push(`/pipeline/${result.job_id}`);
+      // Sprint UX: pipeline roda em background via Cloud Tasks. Em vez de
+      // bloquear o user na tela /pipeline/:id, abrimos modal e deixamos
+      // ele escolher: dashboard (acompanhar tudo) ou ver status do job.
+      update({ submitting: false, submittedJobId: result.job_id });
     } catch (err) {
       update({
         submitting: false,
@@ -814,6 +828,39 @@ export function UploadWizard() {
           </Button>
         )}
       </div>
+
+      {/* Sprint UX: modal pós-202 — libera user da tela de pipeline */}
+      <Dialog
+        open={!!state.submittedJobId}
+        onOpenChange={(open) => {
+          if (!open) update({ submittedJobId: null });
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Seu book está sendo analisado</DialogTitle>
+            <DialogDescription>
+              O processamento está rodando em segundo plano. Você pode sair desta página;
+              avisaremos quando o projeto estiver pronto.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (state.submittedJobId) {
+                  router.push(`/pipeline/${state.submittedJobId}`);
+                }
+              }}
+            >
+              Ver status do job
+            </Button>
+            <Button onClick={() => router.push("/dashboard")}>
+              Ir para o dashboard
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
