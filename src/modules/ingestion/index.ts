@@ -80,21 +80,21 @@ export class IngestionModule implements IModule {
     }
 
     // --- Passo 3 (opt-in): Gemini multimodal shortcut ---
-    // Quando PIPELINE_USE_GEMINI_ANALYZER=true + AI_PROVIDER=vertex, rodamos
+    // Quando PIPELINE_USE_GEMINI_ANALYZER=true + AI_PROVIDER=gemini, rodamos
     // o pdf-analyzer.ts em paralelo com o resto do pipeline para obter top
     // images + color scheme + hooks em uma chamada só. Módulos downstream
     // podem consumir context.pdfAnalysis para enriquecer decisões.
     let pdfAnalysis: ProcessingContext['pdfAnalysis'];
     const useGeminiAnalyzer =
       process.env.PIPELINE_USE_GEMINI_ANALYZER === 'true' &&
-      process.env.AI_PROVIDER === 'vertex' &&
+      process.env.AI_PROVIDER === 'gemini' &&
       type === InputType.PDF;
 
     if (useGeminiAnalyzer) {
       try {
         const { analyzePDF } = await import('../../services/gemini/pdf-analyzer.js');
         logger.info('Ingestion: chamando Gemini PDF Analyzer (opt-in shortcut)');
-        pdfAnalysis = await analyzePDF(localFilePath, { provider: 'vertex' });
+        pdfAnalysis = await analyzePDF(localFilePath, { provider: 'gemini' });
         logger.info(
           `Ingestion: Gemini analyzer retornou ${pdfAnalysis.top_images.length} imgs, ` +
           `${pdfAnalysis.hooks.length} hooks`,

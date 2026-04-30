@@ -5,15 +5,16 @@
  * Permite trocar providers sem modificar módulos do pipeline.
  *
  * Configuração via environment variables:
- * - AI_PROVIDER: "anthropic" | "openai" | "gemini" | "vertex" (default: "anthropic")
+ * - AI_PROVIDER: "anthropic" | "openai" | "gemini" (default: "gemini")
  * - TTS_PROVIDER: "openai-tts" | "elevenlabs" (default: "openai-tts")
  * - AI_GENERATION_MODE: "auto" | "ai" | "local" (default: "auto")
  * - ANTHROPIC_API_KEY, ANTHROPIC_MODEL: Claude
  * - OPENAI_API_KEY, OPENAI_MODEL: GPT-4o
  * - GEMINI_API_KEY, GEMINI_MODEL: Google Gemini (public API)
- * - GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, VERTEX_AI_MODEL_ID: Vertex AI (enterprise)
- *   Auth via GOOGLE_APPLICATION_CREDENTIALS (service account) or Workload Identity
  * - ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID: ElevenLabs TTS
+ *
+ * Sprint 3.10: VertexAdapter removido. Gemini é o caminho Google único
+ * (REST API direta com GEMINI_API_KEY do Google AI Studio).
  *
  * Uso:
  *   const ai = createAIAdapter();         // usa env vars
@@ -27,7 +28,6 @@ import type { ITTSAdapter } from '../domain/interfaces/tts-adapter.js';
 import { AnthropicAdapter } from './ai/anthropic/index.js';
 import { OpenAIAdapter } from './ai/openai/index.js';
 import { GeminiAdapter } from './ai/gemini/index.js';
-import { VertexAdapter } from './ai/vertex/index.js';
 import { OpenAITTSAdapter } from './tts/openai/index.js';
 import { ElevenLabsAdapter } from './tts/elevenlabs/index.js';
 
@@ -35,15 +35,15 @@ import { ElevenLabsAdapter } from './tts/elevenlabs/index.js';
 // AI Adapter factory
 // ---------------------------------------------------------------------------
 
-export type AIProviderName = 'anthropic' | 'openai' | 'gemini' | 'vertex';
+export type AIProviderName = 'anthropic' | 'openai' | 'gemini';
 
 /**
  * Cria um adapter de IA com base no provider especificado.
- * Se não especificado, usa AI_PROVIDER do env (default: "anthropic").
+ * Se não especificado, usa AI_PROVIDER do env (default: "gemini").
  * Lança erro se a API key não estiver configurada.
  */
 export function createAIAdapter(provider?: AIProviderName): IAIAdapter {
-  const name = provider ?? (process.env.AI_PROVIDER as AIProviderName) ?? 'vertex';
+  const name = provider ?? (process.env.AI_PROVIDER as AIProviderName) ?? 'gemini';
 
   switch (name) {
     case 'anthropic':
@@ -52,8 +52,6 @@ export function createAIAdapter(provider?: AIProviderName): IAIAdapter {
       return new OpenAIAdapter();
     case 'gemini':
       return new GeminiAdapter();
-    case 'vertex':
-      return new VertexAdapter();
     default:
       throw new Error(`[ProviderFactory] Unknown AI provider: ${name}`);
   }
@@ -64,7 +62,7 @@ export function createAIAdapter(provider?: AIProviderName): IAIAdapter {
  * Ideal para graceful degradation: sem key → usa geração local.
  */
 export function tryCreateAIAdapter(provider?: AIProviderName): IAIAdapter | null {
-  const name = provider ?? (process.env.AI_PROVIDER as AIProviderName) ?? 'vertex';
+  const name = provider ?? (process.env.AI_PROVIDER as AIProviderName) ?? 'gemini';
 
   switch (name) {
     case 'anthropic':
@@ -76,16 +74,6 @@ export function tryCreateAIAdapter(provider?: AIProviderName): IAIAdapter | null
     case 'gemini':
       if (!process.env.GEMINI_API_KEY) return null;
       return new GeminiAdapter();
-    case 'vertex':
-      // Vertex uses Service Account (GOOGLE_APPLICATION_CREDENTIALS or
-      // Workload Identity), not an API key. Availability is inferred from
-      // GOOGLE_CLOUD_PROJECT being set.
-      if (!process.env.GOOGLE_CLOUD_PROJECT) return null;
-      try {
-        return new VertexAdapter();
-      } catch {
-        return null;
-      }
     default:
       return null;
   }
@@ -154,7 +142,7 @@ export interface ProviderStatus {
  * Reflete todos os providers com API key, não apenas o padrão (AI_PROVIDER).
  */
 export function checkProviderStatus(): ProviderStatus {
-  const aiProvider = (process.env.AI_PROVIDER as AIProviderName) ?? 'vertex';
+  const aiProvider = (process.env.AI_PROVIDER as AIProviderName) ?? 'gemini';
   const ttsProvider = (process.env.TTS_PROVIDER as TTSProviderName) ?? 'openai-tts';
   const aiMode = process.env.AI_GENERATION_MODE ?? 'auto';
 
@@ -163,7 +151,6 @@ export function checkProviderStatus(): ProviderStatus {
   if (process.env.ANTHROPIC_API_KEY)     availableProviders.push('anthropic');
   if (process.env.OPENAI_API_KEY)        availableProviders.push('openai');
   if (process.env.GEMINI_API_KEY)        availableProviders.push('gemini');
-  if (process.env.GOOGLE_CLOUD_PROJECT)  availableProviders.push('vertex');
 
   const aiAvailable = availableProviders.length > 0;
 

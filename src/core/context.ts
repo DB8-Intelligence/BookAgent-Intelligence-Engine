@@ -52,7 +52,7 @@ export interface ProcessingContext {
 
   // --- Populado pelo Gemini PDF Analyzer (opt-in shortcut) ---
   /** Resultado da análise multimodal Gemini do PDF inteiro.
-   *  Ligado via PIPELINE_USE_GEMINI_ANALYZER=true + AI_PROVIDER=vertex.
+   *  Ligado via PIPELINE_USE_GEMINI_ANALYZER=true + AI_PROVIDER=gemini.
    *  Módulos downstream podem consumir para enriquecer decisões. */
   pdfAnalysis?: {
     top_images: Array<{ description: string; page: number; crop: string; reason: string }>;

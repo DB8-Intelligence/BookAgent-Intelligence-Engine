@@ -37,7 +37,7 @@ export const EXPECTED_SECRETS: SecretDef[] = [
   {
     name: 'GOOGLE_CLOUD_PROJECT',
     requiredInProd: true,
-    description: 'Project ID do GCP/Firebase — usado pelo Firestore, Vertex AI, Cloud Tasks',
+    description: 'Project ID do GCP/Firebase — usado pelo Firestore, Cloud Tasks',
     expectedSource: 'env',
   },
   {
@@ -49,7 +49,7 @@ export const EXPECTED_SECRETS: SecretDef[] = [
   // --- AI providers --------------------------------------------------------
   {
     name: 'ANTHROPIC_API_KEY',
-    requiredInProd: false, // opcional quando AI_PROVIDER=vertex
+    requiredInProd: false, // opcional quando AI_PROVIDER=gemini
     description: 'API key Anthropic Claude (fallback quando AI_PROVIDER=anthropic)',
     expectedSource: 'secret-manager',
   },

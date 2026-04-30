@@ -26,7 +26,6 @@
  */
 
 import { readFile } from 'node:fs/promises';
-import { VertexAdapter } from '../../adapters/ai/vertex/index.js';
 import { GeminiAdapter } from '../../adapters/ai/gemini/index.js';
 import { logger } from '../../utils/logger.js';
 
@@ -126,8 +125,8 @@ estruturados para gerar Reels no Instagram. Retorne apenas o JSON conforme o sch
 // ---------------------------------------------------------------------------
 
 export interface PDFAnalyzerOptions {
-  /** Force provider. Default: vertex se GOOGLE_CLOUD_PROJECT set, senão gemini */
-  provider?: 'vertex' | 'gemini';
+  /** Provider always 'gemini' since Sprint 3.10 (Vertex SDK removido) */
+  provider?: 'gemini';
 }
 
 /**
@@ -138,33 +137,19 @@ export interface PDFAnalyzerOptions {
  */
 export async function analyzePDF(
   pdfPath: string,
-  options?: PDFAnalyzerOptions,
+  _options?: PDFAnalyzerOptions,
 ): Promise<PDFAnalysisResult> {
   const startTime = Date.now();
   const pdfBuffer = await readFile(pdfPath);
 
-  const provider = options?.provider
-    ?? (process.env.GOOGLE_CLOUD_PROJECT ? 'vertex' : 'gemini');
+  logger.info(`[PDFAnalyzer] Analyzing ${pdfPath} via gemini (${(pdfBuffer.length / 1024 / 1024).toFixed(1)} MB)`);
 
-  logger.info(`[PDFAnalyzer] Analyzing ${pdfPath} via ${provider} (${(pdfBuffer.length / 1024 / 1024).toFixed(1)} MB)`);
-
-  let rawResponse: string;
-
-  if (provider === 'vertex') {
-    const vertex = new VertexAdapter();
-    // analyzeMultimodal accepts any MIME type supported by Gemini
-    rawResponse = await vertex.analyzeMultimodal(
-      pdfBuffer,
-      `${SYSTEM_PROMPT}\n\n${USER_PROMPT}`,
-      'application/pdf',
-    );
-  } else {
-    // GeminiAdapter's analyzeImage reads from disk but its body accepts
-    // application/pdf mime too — we need a direct multimodal call.
-    // For now, write to temp and use analyzeImage (which supports inlineData).
-    const gemini = new GeminiAdapter();
-    rawResponse = await gemini.analyzeImage(pdfPath, `${SYSTEM_PROMPT}\n\n${USER_PROMPT}`);
-  }
+  const gemini = new GeminiAdapter();
+  const rawResponse = await gemini.analyzeMultimodal(
+    pdfBuffer,
+    `${SYSTEM_PROMPT}\n\n${USER_PROMPT}`,
+    'application/pdf',
+  );
 
   // Parse — Gemini sometimes wraps JSON in ```json ... ``` even when asked not to
   const cleaned = stripCodeFences(rawResponse).trim();
@@ -182,9 +167,7 @@ export async function analyzePDF(
   // Enrich with meta
   parsed.meta = {
     pages_analyzed: 0, // Gemini não reporta — deixamos 0 ou estimamos via buffer
-    model: provider === 'vertex'
-      ? (process.env.VERTEX_AI_CREATIVE_MODEL ?? 'gemini-1.5-pro-002')
-      : (process.env.GEMINI_MODEL ?? 'gemini-2.0-flash'),
+    model: process.env.GEMINI_MODEL ?? 'gemini-2.0-flash',
     analyzed_at: new Date().toISOString(),
     raw_response_length: rawResponse.length,
   };
@@ -200,26 +183,19 @@ export async function analyzePDF(
 /**
  * Versão in-memory: aceita Buffer em vez de path. Útil quando o PDF já
  * está em memória (baixado do GCS sem disk round-trip).
+ *
+ * Sprint 3.10: agora usa Gemini REST API direto (era Vertex). Aceita buffers
+ * via inline base64 — sem write-to-disk intermediário.
  */
 export async function analyzePDFBuffer(
   pdfBuffer: Buffer,
-  options?: PDFAnalyzerOptions,
+  _options?: PDFAnalyzerOptions,
 ): Promise<PDFAnalysisResult> {
-  const provider = options?.provider
-    ?? (process.env.GOOGLE_CLOUD_PROJECT ? 'vertex' : 'gemini');
-
-  if (provider !== 'vertex') {
-    throw new Error(
-      '[PDFAnalyzer] Buffer mode requires Vertex (set GOOGLE_CLOUD_PROJECT). ' +
-      'Public Gemini API path mode does not accept buffers — write to disk first.',
-    );
-  }
-
   const startTime = Date.now();
-  logger.info(`[PDFAnalyzer] Analyzing buffer (${(pdfBuffer.length / 1024 / 1024).toFixed(1)} MB) via vertex`);
+  logger.info(`[PDFAnalyzer] Analyzing buffer (${(pdfBuffer.length / 1024 / 1024).toFixed(1)} MB) via gemini`);
 
-  const vertex = new VertexAdapter();
-  const rawResponse = await vertex.analyzeMultimodal(
+  const gemini = new GeminiAdapter();
+  const rawResponse = await gemini.analyzeMultimodal(
     pdfBuffer,
     `${SYSTEM_PROMPT}\n\n${USER_PROMPT}`,
     'application/pdf',
@@ -238,7 +214,7 @@ export async function analyzePDFBuffer(
 
   parsed.meta = {
     pages_analyzed: 0,
-    model: process.env.VERTEX_AI_CREATIVE_MODEL ?? 'gemini-1.5-pro-002',
+    model: process.env.GEMINI_MODEL ?? 'gemini-2.0-flash',
     analyzed_at: new Date().toISOString(),
     raw_response_length: rawResponse.length,
   };

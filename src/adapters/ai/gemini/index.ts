@@ -122,18 +122,30 @@ export class GeminiAdapter implements IAIAdapter {
   }
 
   async analyzeImage(imagePath: string, prompt: string): Promise<string> {
-    if (!this.apiKey) {
-      throw new Error('[GeminiAdapter] GEMINI_API_KEY not set');
-    }
-
     const imageBuffer = await readFile(imagePath);
-    const base64 = imageBuffer.toString('base64');
-
     const ext = imagePath.split('.').pop()?.toLowerCase();
     const mimeType = ext === 'png' ? 'image/png'
       : ext === 'webp' ? 'image/webp'
       : ext === 'gif' ? 'image/gif'
       : 'image/jpeg';
+    return this.analyzeMultimodal(imageBuffer, prompt, mimeType);
+  }
+
+  /**
+   * Análise multimodal de buffer arbitrário (image/* ou application/pdf).
+   * Substitui VertexAdapter.analyzeMultimodal post-Sprint-3.10 — fetch direto
+   * na Gemini REST API sem SDK.
+   */
+  async analyzeMultimodal(
+    buffer: Buffer,
+    prompt: string,
+    mimeType: string,
+  ): Promise<string> {
+    if (!this.apiKey) {
+      throw new Error('[GeminiAdapter] GEMINI_API_KEY not set');
+    }
+
+    const base64 = buffer.toString('base64');
 
     const body: GeminiRequest = {
       contents: [
@@ -167,7 +179,7 @@ export class GeminiAdapter implements IAIAdapter {
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(
-        `[GeminiAdapter] Vision API error ${response.status}: ${errorText}`,
+        `[GeminiAdapter] Multimodal API error ${response.status}: ${errorText}`,
       );
     }
 
@@ -175,7 +187,7 @@ export class GeminiAdapter implements IAIAdapter {
     const firstCandidate = data.candidates[0];
 
     if (!firstCandidate?.content?.parts?.length) {
-      throw new Error('[GeminiAdapter] Empty vision response from API');
+      throw new Error('[GeminiAdapter] Empty multimodal response from API');
     }
 
     return firstCandidate.content.parts.map((p) => p.text).join('');

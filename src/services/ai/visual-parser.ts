@@ -1,5 +1,5 @@
 /**
- * Visual Parser — Análise multimodal de imagens via Vertex AI (Gemini 1.5 Pro)
+ * Visual Parser — Análise multimodal de imagens via Gemini (REST API)
  *
  * Especializado em imóveis: identifica categoria (fachada/lazer/planta),
  * avalia qualidade e sugere o melhor crop 9:16 para Reels.
@@ -19,11 +19,11 @@
  *     relevância. SceneComposer então ordena os assets por relevance e aplica
  *     o crop sugerido no render.
  *
- * Model: gemini-1.5-pro (maior reasoning que flash, melhor pra cropping visual)
- * Fallback: sem Vertex → retorna defaults neutros (center crop, relevance 0.5)
+ * Model: GEMINI_MODEL env var (default gemini-2.0-flash, multimodal-capable)
+ * Fallback: sem GEMINI_API_KEY → retorna defaults neutros (center crop, relevance 0.5)
  */
 
-import { VertexAdapter } from '../../adapters/ai/vertex/index.js';
+import { GeminiAdapter } from '../../adapters/ai/gemini/index.js';
 import { logger } from '../../utils/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -71,7 +71,7 @@ export interface VisualParserOptions {
   /** Aspect ratio alvo para o crop suggestion (default 9:16) */
   targetAspect?: '9:16' | '1:1' | '16:9' | '4:5';
   /** Override do adapter (p/ testes) */
-  adapter?: VertexAdapter;
+  adapter?: GeminiAdapter;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,10 +129,10 @@ export async function analyzeImage(
   opts: VisualParserOptions = {},
 ): Promise<ImageAnalysis> {
   const target = opts.targetAspect ?? '9:16';
-  const model = process.env.VERTEX_AI_CREATIVE_MODEL ?? 'gemini-1.5-pro-002';
+  const model = process.env.GEMINI_MODEL ?? 'gemini-2.0-flash';
 
   try {
-    const adapter = opts.adapter ?? new VertexAdapter();
+    const adapter = opts.adapter ?? new GeminiAdapter();
     const prompt = buildSystemPrompt(target);
 
     const raw = await adapter.analyzeMultimodal(imageBuffer, prompt, mimeType);
